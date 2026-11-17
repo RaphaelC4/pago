@@ -1,6 +1,22 @@
-/* Paylink runtime configuration.
+/* Paylink / Pago runtime configuration.
    Values are read from the built frontend. Kept as plain data so the page
-   can be opened from a static host with no build step. */
+   can be opened from a static host with no build step.
+
+   There are two configuration blocks, because there are two builds of the
+   same product:
+
+     CONFIG — the original NEAR build (contracts/paylink-contract), still the
+              one the deployed page talks to.
+     XLAYER — the X Layer port, Pago (contracts-evm). Chain ids, RPCs,
+              explorer, stablecoins, TapeOut addresses and Pago's own
+              deployment slots all live here and nowhere else, so switching a
+              page over to X Layer is one import rather than a hunt through
+              the code.
+
+   Every X Layer value below was read from the chain or proven on a fork
+   (docs/RESEARCH.md). Anything that has not been verified is left out, and
+   anything that has not happened yet is `null` — never a plausible-looking
+   guess. */
 
 export const CONFIG = {
   network: "testnet",
@@ -113,3 +129,108 @@ export const MAX_DESCRIPTION_BYTES = 280;
 export const GAS_DEFAULT = "50000000000000";
 export const GAS_CLAIM = "200000000000000";
 export const GAS_FT_CALL = "150000000000000";
+
+/* ═════════════════════════════════════════════════════════════════════════
+   X Layer — the Pago port.
+
+   Read live from chain or proven on a local fork; docs/RESEARCH.md is the
+   evidence for every line. Nothing here is copied from documentation,
+   which for TapeOut in particular was found to be stale.
+   ═════════════════════════════════════════════════════════════════════════ */
+export const XLAYER = {
+  mainnet: {
+    chainId: 196,
+    /* Official endpoints, in order of preference. The RPC intermittently
+       fails DNS on this network, so the page keeps two and falls back. */
+    rpcUrls: ["https://rpc.xlayer.tech", "https://xlayerrpc.okx.com"],
+    explorer: "https://www.oklink.com/xlayer",
+    nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 },
+  },
+
+  testnet: {
+    chainId: 1952,
+    /* The only X Layer testnet endpoint that resolves. testnet.rpc.xlayer.tech,
+       rpc.testnet.xlayer.tech and xlayertestrpc.okx.com all fail DNS, and some
+       X Layer docs print chain id 195 for the testnet — `cast chain-id`
+       answers 1952, which is what this page must request. */
+    rpcUrls: ["https://testrpc.xlayer.tech"],
+    explorer: "https://www.oklink.com/xlayer-test",
+    nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 },
+  },
+
+  /* Stablecoins Pago accepts. Both proven in Phase 0 to implement EIP-3009
+     `transferWithAuthorization` on mainnet (RESEARCH.md §8): a third party may
+     submit the signed authorization — which is what makes Pago's gasless payer
+     path possible — and a signature naming any other recipient fails to
+     recover `from`. Decimals and symbols read from each contract. */
+  tokens: [
+    {
+      address: "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+      symbol: "USD₮0",
+      name: "USD₮0",
+      decimals: 6,
+      eip3009: true,
+    },
+    {
+      address: "0x4ae46a509F6b1D9056937BA4500cb143933D2dc8",
+      symbol: "USDG",
+      name: "Global Dollar",
+      decimals: 6,
+      eip3009: true,
+    },
+  ],
+
+  /* TapeOut protocol, mainnet only: nothing from this block exists on
+     testnet 1952 (RESEARCH.md §13). */
+  tapeout: {
+    factory: "0x1f09DAeFA827f02CBb40967cc91b259763760761",
+    factoryOwner: "0xB3D85b42A045c1A88D800CAD0F55d2566a4D3138",
+    protocolWallet: "0x571d447f4f24688eC35Ccf07f1D6993655F6aF15",
+
+    /* The protocol's fee token. createCPU pulls this with transferFrom, so a
+       caller must approve it first — never send msg.value (RESEARCH.md §13). */
+    feeToken: {
+      address: "0x60e62efa9405d6873c5deabd4e6cc91c25363952",
+      symbol: "BEM",
+      decimals: 8,
+    },
+    createProcessorFee: 10_000_000, // 0.1 BEM
+    mintTransistorFee: 1_000_000, // 0.01 BEM
+
+    /* Tape-out price, read live (published figures were stale). */
+    tapeoutFeeWei: "1300000000000000", // 0.0013 ETH
+
+    /* Container opener, proven end to end in Phase 0 (test/Container.t.sol). */
+    opener: "0x536adD8F30f03b69f6fbF29d425A816A0dC50106",
+    openerFeeWei: "80000000000000000", // 0.08 ETH, read live
+
+    /* Processors Pago reads today. Each address was pulled from the factory's
+       own `cpuAt(id)` and then called directly (RESEARCH.md §2, §6). */
+    processors: [
+      { id: 30, address: "0x2046aa63bFB03f393AD85a518011fdf8aF3DDB53" },
+      { id: 333, address: "0xE2a6c6393b5A8B99cb481035eB8e244C66641cd7" },
+      { id: 334, address: "0x00586A4C37039aCbFC6aC135cAdd49367ABf390A" },
+      { id: 340, address: "0x9de448A1CE9537d24199B3b5355239d73aA6F591" },
+    ],
+  },
+
+  /* Pago's own contracts. `null` = not deployed yet. Phase 2 writes the real
+     addresses in after the testnet deploy and the tests read them back. */
+  pago: {
+    testnet: null,
+    mainnet: null,
+  },
+
+  /* The Split3 payment rule, once it is taped out onto a processor.
+     `null` = not taped out: it needs mainnet approval and roughly 0.11 BEM
+     plus 0.0013 ETH (RESEARCH.md §14), which has deliberately not been
+     spent. The shape below is fixed by the circuit itself. */
+  split3: {
+    processor: null,
+    circuitId: null,
+    inputs: 15, // three 5-bit shares
+    outputs: 1, // "the shares add up to 100%"
+    nands: 104,
+    shareStepBps: 500, // each share is counted in 5% steps
+  },
+};

@@ -363,6 +363,125 @@ invoiced one.
 
 ---
 
+## Pago — the same product on X Layer
+
+**Status:** contracts written and tested locally; **not deployed anywhere yet**,
+and nothing has been spent onchain. This section describes what exists in
+`contracts-evm/` today.
+
+This repository now carries two builds of one product:
+
+| | NEAR build | X Layer build |
+| --- | --- | --- |
+| Name | Paylink | **Pago** |
+| Code | `contracts/paylink-contract/` (Rust) | `contracts-evm/` (Solidity 0.8.28, Foundry) |
+| Chain | NEAR testnet | X Layer (testnet 1952 to deploy to, mainnet 196 read-only) |
+| Built for | NEAR HACKATHON, `realworld` track | **X Layer TapeOut Accelerate** (Oct 16 – Dec 7 2026) |
+
+The **concept** is ported, not the code: NEAR's `ft_transfer_call` /
+`ft_on_transfer` handshake has no EVM equivalent, so the payer path is an
+ordinary ERC-20 `transferFrom`, plus a second, gasless path built on EIP-3009
+`transferWithAuthorization` — a payer signs off-chain and any account (Pago's
+relayer) submits it and pays the gas. Both stablecoins Pago will accept,
+USD₮0 and USDG, were proven to support that on X Layer mainnet during Phase 0.
+
+### What changed, and what deliberately did not
+
+| Concern | NEAR | Pago on X Layer |
+| --- | --- | --- |
+| Recognising payment | the **token contract** calls `ft_on_transfer` with the link id | the payer calls `pay(linkId, amount)`, or a relayer submits their EIP-3009 signature — either way the tokens physically move in the same call, so there is no status write a caller can make without paying |
+| Creation stake | 0.01 NEAR, attached by the relayer | **gone.** EVM storage is paid in gas by whoever sends the transaction; an escrow for a record that holds no money would serve no purpose |
+| "attach exactly 1 yocto" | required on every state change | **gone.** State-changing calls are already transaction-scoped and signed; the yocto guard protects against nothing here |
+| `on_claimed` callback | needed, because NEAR's transfer batch can fail *after* `claim` has written `Claimed` | **gone.** Writes and transfers happen in one transaction: if a transfer fails everything reverts, the link goes back to `Paid` on its own, and anyone retries. That is the same guarantee, obtained from atomicity instead of a callback |
+| Token registration | NEP-145 `storage_deposit` before payout | **gone.** ERC-20 has no per-account registration |
+| Fee | 0.5%, constant, to a fee account fixed in `new()` | **identical** — 50 bps, `feeAccount` immutable, set in the constructor, no setter |
+| Expiry | `Expired` derived on read, never stored | **identical** |
+| Timestamps | milliseconds since epoch | **identical** (`nowMs`), so a browser keeps using `Date` |
+| Fee rounding | floor, `payout + fee == amount` always | **identical**, same two-term decomposition, proven for `type(uint256).max` |
+| Owner / admin / withdraw | none | **none** — `feeAccount` is immutable and the token allowlist is written only by the constructor, so widening it needs a new deploy that shows up in the explorer |
+| Reentrancy | not applicable | `nonReentrant` on `pay` / `payWithAuthorization` / `claim`, on top of checks-effects-interactions |
+
+**Gasless creation is not ported yet.** On NEAR the payee signs a NEP-366
+delegate action for free and the relayer pays gas *and* the stake. The EVM
+equivalent is an EIP-2771 / EIP-712 meta-transaction for `createLink`, which
+does not exist in this build: today the payee's creation is a normal
+transaction they pay for. The **payment** side is the reverse — the payer can
+sign an EIP-3009 authorization and never touch gas at all. Closing the
+creation gap is Phase 2/3 work, and is stated here rather than implied.
+
+### Why a circuit
+
+A payment split three ways is a rule: *the three shares must add up to 100%*.
+Normally that rule lives in a few lines of contract code, and a reader has to
+trust that the code says what they think it says and cannot be changed quietly.
+
+**Split3** (`contracts-evm/src/circuits/Split3.sol`) states the same rule as a
+piece of published hardware instead:
+
+- The rule is a **TAP-02 netlist** — 15 input bits (three shares, each a 5-bit
+  field counted in 5% steps: `20 = 100%`), one output bit, **104 NAND gates**,
+  no latches and no references to anything else.
+- It is **built, not hand-encoded**: `netlist()` assembles it from a half
+  adder, a full adder and a compare, so the byte string can be read next to the
+  arithmetic it encodes instead of being an opaque hex blob.
+- The netlist is **verified exhaustively**. The whole input space is
+  2^15 = 32,768 vectors, and `test/Split3.t.sol` evaluates every one of them
+  through the TAP-02 reference evaluator and demands it agree with
+  `Split3.holds(a, b, c)`, a plain `a + b + c == 20` written in Solidity. Two
+  independent implementations of the rule agreeing on every possible input — a
+  claim a reviewer can re-run with `forge test`, not a sample.
+- Once taped out, anybody can call `eval()` **on X Layer itself** and get the
+  rule's verdict computed by the chain, and anybody can read the netlist and
+  count the gates themselves. There is no privileged reader, no oracle, and no
+  admin who can relax the rule without deploying visibly different code.
+
+The other reason is the hackathon: the X Layer TapeOut Accelerate track
+explicitly asks for TapeOut circuits, contracts or onchain data
+([evidence in `docs/RESEARCH.md` §11](docs/RESEARCH.md)).
+
+**Split3 has not been taped out.** That costs roughly 0.11 BEM plus 0.0013 ETH
+on X Layer mainnet, spends real funds, and is deliberately **not started** —
+it awaits an explicit go-ahead. `docs/RESEARCH.md` §14 itemises the cost.
+
+### Security model
+
+Identical in spirit to the NEAR build, and the tests assert the same
+properties:
+
+- **Funds move only per what the contract computed from its own onchain
+  state**, or per the visible default split. No function accepts a recipient or
+  an amount that the contract did not derive itself.
+- **`claim(linkId)` takes no result arguments, is callable by anyone, and can
+  only pay the invoice's payee and the fee account — never the caller.** The
+  money cannot be routed anywhere else by whoever triggers it.
+- **The payee cannot settle their own link**, on either payer path.
+- **An EIP-3009 signature is bound to exactly one link**: the nonce it must
+  carry is derived from `(linkKey, payer)`, so an authorization signed for
+  invoice A cannot be replayed against invoice B, and a link can only be paid
+  once.
+- **A rejected payment moves nothing.** Every guard runs before the token
+  transfer, so an expired, cancelled, underpaid or self-paid attempt costs the
+  payer gas and no tokens.
+- **The allowlist is fixed at construction.** Only audited tokens can ever call
+  back in; widening it requires a new deployment.
+
+**Not audited.** This is a hackathon build. Do not send real funds to it.
+
+### Tests
+
+```powershell
+cd contracts-evm
+$env:XLAYER_RPC = "https://rpc.xlayer.tech"   # only the fork suites need it
+forge test
+```
+
+The local suites — `PagoTest` (the full contract: guards, money paths, ledger,
+both payer paths), `Split3Test` (the exhaustive circuit check) and the TAP-02
+reference evaluator's own suite — need no network at all. The five fork suites
+prove the Phase 0 claims against real X Layer mainnet state.
+
+---
+
 ## How to use
 
 > These steps are the acceptance criteria for this build. They are written as
@@ -527,7 +646,12 @@ this build.
 
 **AI assistance:** this build was written with AI assistance (Claude) — the
 contract, the frontend and the Workers. Q-005 explicitly allows it, so it is
-listed here rather than left for a reviewer to infer.
+listed here rather than left for a reviewer to infer. The X Layer port in
+`contracts-evm/` and `docs/RESEARCH.md` was likewise produced with AI
+assistance (Claude and OpenCode); every onchain claim in `docs/RESEARCH.md`
+was verified by running code against the chain rather than by asking a model,
+and no address, transaction hash or test result in this repository was
+invented.
 
 ---
 

@@ -1,5 +1,11 @@
 # Pago on X Layer — Phase 0 Research Log
 
+> **Update (Phase 1):** §13 corrects three Phase 0 conclusions that turned out
+> to have the wrong cause — `createCPU`'s failure, the factory's implementation
+> slot, and what taping out actually requires — and §14 prices the mainnet
+> tape-out that is deliberately **not** started. Read §13–§14 as current and
+> §10 as superseded where they disagree.
+
 Everything below was **read from X Layer mainnet (chain 196) or proven on a local
 fork of it** during Phase 0. Nothing here is taken from documentation alone:
 third-party docs about TapeOut fees and addresses were found to be stale, so
@@ -397,8 +403,12 @@ Also confirmed: the hackathon runs **Oct 16 – Dec 7 2026**, $100,000 USDT acro
 ```powershell
 $env:XLAYER_RPC = "https://rpc.xlayer.tech"
 cd contracts-evm
-forge test --fork-url $env:XLAYER_RPC
+forge test
 ```
+
+`forge test` runs everything: the local suites (Pago, Split3, Tap02 reference)
+need no network at all, and the fork suites (NetlistRef, ForkEval, Container,
+Phase0Fork, DemoCircuits) pick up `XLAYER_RPC`.
 
 Known environment quirks:
 
@@ -407,3 +417,167 @@ Known environment quirks:
 * `console.log` accepts at most 4 arguments in this forge-std version.
 * Stack-too-deep recurs without `via-ir`; split functions rather than adding
   locals.
+* X Layer **testnet** RPC: `https://testrpc.xlayer.tech`, chain id **1952**.
+  (`rpc.testnet.xlayer.tech`, `testnet.rpc.xlayer.tech` and
+  `xlayertestrpc.okx.com` all fail DNS; some X Layer docs print chain id `195`
+  for testnet, which is wrong — `cast chain-id` answers `1952`.)
+
+---
+
+## 13. Corrections to Phase 0 — found while starting Phase 1
+
+Everything in this section **supersedes** the corresponding Phase 0 findings.
+It was written after re-probing the live chain; each item below replaced a
+conclusion that had been drawn from a single failed call rather than from the
+failure's actual reason.
+
+### ❌ "createCPU is unsatisfiable" — wrong cause, and the blocker is lifted
+
+Phase 0 recorded `createCPU` as **UNSUPPORTED**, on the grounds that the call
+is non-payable and no value sent with it changes the outcome. The real reason
+the call fails is a different one: **the fee is an ERC-20 `transferFrom`, not
+`msg.value`.**
+
+Simulated `createCPU` with no value reverts with:
+
+```
+ERC20InsufficientAllowance(0x1f09DAeFA827f02CBb40967cc91b259763760761, 0, 10000000 [1e7])
+selector 0xfb8f41b2, arguments (factory, 10000000)
+```
+
+i.e. the factory tries to pull **1e7 units of the fee token** from the caller
+and the caller has approved nothing. `createCPU` is non-payable *because* the
+fee is a token — which is exactly why sending ETH changed nothing and why the
+first probe looked like a dead end.
+
+**Fix: `approve(factory, 1e7)` on the fee token, then call `createCPU` with no
+value.** Phase 0's `test_createProcessorAndTapeOutOnFork` (which sends
+`deployFee` in ETH) was testing the wrong thing and will be rewritten.
+
+### The fee token is BEM
+
+| | |
+|---|---|
+| Address | `0x60e62efa9405d6873c5deabd4e6cc91c25363952` |
+| Name / symbol | `BEM` / `BEM` |
+| Decimals | **8** |
+| Total supply | 1,513,402,598,500 (1.513e12 = 15,134 BEM) |
+| `owner()` | `0xB3D85b42A045c1A88D800CAD0F55d2566a4D3138` (= the factory's `owner()`) |
+| `feeBps()` | 50 |
+| Factory storage | slot 10 |
+
+Confirmed against TapeOut's own announcement that fees moved to BEM: **create
+processor 0.1 BEM** (1e7 at 8 decimals — exactly the 1e7 in the revert),
+**mint transistor 0.01 BEM**, **50% of the protocol fee burned**, and
+**processors created before the switch keep charging native coin** — which is
+why processors #30/#333/#340 still take `msg.value` and why Phase 0's probes
+on those behaved differently from a call to the factory.
+
+BEM trades on Uniswap V3 X Layer (BEM/OKB pool), so it is buyable with OKB.
+
+### Taping out on an *existing* processor requires holding a transistor
+
+`tapeout(netlist, nIn, nOut)` on processor #340, called by an account that
+holds nothing, reverts with:
+
+```
+ERC1155InsufficientBalance(0x000000000000000000000000000000000000dEaD, 0, 1, 0)
+```
+
+The processor's ERC-1155 id **0 is a "transistor"**, and minting one on a
+*new* processor costs **0.01 BEM** (the caller sets the price in BEM when
+creating the processor). `nextId()` per processor: #340 → 1, #333 → 20,
+#30 → 6.
+
+So there are two routes to a Pago circuit on mainnet, both in BEM:
+
+1. **Our own processor**: `approve` 0.1 BEM → `createCPU` → mint a transistor
+   (0.01 BEM) → `tapeout` (0.0013 ETH). One-time ≈ 0.11 BEM + 0.0013 ETH.
+2. **Someone else's processor**: hold one of its transistors → `tapeout`
+   (0.0013 ETH). Cheaper, but we do not control the processor.
+
+Both spend real funds, so **neither has been started** — see §14.
+
+### The factory proxy uses a non-standard implementation slot
+
+The factory at `0x1f09DAeFA827f02CBb40967cc91b259763760761` is a 131-byte
+proxy. Its runtime code reads the implementation from
+
+```
+0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc5
+```
+
+not from the EIP-1967 slot
+`0x360894a13ba4a77963041c062031413439307b4cf82ef756eefada3bc271191`, which
+reads **0**. That is why Phase 0's "implementation slot" probes were
+uninformative and why `implementation()` reverts (the selector does not
+exist). The proxy falls back to a plain call when the slot is empty.
+
+Proxy storage actually in use:
+
+| Slot | Value | Meaning |
+|---|---|---|
+| 0 | `0x1059Ad62…60a51b` | transistor beacon |
+| 1 | `0xf70d1ed4…bd0991c` | circuit beacon |
+| 2 | `0x571d447f…5f6aF15` | `protocolWallet()` |
+| 3 | `0x989680` (1e7) | `deployFee` |
+| 4 | `0xf4240` (1e6) | `protocolFee` |
+| 6 | `0x1aa` (426) | `cpuCount()` |
+| 10 | `0x60e62efa…63952` | BEM fee token |
+| 11 | `0x41cb2bfd…b9ce65` | 620-byte contract, `owner()` = 0 |
+
+### `cpuCount` has moved: 425 → 426
+
+A processor was created between Phase 0 and Phase 1. `cpuAt(425)` =
+`0x1900801e311184063b9d9C119C9D98AA4950E12c` (592 bytes of code);
+`cpuAt(426)` panics `0x32` (out of bounds), so `cpuCount()` is a count, not
+the highest valid index. Anyone caching these values must re-read them.
+
+### nand-arena's `createCPU` did succeed — on mainnet, in ETH
+
+Transaction `0x087e378915fc84f4b463f49eb92951dc7ff7f0f39f12a2a10320582a5be88fe1`,
+mined on **chain 196** at block 72,612,281 (7 Oct 2026 13:55 UTC), is a
+contract-creation whose constructor calls `createCPU` (selector `0x47f9b5fd`,
+with `tapeout` selector `0x7bd3ac1d` in the constructor arguments) with
+`value = 6.6e15`. So `createCPU` *was* payable-fee at that time. Fees moved to
+BEM afterwards (TapeOut's own announcement), which is why the same call now
+fails on an ERC-20 allowance instead of on `msg.value`. The Phase 0 conclusion
+was accurate for the chain *as probed* but its stated reason — "the current
+implementation cannot be satisfied at all" — was not: it was a fee-token
+change, not a missing feature.
+
+### No TapeOut deployment on testnet 1952
+
+Every address, fee and selector in §2 belongs to **mainnet (196)**. No
+evidence of TapeOut on testnet was found: third-party docs and examples all
+point at `https://xlayerrpc.okx.com`. Testnet is therefore usable for Pago's
+own contracts (deploy, wire up, exercise) but **not** for the circuit itself —
+taping out Split3 means mainnet, and §14 says what that requires.
+
+---
+
+## 14. What a mainnet tape-out of Split3 would cost — not started
+
+**Nothing on this list has been done.** Mainnet is read-only until the
+approval phrase is given in full: `deploy to mainnet tier 1`,
+`deploy to mainnet tier 2` or `deploy to mainnet tier 3` (exact, case
+sensitive, whole message — "go ahead" and "yes" do not count).
+
+Taped out as a *new* processor (route 1 in §13):
+
+| Item | Cost | Notes |
+|---|---|---|
+| Create processor | **0.1 BEM** | `approve` first, then `createCPU` with no value |
+| Mint one transistor | **0.01 BEM** | needed before `tapeout` accepts the call |
+| Tape out Split3 | **0.0013 ETH** (`TAPEOUT_FEE` = 1.3e15 wei) | 15 inputs, 1 output, 104 NANDs, 728-byte netlist |
+| **Total** | **≈ 0.11 BEM + 0.0013 ETH** | BEM is buyable with OKB on Uniswap V3 X Layer |
+
+Alternatively, tapping out onto an existing third-party processor costs 0.0013
+ETH plus whatever one of its transistors costs, but hands control of the
+processor to someone else.
+
+Everything else — Pago's contracts, the Split3 netlist, its exhaustive
+verification — is already written and tested locally, and Pago itself can be
+deployed to **testnet 1952** without spending anything anyone would notice.
+The circuit is the only part that needs mainnet money.
+

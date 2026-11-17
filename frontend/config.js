@@ -214,10 +214,43 @@ export const XLAYER = {
     ],
   },
 
-  /* Pago's own contracts. `null` = not deployed yet. Phase 2 writes the real
-     addresses in after the testnet deploy and the tests read them back. */
+  /* Pago's own contracts. `null` = not deployed yet.
+     testnet below was written from a completed end-to-end run of
+     contracts-evm/script/testnet-exercise.ps1 on chain 1952: create -> pay ->
+     gasless pay -> claim, both legs, with the split verified to the unit
+     (RESEARCH.md §15). Mainnet stays null until a mainnet deploy is approved. */
   pago: {
-    testnet: null,
+    testnet: {
+      chainId: 1952,
+      rpc: "https://testrpc.xlayer.tech",
+      explorer: "https://www.oklink.com/xlayer-test",
+
+      /* Deployed by `forge script script/Deploy.s.sol:Deploy`, recorded in
+         contracts-evm/.testnet-deploy.json and read back from chain: Pago has
+         8325 bytes of code, the token 3864. */
+      pago: "0x3b5B96391039bf36A04CD447982a83510B23A6C5",
+      token: "0x229A19B9D237629FC0c94812d21a4cf2b22B3615",
+
+      /* The testnet asset is MockToken promoted to a real deployable: an
+         ERC-20 with EIP-3009, which is what the gasless path needs. 6
+         decimals, read from the contract. */
+      tokenSymbol: "pUSD",
+      tokenDecimals: 6,
+
+      /* Both read live after deploy: `feeBps()` answered 50 (0.5%) and the
+         fee account is the deployer itself. */
+      feeBps: 50,
+      feeAccount: "0x3f1004AAeD662227d535D794dA679110111a2FC4",
+
+      /* Two keystore aliases, created in the operator's own terminal so the
+         keys never enter this repo. The payer must differ from the link
+         creator, which is why there are two accounts rather than one.
+         Deployer: deploys, pays leg A, signs leg B, collects the fee.
+         Payee: creates links, relays leg B, claims. */
+      deployer: "0x3f1004AAeD662227d535D794dA679110111a2FC4",
+      payee: "0x7FCe520D881454EA234d371E1256B75843609b62",
+    },
+
     mainnet: null,
   },
 

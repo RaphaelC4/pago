@@ -42,3 +42,6 @@ test-results/
 SUBMISSION.local.md
 .vercel
 .env*
+
+# Pago testnet deployment addresses written by contracts-evm/script/testnet-exercise.ps1
+contracts-evm/.testnet-deploy.json

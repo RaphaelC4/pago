@@ -581,3 +581,110 @@ verification — is already written and tested locally, and Pago itself can be
 deployed to **testnet 1952** without spending anything anyone would notice.
 The circuit is the only part that needs mainnet money.
 
+---
+
+## 15. Phase 2 — live on X Layer testnet (chain 1952), 2026-11-18
+
+Everything in this section was read back from the chain or printed by
+`contracts-evm/script/testnet-exercise.ps1`. Nothing is inferred.
+
+### Deployed contracts
+
+| | Address | Proof |
+|---|---|---|
+| Pago | `0x3b5B96391039bf36A04CD447982a83510B23A6C5` | 8,325 bytes of code |
+| pUSD (MockToken) | `0x229A19B9D237629FC0c94812d21a4cf2b22B3615` | 3,864 bytes of code, 6 decimals |
+| chain id | 1952 | `cast chain-id`, asserted by the script before it spends anything |
+
+Deploy transactions (`broadcast/Deploy.s.sol/1952/run-latest.json`):
+
+- pUSD create `0x7b24933873880f275d4c7dccf1e4ccffa5d0a1f67d5584403ec5cfd294ae0c28`
+- initial mint `0xd09f12ad4b94a3814085e83d02b0f5b9340105b19e906f148a14bcd564f1d38b`
+- Pago create `0x0dd01201e2e353ec784d4cef65ea830fc9f8c540754538fab9af15ba38e03b77`
+
+Read live after deploy: `feeBps()` = **50** (0.5%), fee account = the
+deployer, chain id 1952. The deployer is also the payer and the fee account;
+the payee is a separate account because the contract requires the payer to
+differ from the link creator.
+
+### The passing run
+
+`testnet-exercise.ps1`, run to completion — final line:
+
+```
+PASS - both payer paths settled live on X Layer testnet, every unit accounted for.
+```
+
+Link ids `pago-261118-002651-a` / `-b`. All nine transactions:
+
+| Step | Tx |
+|---|---|
+| mint 10 pUSD to the payer | `0x1f5d7a2966d6f19ce846054d448c7934eb5983912aef43dda23a052cfa43741f` |
+| **A** createLink | `0xdaf2242e0327695c82699288366d1182ed2b2919cf59e6e1de4653545e154707` |
+| **A** approve | `0xb67942fea63379e6eaf42c7744cbe5ca8ca62edff1f1702553044ec39f7f1534` |
+| **A** pay (payer sends it) | `0xa82bf0d92e7bcd36beb309c0a993eaf28df04525166e2487800e2712f6c4dcd7` |
+| **B** createLink | `0xf18b84fdd15fce32ad6d6fb95cf2e657411ca9cd09d9d5aea7447491d983bb59` |
+| **B** EIP-3009 digest (off-chain, not a tx) | `0x04a1f82743897616ae44e1400051b66d6bffb54b4d8c50b71354ed4936b16244` |
+| **B** payWithAuthorization (relayed by the payee, who pays the gas) | `0x9b8b2ef14973797d993e1a2528b3e6bbd2b786481938dd55e72e264eec0cac87` |
+| claim A | `0xf899a9df56cb2eff4f181ce3bf8e3c9093a527cb0b37080e508db73fb984ac9b` |
+| claim B | `0x31dbb499c8decca565f94324234a4033f5bd0b8067112e0ef929a9c93ad33da3` |
+
+The gasless leg is the NEP-366 equivalent: the payer signs the digest off-chain
+with its keystore (`cast wallet sign <digest> --no-hash --account
+pago-deployer`), and a *third party* — the payee — submits it and pays the
+gas. The payer never sends a transaction for that leg.
+
+### Verification (changes measured from a snapshot taken before either link existed)
+
+```
+links created by payee      6 (informational)
+payee change                1990000 (want 1990000 = 2 payouts)
+deployer change             -1990000 (want -1990000 = -2 payments + 2 fees)
+held by Pago change         0 (want 0 - nothing left inside)
+deltas sum to               0 (want 0 - every unit accounted for)
+```
+
+1,000,000 = 2 × 500,000 pUSD principal; 995,000 = 500,000 less the 0.5% fee
+(2,500), paid to the fee account. `held by Pago` moving 0 proves the fee is
+taken at `claim()` and nothing is left behind. (A separate 1,000,000 pUSD sits
+in the contract from an earlier abandoned run — an unclaimed link — and is
+deliberately *outside* these deltas, which measure only this run.)
+
+### Bugs the run exposed — all fixed, all re-verified
+
+Each of these only appeared because this was the first time the script
+executed end to end against a live chain:
+
+1. `cast balance` reports **wei**; the code compared it as OKB. Thresholds are
+   now computed in wei (1 OKB = 10^18, measured on-chain).
+2. This Foundry build rejects `--value 0.0003` — only `0.0003ether` or raw wei
+   parse. Nothing was broadcast by the failed attempt.
+3. `$ErrorActionPreference = "Stop"` turned native stderr into a terminating
+   error that escaped `Run-Retry`, so retries never fired. Now caught inside
+   the loop; proven against transient, permanent and clean scenarios.
+4. Bare `cast call` has no endpoint and falls back to `http://localhost:8545`.
+   `foundry.toml`'s `[rpc_endpoints] xlayer` alias is only reachable as
+   `--rpc-url xlayer`, so `XLAYER_RPC` does not help. The script now sets
+   `ETH_RPC_URL` once. (It never pointed at mainnet — it pointed at nothing.)
+5. `cast` annotates large integers (`1010000000 [1.01e9]`), which breaks a
+   later `[bigint]` cast. Stripped centrally in `Call()`.
+6. `authorizationNonce()` returns `uint256` but `digestOf` /
+   `payWithAuthorization` declare `bytes32` — `Pago.t.sol:866` does the same
+   `bytes32(uint256)` cast, `Pago.sol:289` converts back. Decimal made cast
+   parse it as hex ("odd number of digits"); and .NET's `BigInteger.ToString("x")`
+   emits a stray leading nibble (65 digits), so the conversion goes through
+   `cast to-hex` and is padded to 64.
+7. `linkCountByCreator(address)` was called with no argument.
+
+### Known limitation
+
+Gasless *link creation* — the NEAR side's NEP-366 relayed `add_key` — has no
+EVM equivalent here: creating a link is an ordinary transaction paid by the
+creator. What is relayed is the *payment*, which is the part that matters to a
+payer.
+
+### Not done
+
+Taping out Split3 still needs mainnet and ≈0.11 BEM + 0.0013 ETH (§14), and
+mainnet remains read-only until the exact approval phrase is given.
+

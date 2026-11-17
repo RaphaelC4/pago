@@ -1,0 +1,9 @@
+# Foundry build artifacts — regenerable, never commit
+out/
+cache/
+
+# never commit a key
+.env
+.env.*
+*.key
+*.pem

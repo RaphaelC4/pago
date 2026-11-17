@@ -1,0 +1,409 @@
+# Pago on X Layer — Phase 0 Research Log
+
+Everything below was **read from X Layer mainnet (chain 196) or proven on a local
+fork of it** during Phase 0. Nothing here is taken from documentation alone:
+third-party docs about TapeOut fees and addresses were found to be stale, so
+every fee, address and selector in this file was read live from the chain.
+
+**AI assistance:** this research and the accompanying code were produced with the
+help of AI models (Claude, OpenCode). All onchain claims below were verified by
+running code against the chain, not by asking a model.
+
+---
+
+## 1. What TapeOut is, in one paragraph
+
+TapeOut is a protocol on X Layer where anyone can deploy a **processor** (a pair
+of contracts: `circuits` + `transistors`) and then **tape out** boolean circuits
+onto it. A circuit is stored as a **netlist** — a compact byte string of NAND
+gates — and anyone can call `eval(circuitId, inputs)` to get the circuit's
+outputs, with the computation done by the chain itself. That makes a payment
+rule literally a piece of published hardware: the rule is inspectable (you can
+read the netlist), reproducible (the same inputs always give the same outputs)
+and enforced by the same code that holds the money.
+
+This is the hook Pago uses: **a payment link's terms are a circuit**, so the
+payer and the payee can both verify the split/fee/deadline logic before any
+money moves.
+
+---
+
+## 2. Verified addresses (X Layer mainnet, chain 196)
+
+| Role | Address | How verified |
+|---|---|---|
+| TapeFactory (ERC-1967 proxy) | `0x1f09DAeFA827f02CBb40967cc91b259763760761` | `eth_getCode` non-empty |
+| TapeFactory **implementation** | `0x336e9F0F4c3fEe7C8c803377e4DEA00293f4ae2a` | read from ERC-1967 slot `0x360894a1...` |
+| Circuit beacon | `0xf70d1ed4f62cf3780157b0b421b7e2f45bd0991c` | read from processor-340 beacon slot |
+| Transistor beacon | `0x1059Ad62cAbB6a6925bb65aA617300556c60A51B` | read live |
+| Factory `owner()` | `0xB3D85b42A045c1A88D800CAD0F55d2566a4D3138` | read live |
+| Factory `protocolWallet()` | `0x571d447f4f24688eC35Ccf07f1D6993655F6aF15` | read live |
+| Circuit beacon `owner()` | `0x0000000000000000000000000000000000000000` (frozen) | read live |
+| Circuit beacon `implementation()` | `0x977f217887E085D298Cb3819cDAD5A0ee35F29B2` | read live |
+| Processor **#340** (circuits) | `0x9de448A1CE9537d24199B3b5355239d73aA6F591` | read live; holds circuit #1 |
+| Processor #340 (transistors) | `0x729F874FF12faAdd73e8F921D65d23516717b145` | read live |
+| Processor **#30** | `0x2046aa63bFB03f393AD85a518011fdf8aF3DDB53` | read live; 5 circuits |
+| Processor **#333** | `0xE2a6c6393b5A8B99cb481035eB8e244C66641cd7` | read live; 19 circuits |
+| Processor **#334** | `0x00586A4C37039aCbFC6aC135cAdd49367ABf390A` | read live; 33 circuits |
+| Container opener | `0x536adD8F30f03b69f6fbF29d425A816A0dC50106` | read live; see §7 || Container opener implementation | `0xAC4f791353Ee9f06E2c50Ae4C34680d28ea52a57` | read from ERC-1967 slot |
+| Container `registry()` | `0x000000006551c19487814612e58fe06813775758` | read live |
+| Container `treasury()` | `0xE2f77062c6060503e0289c6638D1B0A7C76cBB9d` | read live |
+| Container `payments()` | `0x13b8AFa4Fd1b29B09D23A57A75ba8D3078d44858` | read live |
+| Processor #340 circuits (ERC721) | `0x9de448A1CE9537d24199B3b5355239d73aA6F591` | `ownerOf(1)` resolves |
+
+> **Note on the implementation address.** The factory's ERC-1967 implementation
+> slot holds `0x336e9F0F...`, which is *not* the "sealed" implementation
+> described in third-party documentation. Source for `0x336e9F0F...` could not be
+> retrieved (sourcify 404, etherscan v2 rejects chainid 196), so its behaviour was
+> established by **disassembling the bytecode** — see §6.
+
+### Stablecoins and tokens
+
+| Token | Address | Notes |
+|---|---|---|
+| USDT0 | `0x779Ded0c9e1022225f8E0630b35a9b54bE713736` | EIP-3009 `transferWithAuthorization` works |
+| USDG | `0x4ae46a509F6b1D9056937BA4500cb143933D2dc8` | EIP-3009 works |
+
+Both tokens' EIP-3009 `DOMAIN_SEPARATOR` was recomputed off-chain and matched the
+on-chain value exactly, for domain version `"1"`.
+
+---
+
+## 3. Verified function selectors
+
+### Rule processor (circuits contract)
+
+Confirmed live by `cast` and by parsing the factory's dispatcher (two independent
+methods that agreed).
+
+| Selector | Signature |
+|---|---|
+| `0x934d06ea` | `eval(uint256,bytes) returns (bytes)` |
+| `0x084d60f1` | `circuitInfo(uint256) returns (uint32,uint32,uint32,uint32)` |
+| `0x3fc4be56` | `netlist(uint256) returns (bytes)` |
+| `0x61b8ce8c` | `nextId() returns (uint256)` |
+| `0xe8281a1a` | `step(uint256,bytes,bytes)` |
+| `0x1fc0021d` | `beat(...)` |
+| `0x7bd3ac1d` | `tapeout(bytes,uint32,uint32) returns (uint256)` (payable) |
+
+`eval` **reverts with `has latch: use step`** when `nState > 0` — stateful
+circuits must be driven through `step`/`beat`, one beat at a time.
+
+### Factory
+
+| Selector | Signature |
+|---|---|
+| `0xa94da8a7` | `cpuCount() returns (uint256)` |
+| `0x4bc7cbbd` | `cpuAt(uint256) returns (address)` |
+| `0x47f9b5fd` | `createCPU(string,string,string,uint256,uint256)` |
+| `0x8da5cb5b` | `owner()` |
+| `0x715018a6` | `renounceOwnership()` |
+| `0x4f1ef286` | **the only payable function in the 29-function dispatcher** (admin upgrade path) |
+
+`cpuCount()` currently returns **425**.
+
+---
+
+## 4. Fees (read live — published docs are stale)
+
+| Fee | Value | Where |
+|---|---|---|
+| `deployFee()` | `1e7` wei | TapeFactory |
+| `protocolFee()` | `1e6` wei | TapeFactory |
+| `TAPEOUT_FEE` | `1.3e15` wei | circuits contract |
+| opener `FEE()` | `8e16` wei | opener contract |
+| market `feeBps()` | `100` (1%) | market contract |
+| factory `isSealed()` | `false` | TapeFactory |
+| cpu #340 `mintPrice` | `0` | transistors |
+| cpu #340 supply cap / minted | `10000` / `10000` | transistors |
+
+These are re-read in `test_feesAreReadFromChainNotHardcoded` so the suite fails
+if any of them changes.
+
+---
+
+## 5. TAP-02 netlist format (from the spec, then proven against the chain)
+
+Source: `https://raw.githubusercontent.com/TapeOutProtocol/TAPs/main/TAPs/TAP-02.md`
+
+A netlist is a **concatenation of records with no header, no padding and no
+terminator**. `nIn`/`nOut` are *not* in the bytes; they are stored alongside.
+All multi-byte integers are **big-endian**; `u24` is a 3-byte signal index.
+
+**Signals**
+
+| Index | Meaning |
+|---|---|
+| `0` | constant `0` |
+| `1` | constant `1` |
+| `2 … 2+nIn−1` | the inputs (input `i` at index `2+i`) |
+| `2+nIn` onward | outputs of the elements, in record order |
+
+**Records**
+
+| Opcode | Name | Payload | Length | Produces |
+|---|---|---|---|---|
+| `0x00` | NAND | `a:u24 b:u24` | 7 bytes | 1 signal: `NOT (a AND b)` |
+| `0x01` | LATCH | `d:u24` | 4 bytes | 1 signal: the stored state bit |
+| `0x02` | REF | `cpu:20, id:u64, nIns:u8, nOuts:u8, ins:u24 × nIns` | `31 + 3·nIns` | `nOuts` signals |
+
+**Bit packing.** Inputs and outputs are packed **least-significant-bit first**.
+
+**One beat (§4).** Set signal 0=0, 1=1, `2+i = inputs[i]`. Walk the elements in
+record order: NAND computes `1 − (s[a] AND s[b])`; LATCH outputs its state bit
+*from the previous beat*; REF runs one beat of the referenced circuit. After all
+elements, each LATCH's bit in `newState` is `s[d]`. Finally the outputs are the
+last `nOut` signals, `s[S−nOut] … s[S−1]`, in index order.
+
+**Worked example — processor #340, circuit #1**
+
+```
+netlist = 0x0000000200000300000006000006000000040000050000080000080000000700000900000a00000a
+nIn=4  nOut=1  nState=0  gates=6
+```
+
+Decoded (signals: `0`=const0, `1`=const1, `2..5`=inputs `a,b,c,d`):
+
+```
+NAND(2,3) -> signal 6      NAND(a,b)
+NAND(6,6) -> signal 7      NOT(NAND(a,b)) = AND(a,b)
+NAND(4,5) -> signal 8      NAND(c,d)
+NAND(8,8) -> signal 9      NOT(NAND(c,d)) = AND(c,d)
+NAND(7,9) -> signal 10     NAND(AND(a,b), AND(c,d))
+NAND(10,10) -> signal 11   NOT(...) = AND(a,b,c,d)
+```
+
+Output = last `nOut` = signal 11 → **the circuit computes `AND` of all four
+inputs**. Exhaustively confirmed: of the 16 input combinations, exactly one
+(`1111`) yields `1`.
+
+---
+
+## 6. `createCPU` is currently unsatisfiable — evidence
+
+This is the single most important negative finding of Phase 0. On the current
+factory implementation, **no value of `msg.value` allows a processor to be
+created.**
+
+Disassembling implementation `0x336e9F0F4c3fEe7C8c803377e4DEA00293f4ae2a`
+(9,376 bytes, 29 dispatched functions), `createCPU`'s body begins at byte
+`0x1027`:
+
+```
+01027  JUMPDEST
+01028  POP
+01029  CALLVALUE
+0102d  PUSH3   0x000540
+0102e  JUMPI            ; if msg.value != 0 -> jump to 0x540
+...
+```
+
+and `0x540` is the shared empty-revert target:
+
+```
+00540  JUMPDEST
+00541  PUSH0
+00542  DUP1
+00543  REVERT           ; revert(0,0)
+```
+
+That `CALLVALUE / JUMPI` sequence is Solidity's **non-payable guard**. So:
+
+* **Paying** the 1e7 fee → trips the guard → `revert(0,0)` (empty).
+  Confirmed by trace: the call reverts after **179 gas, before any storage
+  read**, which is only possible for an immediate comparison.
+* **Paying nothing** → passes the guard → reaches the fee check → reverts with
+  `0xfb8f41b2` plus `(factory, 1e7)` (100 bytes of revert data).
+
+Hypotheses ruled out empirically (all failed identically, empty revert):
+
+* 9 combinations of sale-window timestamp (±30d, ±365d, ±1h), supply
+  (64, 1_000, 10_000, 100_000), `mintPrice` (0, 1), and `msg.value`
+  (`deployFee`, `deployFee+protocolFee`, `0.01 ether`);
+* 3 senders (alice, a fresh address, the test contract itself);
+* CREATE2 salt collision from a repeated name (tried unique names too);
+* owner-only gating (calling as `owner()` and as `alice` at 5 timestamps).
+
+Also checked: of the 29 functions in the dispatcher, **exactly one is payable**
+(`0x4f1ef286` → body at `0xdb7`), and its body writes the ERC-1967
+implementation slot `0x360894a1…` and `STATICCALL`s a proxy-admin check — it is
+the **admin upgrade path**, not a creation path. So there is no payable way to
+create a processor.
+
+**Consequence for Pago:** minting transistors and taping out a netlist of our own
+cannot be reproduced end-to-end on the current implementation. Tier 1
+(read-only use of existing public circuits) is unaffected. This is recorded as
+**UNSUPPORTED**, pinned by `test_createCPUIsCurrentlyUnsatisfiable` and
+`test_createProcessorAndTapeOutOnFork`, so the suite turns red the day TapeOut
+ships a payable `createCPU`.
+
+---
+
+## 7. Containers — address prediction, proven end to end
+
+`0x536adD8F30f03b69f6fbF29d425A816A0dC50106` (implementation
+`0xAC4f791353Ee9f06E2c50Ae4C34680d28ea52a57`) is a live **container opener**.
+Its selectors were resolved against the 4byte directory:
+
+| Selector | Signature | Value read live |
+|---|---|---|
+| `0x0a0e5c9d` | `open(address,uint256)` payable | — |
+| `0x0c1905e5` | `accountOf(address,uint256) returns (address)` | — |
+| `0xf13906b8` | `isDeployed(address,uint256) returns (bool)` | — |
+| `0xc57981b5` | `FEE()` | `8e16` wei |
+| `0xba9a91a5` | `SALT()` | `0` |
+| `0x61d027b3` | `treasury()` | `0xE2f77062…BB9d` |
+| `0xa6d23e10` | `payments()` | `0x13b8AFa4…4858` |
+| `0x7b103999` | `registry()` | `0x00000000…775758` |
+| `0x5c60da1b` | `implementation()` | `0xAC4f7913…2a57` |
+
+**`open`'s guards, decoded from the bytecode** (no source is published):
+
+1. It STATICCALLs `factory.isCPU(addr)` — selector `0x5f5a364f`. If that
+   returns false it reverts with the custom error **`0x5c69a867`**. The first
+   argument is therefore a **processor address**, not an arbitrary owner.
+2. It requires `msg.value >= FEE()` (`PUSH8 0x011c37937e080000` = 8e16).
+3. It resolves the second argument as an **ERC721 token on that processor's
+   circuits contract** and reverts with **`ERC721NonexistentToken(uint256)`**
+   if it does not exist. Confirmed: `ownerOf(1)` resolves on processor #340's
+   circuits contract, `ownerOf(7)`/`ownerOf(99)` revert.
+
+**Why this matters for Pago.** `accountOf(processor, circuitId)` returns the
+container address **before it exists**, deterministically, and `isDeployed` is
+provably consistent with `eth_getCode` at that address. So a payment link can be
+published (address and all) before any gas is spent, and a payer can check that
+the link resolves to the address they expect. Proven by
+`test_openWithFeeDeploysAtThePredictedAddress`, which opens a container on a
+fork and asserts code appears at the exact address predicted beforehand.
+
+> **A bug worth recording:** `vm.expectRevert` is consumed by *the next call*,
+> so writing `c.open{value: c.FEE()}(...)` after `expectRevert` makes the
+> expectation apply to the `FEE()` view call, not to `open`. The fee must be
+> read into a local first.
+
+---
+
+
+
+The path Pago will use: the payer signs an authorization once; a **third party**
+(the Pago relayer) submits it, so the payer never needs X Layer ETH for gas.
+
+Proven on both USDT0 and USDG:
+
+| Property | Result |
+|---|---|
+| `DOMAIN_SEPARATOR` matches an independently computed EIP-712 domain (version `"1"`) | ✅ |
+| Third party may call `transferWithAuthorization` | ✅ gas ≈ **107,918** (USDT0), **105,896** (USDG) |
+| Recipient may call `receiveWithAuthorization` on USDT0 | ✅ |
+| Third party calling `receiveWithAuthorization` on USDT0 | ❌ reverts `TetherToken: to != msg.sender` |
+| Replaying a used authorization | ❌ reverts, no second payment |
+| Authorization not yet valid (`validAfter` in future) | ❌ reverts |
+| Authorization expired (`validBefore` in past) | ❌ reverts |
+| Signature from a key that is not the payer's | ❌ reverts, nothing moves |
+
+**Design conclusion:** Pago uses `transferWithAuthorization`, submitted by a
+relayer. `receiveWithAuthorization` is unusable for a relayer on USDT0.
+
+> **Note for reviewers:** an earlier version of these tests reported
+> "invalid signature" for the third-party case. That was a bug in the test — it
+> signed with `keccak256("key", alice)` without deriving alice's address from
+> that key, so `ecrecover` returned a different address. Fixed by using
+> `makeAddrAndKey` and asserting `ecrecover(...) == alice` before every call.
+
+---
+
+## 9. Demo circuits found on-chain (for the "Verify rule" demo)
+
+X Layer's RPC rejects `eth_getLogs` ranges wider than **100 blocks**, so
+enumerating all 425 processors through events is impossible. The scan is
+therefore **bounded and documented**: indices `0..30` and `330..345`.
+
+Result: **25 processors with at least one circuit** in that range.
+
+| Processor | Address | Circuits | Notable |
+|---|---|---|---|
+| #30 | `0x2046aa63bFB03f393AD85a518011fdf8aF3DDB53` | 5 | #1/#2: 2-in/1-out/**3-NAND** gate; #3: 16-in/16-out, 1204 gates |
+| #333 | `0xE2a6c6393b5A8B99cb481035eB8e244C66641cd7` | 19 | 1-in/1-out/**1-NAND** |
+| #334 | `0x00586A4C37039aCbFC6aC135cAdd49367ABf390A` | 33 | LATCH-heavy (stateful) |
+| #340 | `0x9de448A1CE9537d24199B3b5355239d73aA6F591` | 1 | 4-in/1-out/6-NAND = 4-input AND (fully decoded, §5) |
+
+---
+
+## 10. Reference evaluator
+
+`contracts-evm/test/NetlistRef.t.sol` contains `Tap02`, a from-spec reference
+implementation of the TAP-02 format, plus a `Tap02Harness` external wrapper
+(`vm.expectRevert` cannot see a revert that happens inside an `internal` library
+call at the test's own depth).
+
+* **NAND is implemented** and proven **bit-for-bit against the chain** across all
+  16 input combinations of processor #340's circuit #1.
+* **LATCH and REF are parsed** (so record boundaries and opcode counts are
+  validated) but **deliberately rejected at evaluation time**. REF would need to
+  call another processor; LATCH feedback semantics are not implemented. A
+  reference model must never guess — it fails loudly instead.
+
+---
+
+## 11. Phase 0 items — resolved
+
+All three open items from the start of Phase 0 are now closed.
+
+### ✅ 1. TapeSend liveness — **NOT live on X Layer. Do not depend on it.**
+
+The TapeKit `send/README.md` states its status explicitly (dated 2026-09-18):
+
+> - Live on BNB Smart Chain. Other chains (Base, X Layer) are planned but not
+>   active.
+> - The hub is upgradeable until sealed; it has not been sealed yet.
+> - **Not independently audited.** All reviews so far were internal.
+
+TapeSend's hub is deployed only on chain 56 (BNB Smart Chain). **Pago must not
+depend on `tape://` links or on TapeSend messaging.** Container addresses
+(§7) are the usable primitive on X Layer instead.
+
+### ✅ 2. Container / name resolution — **verified working**
+
+See §7. `accountOf(processor, circuitId)` predicts the container address before
+deployment, `isDeployed` agrees with `eth_getCode`, and `open` deploys at exactly
+the predicted address. All proven by `test/Container.t.sol` (7 tests).
+
+### ✅ 3. Tier 1 satisfies the hackathon requirement — **confirmed in OKX's own words**
+
+From `web3.okx.com/xlayer/build-x-series`:
+
+> Your project must use TapeOut circuits, contracts or onchain data on X Layer
+> and provide the relevant addresses. Interfaces and other components do not need
+> to [use TapeOut]…
+
+and from `web3.okx.com/xlayer/build-x-hackathon/xcup`:
+
+> Ecosystem Integration: Effective use of TapeOut or ecosystem capabilities such
+> as DeWEB, FabX, TapeCode, TapeKit, and TapeSend to create meaningful product
+> value.
+
+**Read-only use of existing mainnet circuits therefore qualifies**, provided Pago
+publishes the addresses — which `docs/RESEARCH.md` §2 does. Note the judging
+criteria explicitly name TapeSend among *optional* ecosystem capabilities, which
+is consistent with it not being live on X Layer.
+
+Also confirmed: the hackathon runs **Oct 16 – Dec 7 2026**, $100,000 USDT across
+11 prizes (1 × $20k, 5 × $10k, 5 × $6k), submissions close **Dec 7 23:59 UTC**.
+
+---
+
+## 12. Reproducing this research
+
+```powershell
+$env:XLAYER_RPC = "https://rpc.xlayer.tech"
+cd contracts-evm
+forge test --fork-url $env:XLAYER_RPC
+```
+
+Known environment quirks:
+
+* The RPC intermittently fails DNS resolution — wrap commands in a retry loop.
+* `eth_getLogs` rejects ranges > 100 blocks.
+* `console.log` accepts at most 4 arguments in this forge-std version.
+* Stack-too-deep recurs without `via-ir`; split functions rather than adding
+  locals.

@@ -3,12 +3,24 @@
 # What it proves, on chain 1952, with real transactions:
 #
 #   leg A  the ordinary payer path   create -> approve -> pay -> claim
+#                                    rule split VALID (10+6+4 = 20 steps):
+#                                    the circuit accepts it and claim pays the
+#                                    rule table — payee 50%, seat 2+3 50% —
+#                                    NOT the default table. The deployer seat
+#            receiving money back is the visible proof the rule was selected.
 #   leg B  the gasless payer path    create -> off-chain EIP-3009 signature ->
 #                                    a *third party* submits it and pays the gas
 #                                    -> claim
+#                                    rule split INVALID (10+8+5 = 23 steps):
+#                                    the circuit rejects it and claim falls
+#                                    back to the default table — payee 100%.
 #
-# after both: the payee holds 2 x 995000, the fee account 2 x 5000, and the
-# contract holds 0 — the 0.5% fee split, conserved to the unit, onchain.
+# after both, measured from a snapshot taken before either link existed:
+#   payee    +1,492,500   (497,500 from the rule table + 995,000 default)
+#   deployer -1,492,500   (two 1,000,000 payments, +497,500 as a rule seat,
+#                          +2 x 5,000 fees it collects as the fee account)
+#   Pago     no change — it must hold exactly what it held before
+# and the three deltas must sum to zero: nothing created, nothing lost.
 #
 # Signing: two Foundry keystore aliases, created in YOUR terminal so the keys
 # never enter this repository or this conversation. This script only ever
@@ -216,7 +228,7 @@ if (-not $Pago -or -not $Token) {
     }
     Set-Location $EvmDir
     if ($deployOut -match "Pago deployed at:\s*(0x[0-9a-fA-F]{40})") { $Pago = $Matches[1] }
-    if ($deployOut -match "deployed test token \(pUSD\):\s*(0x[0-9a-fA-F]{40})") { $Token = $Matches[1] }
+    if ($deployOut -match "deployed test token \(pUSD[^)]*\):\s*(0x[0-9a-fA-F]{40})") { $Token = $Matches[1] }
     Write-Output $deployOut
     if ($Pago -and $Token) {
         @{ Pago = $Pago; Token = $Token; ChainId = 1952 } | ConvertTo-Json | Set-Content $DeployFile
@@ -233,11 +245,20 @@ $codeLen = (Call "Pago code" { cast code $Pago --rpc-url $Rpc }).Length
 Write-Host ("  Pago  {0}  ({1} hex chars of code)" -f $Pago, $codeLen) -ForegroundColor Cyan
 if ($codeLen -le 2) { throw "no contract code at $Pago" }
 
+# Rule 6 evidence, read straight from the deployment: the stand-in processor
+# must pass Pago's known-answer check, or every link would be capped. The
+# processor is an EVM stand-in, NOT hardware — TapeOut exists only on mainnet.
+$processor = Call "processor" { cast call $Pago "processor()(address)" }
+$pinned = Call "evaluatorPinned" { cast call $Pago "evaluatorPinned()(bool)" }
+Write-Host ("  processor {0}  (EVM stand-in for the TapeOut processor - not hardware)" -f $processor) -ForegroundColor DarkYellow
+if ($pinned -ne "true") { throw "changeDetector did not pass (evaluatorPinned = $pinned): every link would be capped. Inspect the processor before going further." }
+Write-Host ("  evaluatorPinned {0}  (known-answer check passed at deploy)" -f $pinned) -ForegroundColor Green
+
 # ── 3. fund the payer with test tokens ─────────────────────────────────────
 
 $Amount = 1000000            # 1.00 pUSD, 6 decimals
 $Mint = 10000000             # 10.00 pUSD to play with
-$FeeBps = [int](Call "fee bps" { cast call $Pago "feeBps()(uint16)" })
+$FeeBps = [int](Call "fee bps" { cast call $Pago "feeBps()(uint256)" })
 
 Write-Host ("`nfunding the payer: mint {0} pUSD -> {1}" -f $Mint, $Deployer) -ForegroundColor Cyan
 Send-Tx "mint pUSD" { cast send $Token "mint(address,uint256)" $Deployer $Mint --account $DeployerAlias --rpc-url $Rpc --json } | Out-Null
@@ -255,25 +276,40 @@ $stamp = Get-Date -Format "yyMMdd-HHmmss"
 $IdA = "pago-$stamp-a"
 $IdB = "pago-$stamp-b"
 
+# The two preset split tables every link carries (contract rules 2 and 3):
+#   default — who always gets paid; shares must sum to exactly 20 steps (100%)
+#   rule    — the candidate the Split3 circuit judges at claim; its sum is the
+#             verdict, so 20 passes and 23 is rejected by the hardware
+# Both are passed to createLink as (address[3],uint8[3]) tuples.
+$Z = "0x0000000000000000000000000000000000000000"
+$DefSplit = '(["{0}","{1}","{2}"],[20,0,0])' -f $Payee, $Z, $Z          # payee 100%
+$RuleSplitOk = '(["{0}","{1}","{2}"],[10,6,4])' -f $Payee, $Deployer, $Deployer   # 20 steps: accepted
+$RuleSplitBad = '(["{0}","{1}","{2}"],[10,8,5])' -f $Payee, $Deployer, $Deployer  # 23 steps: rejected
+$CreateSig = "createLink(string,uint256,address,string,uint64,(address[3],uint8[3]),(address[3],uint8[3]))"
+
 # ── 4. leg A: the ordinary payer path ──────────────────────────────────────
 
 Write-Host "`nleg A - ordinary pay (payer sends the transaction)" -ForegroundColor Cyan
 Send-Tx "createLink $IdA" {
-    cast send $Pago "createLink(string,uint256,address,string,uint64)" $IdA $Amount $Token "live test: ordinary payer path" 0 `
+    cast send $Pago $CreateSig $IdA $Amount $Token "live test: ordinary payer path" 0 $DefSplit $RuleSplitOk `
         --account $PayeeAlias --rpc-url $Rpc --json
 } | Out-Null
 Send-Tx "approve" {
     cast send $Token "approve(address,uint256)" $Pago ([uint64]::MaxValue) --account $DeployerAlias --rpc-url $Rpc --json
 } | Out-Null
+# Terms consent (rule 4): pay demands the hash of everything this payer is
+# agreeing to, read from the chain — fetched after createLink, before pay.
+$termsA = Call "termsHash($IdA)" { cast call $Pago "termsHash(string)(bytes32)" $IdA }
+Write-Host ("  termsHash {0}" -f $termsA) -ForegroundColor DarkGray
 Send-Tx "pay $IdA" {
-    cast send $Pago "pay(string,uint256)" $IdA $Amount --account $DeployerAlias --rpc-url $Rpc --json
+    cast send $Pago "pay(string,uint256,bytes32)" $IdA $Amount $termsA --account $DeployerAlias --rpc-url $Rpc --json
 } | Out-Null
 
 # ── 5. leg B: the gasless payer path ───────────────────────────────────────
 
 Write-Host "`nleg B - gasless pay (payer signs off-chain, payee submits)" -ForegroundColor Cyan
 Send-Tx "createLink $IdB" {
-    cast send $Pago "createLink(string,uint256,address,string,uint64)" $IdB $Amount $Token "live test: gasless payer path" 0 `
+    cast send $Pago $CreateSig $IdB $Amount $Token "live test: gasless payer path" 0 $DefSplit $RuleSplitBad `
         --account $PayeeAlias --rpc-url $Rpc --json
 } | Out-Null
 
@@ -306,9 +342,13 @@ $sig = $sigJson
 if ($sigJson -match "0x[0-9a-fA-F]{130}") { $sig = $Matches[0] }
 Write-Host ("  signed by {0} ({1} bytes)" -f $DeployerAlias, (($sig.Length - 2) / 2)) -ForegroundColor DarkGray
 
+# Terms consent (rule 4) for the gasless path too: same onchain hash, passed
+# as the final argument of payWithAuthorization.
+$termsB = Call "termsHash($IdB)" { cast call $Pago "termsHash(string)(bytes32)" $IdB }
+Write-Host ("  termsHash {0}" -f $termsB) -ForegroundColor DarkGray
 Send-Tx "payWithAuthorization $IdB" {
-    cast send $Pago "payWithAuthorization(string,address,uint256,uint64,uint64,bytes32,bytes)" `
-        $IdB $Deployer $Amount 0 $validBefore $nonce $sig `
+    cast send $Pago "payWithAuthorization(string,address,uint256,uint64,uint64,bytes32,bytes,bytes32)" `
+        $IdB $Deployer $Amount 0 $validBefore $nonce $sig $termsB `
         --account $PayeeAlias --rpc-url $Rpc --json
 } | Out-Null
 
@@ -328,27 +368,36 @@ $heldAfter = [bigint](Call "pUSD held by Pago" { cast call $Token "balanceOf(add
 $links = Call "links created by payee" { cast call $Pago "linkCountByCreator(address)(uint256)" $Payee }
 
 # What this run alone should have moved, measured from the snapshot above:
-#   payee      + two payouts of 995000 (the 0.5% fee was taken off each)
-#   deployer   - two payments of 1000000, + the two 0.5% fees it collects
-#   Pago       no change: it must hold exactly what it held before
+#   leg A paid the RULE table (10/6/4 of 20 steps): payee 497,500,
+#           deployer-seat 497,500 — the deployer getting money back is what
+#           distinguishes "circuit selected the rule" from the fallback
+#   leg B fell back to the DEFAULT table: payee 995,000 in full
+#   payee    = 497,500 + 995,000 = 1,492,500
+#   deployer = -2 x 1,000,000 payments + 497,500 rule seat + 2 x 5,000 fees
+#   Pago     no change: it must hold exactly what it held before
 # and the three deltas must sum to zero - nothing created, nothing lost.
 $payeeDelta = $payeeAfter - $payeeBefore
 $deployerDelta = $deployerAfter - $deployerBefore
 $heldDelta = $heldAfter - $heldBefore
-$expectedPayout = [bigint]2 * [bigint]$Amount * [bigint](10000 - $FeeBps) / 10000   # 1,990,000
-$expectedFee = [bigint]2 * [bigint]$Amount * $FeeBps / 10000                        # 10,000
+$payout = [bigint]$Amount * [bigint](10000 - $FeeBps) / 10000     # 995,000 post-fee
+$fee = [bigint]$Amount * $FeeBps / 10000                          # 5,000
+$rulePayee = $payout * 10 / 20                                    # leg A, seat 1
+$ruleDeployer = $payout * (6 + 4) / 20                            # leg A, seats 2+3
+$expectedPayout = $rulePayee + $payout                            # 1,492,500
+$expectedDeployer = [bigint](-2 * $Amount) + $ruleDeployer + 2 * $fee   # -1,492,500
 $sum = $payeeDelta + $deployerDelta + $heldDelta
 
 Write-Host ("  links created by payee      {0} (informational)" -f $links)
-Write-Host ("  payee change                {0} (want {1} = 2 payouts)" -f $payeeDelta, $expectedPayout)
-Write-Host ("  deployer change             {0} (want {1} = -2 payments + 2 fees)" -f $deployerDelta, ([bigint](-2 * $Amount) + $expectedFee))
+Write-Host ("  payee change                {0} (want {1} = rule 497,500 + default 995,000)" -f $payeeDelta, $expectedPayout)
+Write-Host ("  deployer change             {0} (want {1} = -2 payments + rule seat + 2 fees)" -f $deployerDelta, $expectedDeployer)
 Write-Host ("  held by Pago change         {0} (want 0 - nothing left inside)" -f $heldDelta)
 Write-Host ("  deltas sum to               {0} (want 0 - every unit accounted for)" -f $sum)
 
 $ok = ($heldDelta -eq 0) -and ($sum -eq 0) -and ($payeeDelta -eq $expectedPayout) `
-    -and ($deployerDelta -eq ([bigint](-2 * $Amount) + $expectedFee))
+    -and ($deployerDelta -eq $expectedDeployer)
 if ($ok) {
-    Write-Host "`nPASS - both payer paths settled live on X Layer testnet, every unit accounted for." -ForegroundColor Green
+    Write-Host "`nPASS - leg A settled through the rule table, leg B through the fallback default," -ForegroundColor Green
+    Write-Host "both payer paths live on X Layer testnet, every unit accounted for." -ForegroundColor Green
 } else {
     Write-Host "`nFAIL - balances do not match the expected split. Inspect the transactions above." -ForegroundColor Red
     exit 1

@@ -5,6 +5,10 @@
 > slot, and what taping out actually requires — and §14 prices the mainnet
 > tape-out that is deliberately **not** started. Read §13–§14 as current and
 > §10 as superseded where they disagree.
+>
+> **Update (contract rules):** §17 implements the master prompt's rules 1–10
+> (`docs/MASTER_PROMPT.md`), redeploys Pago on testnet with the new interface,
+> and supersedes §15's addresses. §16's closing audit bullet is resolved there.
 
 Everything below was **read from X Layer mainnet (chain 196) or proven on a local
 fork of it** during Phase 0. Nothing here is taken from documentation alone:
@@ -594,6 +598,12 @@ The circuit is the only part that needs mainnet money.
 
 ## 15. Phase 2 — live on X Layer testnet (chain 1952), 2026-11-18
 
+> **Superseded by §17.** The contract interface changed when the master
+> prompt's rules 1–10 were implemented, so the Pago address below is the
+> *previous* deployment (it remains on chain and on the explorer as the
+> record of this run; §17 has the current contracts). The run itself — both
+> payer paths, reconciliation to the unit — stands as written.
+
 Everything in this section was read back from the chain or printed by
 `contracts-evm/script/testnet-exercise.ps1`. Nothing is inferred.
 
@@ -837,9 +847,184 @@ with its 0.995 receipt, and an unknown id.
   §13 (our own processor, ≈0.11 BEM) keeps control with the deployer. The
   README says the same. **Per-link cap:** not implemented.
 - **The contract-rule audit was made against the code alone**, because the
-  master prompt's rule list is not in this repository: token allowlist ✅
-  (`_allowedTokens`, fixed at construction); Split3 rule ❌ (the circuit exists
-  and is exhaustively verified, but `Pago` never calls it); default-split
-  fallback ❌; terms hash ❌; per-link cap ❌. Closing this audit needs the
-  prompt's exact rule text.
+  master prompt's rule list was not in this repository. It has since been
+  recorded verbatim (`docs/MASTER_PROMPT.md`) and every gap it found is closed
+  in §17: token allowlist ✅, Split3 rule ✅, default-split fallback ✅, terms
+  hash ✅, per-link cap ✅.
+
+---
+
+## 17. Contract rules 1–10: closing the gaps, and the redeployed testnet, 2026-11-18
+
+The master prompt's rule list (recorded verbatim in
+`docs/MASTER_PROMPT.md`) was audited against the code at the end of §16 and
+found five gaps: the circuit existed but `Pago` never called it, there was no
+default-split fallback, no terms hash, no per-link cap, and no stored
+`evaluatorPinned` flag. All five are closed here, along with the rest of
+rules 1–10.
+
+**Why this came before the demo video.** Adding the rule interface changes
+`createLink` / `pay` / `payWithAuthorization` / `getLink` shapes, so the
+contract's address changes, which invalidates §15's addresses, §16's ABI
+codec and the nine recorded §15 transactions *as a description of the live
+system*. Recording a video first would have shown a product about to be
+replaced the same week.
+
+**What this section supersedes.** §15's Pago/token addresses and its nine
+transaction hashes (the superseded interface remains on chain as the
+historical record of that run), and §16's closing audit bullet. §16's codec
+still speaks the old ABI — updating the frontend is the next phase.
+
+### The audit — every rule, as implemented
+
+| # | Rule (abridged from `MASTER_PROMPT.md`) | Implemented as | Proven by |
+|---|---|---|---|
+| 1 | `claim(linkId)` takes no result arguments, anyone can call it, pays only the recipients and the fee account, never the caller | `claim(string)` — no result params; `_payLeg` transfers only to the selected table's `recipients[i]` and `feeAccount`; the caller is never a recipient by construction | `Pago.t.sol` claim suite (caller's balance stays 0); `PagoRule.t.sol` leg tests |
+| 2 | Contract derives the rule inputs from its own state; strict gas-limited `staticcall`, exact return length, strict decoding; output only selects among preset tables fixed at creation; a rule can never invent a split | `_ruleApplies` packs the rule table's shares **from storage**; `_eval` staticcalls with `EVAL_GAS_LIMIT` = 500k; `_decodeEvalReturn` demands ret.length == 96, offset == 32, length == 1, payload ∈ {0,1}, zero padding; the bit selects `l.ruleSplit` vs `l.defaultSplit` — both written once by `createLink`, no setter | `PagoRule.t.sol`: valid table → rule pays; revert / wrong length / dirty padding / gas hog / lying / vanished processor → default pays |
+| 3 | Default split fixed at creation with no setter; processor revert, malformed data, out of gas or failed check → default; a link must never freeze | `createLink` writes both tables once; no setter exists; any `_eval` anomaly returns false; plus a solvency check: a rule table whose shares don't sum to `SPLIT_STEPS` is refused **even if the evaluator said yes**; `claim` reverts only on "link not found" / "link is not paid" | every fallback test above, including `vm.etch(processor, "")` after creation ("the processor vanishes") |
+| 4 | `terms(linkId)` and `termsHash`; `pay` and `payWithAuthorization` take `expectedTermsHash` and revert on mismatch; does **not** prove what the payer saw | `_termsBytes` = `abi.encode` of every immutable field (id, amount, token, description, expiry, **both split tables**, fee bps, fee account, `netlistHash`, `processor`, `circuitId`); guard order: settleable → nonce → terms; the contract's own doc says this binds the payer to the terms *recorded onchain*, nothing more | `PagoRule.t.sol` terms tests (mismatch moves nothing); live `termsHash` read by the exercise script before each payment (below) |
+| 5 | `createLink` reverts if the circuit's netlist identity can't be read; store its hash | `_readNetlist()` staticcalls `netlist(circuitId)` under a 200k gas cap; empty/revert/malformed → `"circuit netlist is unreadable"`; `l.netlistHash = keccak256(nl)` stored per link | `PagoRule.t.sol`: `FaultyProcessor.NoNetlist` reverts creation; honest links store `keccak256(Split3.netlist())` |
+| 6 | `evaluatorPinned` flag; the known-answer check is named `changeDetector`, never "pin"; while unpinned, cap every link at `MAX_LINK_AMOUNT_UNPINNED[token]` in base units | constructor runs `evaluatorPinned = changeDetector()` — six known-answer vectors (valid sums → 1, invalid → 0) against the deployed processor; `createLink` enforces the cap while unpinned; the constructor refuses a zero cap | `Pago.t.sol` stand-in passes at deploy; `PagoRule.t.sol`: reverting/lying processor leaves unpinned, cap enforced to the unit, pinned deployment uncapped; live `evaluatorPinned: true` (below) |
+| 7 | Token allowlist fixed at deploy; store expected decimals as written by us; never read `decimals()` at runtime for safety limits; deploy script aborts on mismatch | `TokenConfig{token, decimals_, unpinnedCap}` is constructor-only; `expectedDecimals[token]` stored; `Pago` never calls `decimals()` anywhere; `Deploy.s.sol` reads the onchain value **once** and `require`s it equals `PAGO_EXPECTED_DECIMALS` | constructor tests; deploy log `token decimals (chain == expected): 6` (below) |
+| 8 | No `markPaid`; underpay reverts, overpay credited, double pay reverts, creator can't self-pay, fee leg skipped if it rounds to zero | `_requireSettleable` (allowlist → exists → `Open` → not creator → `amount >= l.amount` → not expired) before any transfer; `paidAmount` stores what arrived; `if (fee > 0)` skips a zero fee | `Pago.t.sol` pay suite + `test_tinyInvoiceChargesNoFeeInsteadOfTransferringZero` |
+| 9 | One failing recipient must not block the others | each seat (and the fee) is an **independent** `_payLeg`: a failed transfer becomes `owed[recipient][token]` + `LegOwed`, the other legs still run; `withdrawOwed(token)` pays the caller their own storage balance only; claim never reverts on transfer failure | `PagoRule.t.sol` with `MockToken.blockedRecipient`: blocked seat owed, others paid in the same tx, then withdrawn to the unit |
+| 10 | Fuzz and invariant tests: payouts + fee == credited; balance ≥ owed; status never goes backward | `test/Pago.invariant.t.sol`: a handler interleaves create/pay/claim/cancel/withdraw, records violations as flags (a reverting handler would roll them back); 4 invariants + a 256-run conservation fuzz | PASS: 256 runs, **128,000 handler calls, 0 reverts**, all four invariants; fuzz 256 runs (below) |
+
+**One honest note on rule 2's inputs.** The rule names due date vs
+`block.timestamp`, the credited amount, and creation-fixed fields as inputs.
+Split3's input space is exactly three 5-bit shares (15 bits) — there are no
+spare input bits for a deadline or an amount. The deadline is therefore
+enforced where it belongs (`pay` refuses an expired link against
+`block.timestamp`), the credited amount is what `claim` derives the payout
+base from, and the circuit receives the creation-fixed share fields. The
+processor still only ever *selects* between two tables this contract stored;
+it is never asked to compute money.
+
+### The processor stand-in on testnet — not hardware
+
+TapeOut exists **only on X Layer mainnet**: `eth_getCode` on the TapeFactory
+proxy `0x1f09DAeFA827f02CBb40967cc91b259763760761` returns `0x` on chain 1952
+and a 262-byte proxy on chain 196 (probe run for this phase; §2 has the
+mainnet reading). Without a processor, rules 2, 5 and 6 could not be
+exercised live on the chain the hackathon rules require development against.
+
+`test/mocks/ProcessorStandIn.sol` fills that gap and is labelled everywhere
+as what it is:
+
+- implements the exact `IRuleProcessor` surface Pago calls (`eval`,
+  `circuitInfo`, `netlist`, `nextId`);
+- `netlist(1)` returns the **byte-for-byte Split3 netlist** that would be
+  taped out on mainnet, so the identity Pago stores (rule 5) is real;
+- `eval(1, inputs)` executes those bytes gate by gate through the same
+  `Tap02` evaluator proven bit-for-bit against a live mainnet processor (§4)
+  — the verdict comes from the netlist, not from a hard-coded answer;
+- the deploy log says `DEPLOYED PROCESSOR STAND-IN (EVM, not hardware)`, the
+  exercise script prints `EVM stand-in for the TapeOut processor - not
+  hardware`, and every doc that shows this contract says "stand-in".
+
+On mainnet tier 2, **only the constructor argument changes**: `PAGO_PROCESSOR`
+points at the real taped-out processor; nothing in `Pago` changes.
+
+### Test evidence — all run 2026-11-18
+
+| Suite | Command | Result |
+|---|---|---|
+| Local: `PagoTest`, `PagoRuleTest`, `PagoInvariantTest`, `PagoFuzzTest`, `Split3Test`, `Tap02Test`, `MockToken`… | `forge test --no-match-contract "Fork\|Container\|DemoCircuits\|NetlistRef"` | **105 passed, 0 failed** |
+| Mainnet-fork reads: `Container`, `DemoCircuits`, `NetlistRef` | `XLAYER_RPC` set, `--match-contract "Container\|DemoCircuits\|NetlistRef"` | **15 passed, 0 failed** |
+| `Phase0Fork` (Phase 0 claims vs live chain 196) | `XLAYER_RPC` set, `--match-contract Phase0Fork` | **11 passed, 0 failed** |
+| **Total** | | **131 passed, 0 failed, 0 skipped** |
+
+Every processor fault the rules name has a matching mock
+(`test/mocks/FaultyProcessor.sol`), and each one is proven to land on the
+default split instead of freezing the link:
+
+| Mode | What the evaluator does | Result at `claim` |
+|---|---|---|
+| `Revert` | `eval` reverts | default pays |
+| `Short` | returns a 2-byte payload (decoder demands exactly 1) | default pays |
+| `DirtyPad` | right length, payload 0x01, non-zero padding byte | default pays |
+| `GasHog` | burns past the 500k gas cap | default pays |
+| `Lie` | always answers 1 — even for an unsafe 23-step table | default pays (the contract's own solvency check refuses the lie) |
+| `NoNetlist` | `netlist()` reverts | `createLink` reverts ("circuit netlist is unreadable") |
+| (vanish) | `vm.etch` empties the processor *after* creation | default pays |
+
+Two bugs the suite caught while being written, both recorded because they
+are exactly what tests are for: the stand-in originally returned
+`abi.encode(bytes1(...))` — a 32-byte payload that Pago's strict decoder
+correctly rejected, which silently failed `changeDetector` and pinned
+nothing; and inline `pago.termsHash(...)` inside a `pay(...)` argument list
+is an *external call evaluated before `pay`*, consuming the test's
+`vm.prank`/`vm.expectRevert` — the suite now caches each link's hash at
+creation.
+
+### Live testnet redeploy (chain 1952), 2026-11-18
+
+Read back from chain after deploy:
+
+| What | Address | Deploy tx |
+|---|---|---|
+| **Pago** (rules 1–10, 14,529 bytes) | `0x2fC4180db7318F4364F6FC559A25359c9F537D3e` | `0x24f4c64df6b564fae4a927109e87976b6c49de2404380e2188745e8ff4e65673` |
+| pUSD **(MOCK**, 6 decimals, freely mintable, no backing) | `0x3693a61572C1c5f120Da39A6F4e616ce46D32de4` | `0x995d3525fa5b2d5e4b28a7ad87cb4981a07ce9ecadfad950aa48f5bcfa2cbe43` (mint to deployer: `0x591d2e946de59a57af8c74ca4c39140b1fab764eb76af70ded97103cf379fcc9`) |
+| **ProcessorStandIn** (EVM, **not hardware**) | `0x67a9B6F2AE5488B8ee993F019FE867E97585DEEF` | `0x7f3f3dffc28552920358280a782f8fe2d8a773fcc3da466fc6d2224d84fe99ba` |
+
+Constructor state read back live: `evaluatorPinned: true` (the stand-in
+passes `changeDetector` at deploy), unpinned cap `10,000,000,000` base units
+(10,000 pUSD), fee 50 bps, circuit id 1, fee account = deployer.
+
+`script/testnet-exercise.ps1` then settled two real invoices, one per payer
+path, with the two split tables doing different work on purpose:
+
+- **leg A** — ordinary `pay`, rule table `10/6/4` (= 20 steps, valid): the
+  circuit **accepts** it and `claim` pays the rule table (payee 497,500,
+  deployer-seat 497,500) instead of the default. The deployer receiving money
+  back is the visible proof the rule was selected.
+- **leg B** — gasless `payWithAuthorization` relayed by the payee, rule table
+  `10/8/5` (= 23 steps, invalid): the circuit **rejects** it and `claim`
+  falls back to the default table (payee 995,000 in full).
+
+| Step | Tx |
+|---|---|
+| mint 10 pUSD to the payer | `0xe384cf41ebbeb701142256858d5c2d9104d1c39b475e2c4250a6653e0fc07ffb` |
+| leg A `createLink` (two split tuples) | `0x815f6bdfc1979798dd30e78a166b5b54dfc281f64638652c489205cb9aa3de4d` |
+| leg A `approve` | `0xc99d4cd130dfa707901be6409d4ebe64415eef7e2ad329c03ebf4f53cc3d2288` |
+| leg A `pay` (terms hash `0x80f60f57…c5548`) | `0xa656cebb69eae73a8e1e0cd8e88331f627124594465f1372eafb6bfc23a9db20` |
+| leg B `createLink` (invalid rule table) | `0xb00743595add3e557831f65462ed6bde2bbfea000a50178c1a7d8b33393497a5` |
+| leg B `payWithAuthorization` (terms hash `0x84d97d01…91b49`) | `0x6ac233df041b997ce16615190f5c8d2fcc31107719c42a57458454db01eb5a3a` |
+| `claim` leg A (rule table) | `0xe672fc89f39688c1769a057ace87072f906bd27a97a3432102616f74f11ec9fc` |
+| `claim` leg B (fallback) | `0xec457bf075ce1545154d5729ee44909a25982cb3c4723ed1bdc374cc47c5f3fb` |
+
+Reconciliation, measured from a snapshot taken before either link existed:
+
+```
+payee change        1,492,500   (rule 497,500 + default 995,000)
+deployer change    -1,492,500   (two 1,000,000 payments + rule seat 497,500 + 2 x 5,000 fees)
+held by Pago change        0    (nothing left inside)
+deltas sum to              0    (every unit accounted for)
+PASS - leg A settled through the rule table, leg B through the fallback default,
+both payer paths live on X Layer testnet, every unit accounted for.
+```
+
+### Function selectors (`cast sig`, 2026-11-18)
+
+| Selector | Signature |
+|---|---|
+| `0x6c5b7a11` | `createLink(string,uint256,address,string,uint64,(address[3],uint8[3]),(address[3],uint8[3]))` |
+| `0x8032337c` | `pay(string,uint256,bytes32)` |
+| `0x69c1372a` | `payWithAuthorization(string,address,uint256,uint64,uint64,bytes32,bytes,bytes32)` |
+| `0xe93341c4` | `termsHash(string)` |
+| `0x67cec07b` | `terms(string)` |
+| `0xf3fe12c9` | `claim(string)` — unchanged |
+| `0x84ff6985` | `withdrawOwed(address)` |
+
+`getLink` / `getLinksByCreator` keep their signatures but their `Link`
+struct grew (two `Split` tables + `netlistHash`), so decoders change even
+where selectors do not.
+
+### Still open, unchanged by this phase
+
+- **Mainnet gates** are exactly as `docs/MASTER_PROMPT.md` records them: no
+  phrase has been given, chain 196 stays read-only, no token purchase may be
+  made without first quoting a dollar cost and asking.
+- **Q2 tier 3 scope** remains unrecorded and is deliberately not guessed.
+- The frontend codec (§16) still speaks the superseded ABI — next phase.
 

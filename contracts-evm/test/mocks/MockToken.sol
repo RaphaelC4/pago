@@ -30,10 +30,15 @@ contract MockToken {
     /// EIP-3009: one authorization may be used exactly once, keyed by signer.
     mapping(address => mapping(bytes32 => bool)) public authorizationUsed;
 
-    /// Test hook: when true every `transfer` / `transferFrom` reverts. Lets a
-    /// test prove that a failed payout leaves the link `Paid` and retryable -
-    /// the property `on_claimed` existed to provide on NEAR.
+    /// Test hook: when true every `transfer` / `transferFrom` reverts. Used to
+    /// prove that a claim whose transfers all fail still completes: the money
+    /// becomes owed (rule 9) instead of freezing the link (rule 3).
     bool public transfersFailing;
+
+    /// Test hook: per-recipient transfer failures. A transfer *to* a blocked
+    /// account reverts while transfers to everyone else succeed, which is how
+    /// rule 9 (one failing recipient must not block the others) is proven.
+    mapping(address => bool) public blockedRecipient;
 
     bytes32 public constant EIP712_DOMAIN_TYPEHASH = keccak256(
         "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
@@ -62,6 +67,10 @@ contract MockToken {
 
     function setTransfersFailing(bool failing) external {
         transfersFailing = failing;
+    }
+
+    function setBlockedRecipient(address who, bool blocked) external {
+        blockedRecipient[who] = blocked;
     }
 
     // ── ERC-20 ─────────────────────────────────────────────────────────────
@@ -141,6 +150,7 @@ contract MockToken {
 
     function _move(address from, address to, uint256 amount) private {
         require(!transfersFailing, "mock transfer failure");
+        require(!blockedRecipient[to], "recipient blocked");
         require(balanceOf[from] >= amount, "insufficient balance");
         unchecked {
             balanceOf[from] -= amount;

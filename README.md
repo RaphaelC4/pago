@@ -366,14 +366,18 @@ invoiced one.
 ## Pago — the same product on X Layer
 
 **Status:** live on **X Layer testnet (chain 1952)** — Pago
-`0x3b5B96391039bf36A04CD447982a83510B23A6C5`, pUSD **(MOCK)**
-`0x229A19B9D237629FC0c94812d21a4cf2b22B3615` — with both payer paths run end
-to end and reconciled to the unit
-([`docs/RESEARCH.md` §15](docs/RESEARCH.md)), and its own page at
-`frontend/xlayer.html` (below). **X Layer mainnet (chain 196) is read-only:**
-nothing has been spent there, and nothing will be without an explicit approval
-phrase. This section describes what exists in `contracts-evm/` and
-`frontend/` today.
+`0x2fC4180db7318F4364F6FC559A25359c9F537D3e`, pUSD **(MOCK)**
+`0x3693a61572C1c5f120Da39A6F4e616ce46D32de4`, processor stand-in **(EVM, not
+hardware)** `0x67a9B6F2AE5488B8ee993F019FE867E97585DEEF` — with both payer
+paths run end to end, the circuit's rule selecting one split table and its
+rejection falling back to the other, reconciled to the unit
+([`docs/RESEARCH.md` §17](docs/RESEARCH.md)), and its own page at
+`frontend/xlayer.html` (below). The contract gained the master prompt's
+split-rule interface (rules 1–10, [`docs/MASTER_PROMPT.md`](docs/MASTER_PROMPT.md))
+in that phase; the page's ABI codec is being updated to match as the next
+phase. **X Layer mainnet (chain 196) is read-only:** nothing has been spent
+there, and nothing will be without an explicit approval phrase. This section
+describes what exists in `contracts-evm/` and `frontend/` today.
 
 This repository now carries two builds of one product:
 
@@ -395,10 +399,10 @@ USD₮0 and USDG, were proven to support that on X Layer mainnet during Phase 0.
 
 | Concern | NEAR | Pago on X Layer |
 | --- | --- | --- |
-| Recognising payment | the **token contract** calls `ft_on_transfer` with the link id | the payer calls `pay(linkId, amount)`, or a relayer submits their EIP-3009 signature — either way the tokens physically move in the same call, so there is no status write a caller can make without paying |
+| Recognising payment | the **token contract** calls `ft_on_transfer` with the link id | the payer calls `pay(linkId, amount, expectedTermsHash)`, or a relayer submits their EIP-3009 signature — either way the tokens physically move in the same call, so there is no status write a caller can make without paying |
 | Creation stake | 0.01 NEAR, attached by the relayer | **gone.** EVM storage is paid in gas by whoever sends the transaction; an escrow for a record that holds no money would serve no purpose |
 | "attach exactly 1 yocto" | required on every state change | **gone.** State-changing calls are already transaction-scoped and signed; the yocto guard protects against nothing here |
-| `on_claimed` callback | needed, because NEAR's transfer batch can fail *after* `claim` has written `Claimed` | **gone.** Writes and transfers happen in one transaction: if a transfer fails everything reverts, the link goes back to `Paid` on its own, and anyone retries. That is the same guarantee, obtained from atomicity instead of a callback |
+| `on_claimed` callback | needed, because NEAR's transfer batch can fail *after* `claim` has written `Claimed` | **replaced, not ported.** Each payout leg is independent: a leg whose transfer fails leaves its amount in the contract as `owed[recipient][token]`, withdrawable by that recipient alone, while every other leg — including the fee — still pays in the same transaction. `claim` never reverts on a transfer failure, so there is nothing to rewind and nothing to retry |
 | Token registration | NEP-145 `storage_deposit` before payout | **gone.** ERC-20 has no per-account registration |
 | Fee | 0.5%, constant, to a fee account fixed in `new()` | **identical** — 50 bps, `feeAccount` immutable, set in the constructor, no setter |
 | Expiry | `Expired` derived on read, never stored | **identical** |
@@ -413,7 +417,7 @@ equivalent is an EIP-2771 / EIP-712 meta-transaction for `createLink`, which
 does not exist in this build: today the payee's creation is a normal
 transaction they pay for. The **payment** side is the reverse — the payer can
 sign an EIP-3009 authorization and never touch gas at all. Closing the
-creation gap is Phase 2/3 work, and is stated here rather than implied.
+creation gap is stated here rather than implied.
 
 ### Why a circuit
 
@@ -441,6 +445,29 @@ piece of published hardware instead:
   count the gates themselves. There is no privileged reader, no oracle, and no
   admin who can relax the rule without deploying visibly different code.
 
+**Pago now actually calls it.** Every link carries two split tables fixed at
+creation: a *default* (must pay out exactly 100%, no setter) and a *rule*
+candidate (shares 0–31, their sum is precisely what Split3 judges). At
+`claim`, the contract derives the inputs from its own state and asks the
+processor a strict, gas-limited `staticcall` — exact return length, strict
+decoding — whose single output bit only ever **selects** between those two
+stored tables; a rule can never invent a split, a recipient or an amount.
+Whatever the processor does — reverts, returns malformed data, runs out of
+gas, lies about an unsafe split, or vanishes — the default table pays, so a
+link can never freeze. If the evaluator is not pinned by its `changeDetector`
+known-answer check at deploy, every link is capped at
+`MAX_LINK_AMOUNT_UNPINNED[token]`. Full rule-by-rule audit:
+[`docs/RESEARCH.md` §17](docs/RESEARCH.md).
+
+**On testnet that processor is a labelled stand-in, not hardware.** TapeOut
+exists only on X Layer mainnet (the factory has no code on chain 1952 —
+probe recorded in §17), so `test/mocks/ProcessorStandIn.sol` implements the
+same interface and runs the **real Split3 netlist bytes** through the same
+TAP-02 evaluator that was proven bit-for-bit against a live mainnet
+processor. The verdicts come from the netlist; the deploy log says
+"EVM stand-in, not hardware"; mainnet tier 2 replaces only the constructor
+argument.
+
 The other reason is the hackathon: the X Layer TapeOut Accelerate track
 explicitly asks for TapeOut circuits, contracts or onchain data
 ([evidence in `docs/RESEARCH.md` §11](docs/RESEARCH.md)).
@@ -463,21 +490,38 @@ Identical in spirit to the NEAR build, and the tests assert the same
 properties:
 
 - **Funds move only per what the contract computed from its own onchain
-  state**, or per the visible default split. No function accepts a recipient or
-  an amount that the contract did not derive itself.
+  state**, or per one of the two split tables fixed at link creation — the
+  default, or the rule table the circuit's verdict selected. No function
+  accepts a recipient or an amount that the contract did not derive itself.
 - **`claim(linkId)` takes no result arguments, is callable by anyone, and can
-  only pay the invoice's payee and the fee account — never the caller.** The
-  money cannot be routed anywhere else by whoever triggers it.
+  only pay the selected table's recipients and the fee account — never the
+  caller.** The money cannot be routed anywhere else by whoever triggers it.
+- **A payer consents to the onchain terms.** `pay` and `payWithAuthorization`
+  take `expectedTermsHash` and revert on a mismatch; `terms(linkId)` is the
+  canonical byte string of everything immutable on the link, including both
+  split tables, the fee and the circuit identity. This binds the payer to
+  what is *recorded onchain* — it does not prove what their screen displayed,
+  and nothing claims it does.
+- **A failing recipient never blocks the others.** Every payout leg is an
+  independent transfer; a failed leg becomes `owed[recipient][token]`,
+  withdrawable only by that recipient, while the rest — fee included — pay in
+  the same transaction.
+- **The evaluator is never trusted blindly.** Any anomaly in its answer
+  (revert, malformed return, gas exhaustion, a verdict that would overdraw the
+  contract) falls back to the default table; while `evaluatorPinned` is false,
+  every link is capped at `MAX_LINK_AMOUNT_UNPINNED[token]`.
 - **The payee cannot settle their own link**, on either payer path.
 - **An EIP-3009 signature is bound to exactly one link**: the nonce it must
   carry is derived from `(linkKey, payer)`, so an authorization signed for
   invoice A cannot be replayed against invoice B, and a link can only be paid
   once.
 - **A rejected payment moves nothing.** Every guard runs before the token
-  transfer, so an expired, cancelled, underpaid or self-paid attempt costs the
-  payer gas and no tokens.
-- **The allowlist is fixed at construction.** Only audited tokens can ever call
-  back in; widening it requires a new deployment.
+  transfer, so an expired, cancelled, underpaid, wrong-terms or self-paid
+  attempt costs the payer gas and no tokens.
+- **The allowlist and expected decimals are fixed at construction.** Only
+  audited tokens can ever call back in; the deploy script aborts if the
+  token's onchain `decimals()` disagrees with the value we wrote, and the
+  contract never reads `decimals()` at runtime.
 
 **Not audited.** This is a hackathon build. Do not send real funds to it.
 
@@ -490,9 +534,15 @@ forge test
 ```
 
 The local suites — `PagoTest` (the full contract: guards, money paths, ledger,
-both payer paths), `Split3Test` (the exhaustive circuit check) and the TAP-02
-reference evaluator's own suite — need no network at all. The five fork suites
-prove the Phase 0 claims against real X Layer mainnet state.
+both payer paths), `PagoRuleTest` (the master-prompt rules: terms consent,
+circuit identity, `evaluatorPinned` / `changeDetector`, and every processor
+fault proven to fall back instead of freezing), `PagoInvariantTest` +
+`PagoFuzzTest` (conservation: payouts + fee == credited, balance ≥ owed,
+status never backward — 128,000 interleaved calls in the invariant run),
+`Split3Test` (the exhaustive circuit check) and the TAP-02 reference
+evaluator's own suite — need no network at all. The fork suites prove the
+Phase 0 claims against real X Layer mainnet state. **131 tests, 0 failed**
+(recorded 2026-11-18, [`docs/RESEARCH.md` §17](docs/RESEARCH.md)).
 
 ### The X Layer page
 
@@ -527,12 +577,16 @@ npx playwright test --project=testnet # read-only live checks, dispatched manual
 
 **What it does not prove:** no signing is automated — wallet approvals stay
 human, in `e2e/TESTNET.md` Journey D — and the browser journey has not been
-run end to end yet (the *scripted* journey has: nine transactions, deltas
-summing to zero, [`docs/RESEARCH.md` §15](docs/RESEARCH.md)). The gasless
+run end to end yet (the *scripted* journey has: twelve transactions across
+deploy and both payer paths, deltas summing to zero, with the rule table
+paying one claim and the fallback paying the other —
+[`docs/RESEARCH.md` §17](docs/RESEARCH.md)). The gasless
 payment leg is proven by that script rather than by this page, because **no
 relayer runs on X Layer**: v1 has the payer sign and pay both transactions
-themselves. Gasless link creation is not ported either. Full record:
-[`docs/RESEARCH.md` §16](docs/RESEARCH.md).
+themselves. Gasless link creation is not ported either. The page's ABI codec
+still speaks the previous contract interface and is the next phase to update.
+Full record: [`docs/RESEARCH.md` §16](docs/RESEARCH.md) (page) and
+[§17](docs/RESEARCH.md) (contract).
 
 ---
 

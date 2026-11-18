@@ -4,15 +4,20 @@ pragma solidity 0.8.28;
 import {Test} from "forge-std/Test.sol";
 import {Pago} from "../src/Pago.sol";
 import {MockToken} from "./mocks/MockToken.sol";
+import {ProcessorStandIn} from "./mocks/ProcessorStandIn.sol";
 
 /// Pago's unit suite: every guard, every money path, every ledger read.
 ///
 /// It mirrors the NEAR contract's own test suite one concern at a time - fee
 /// arithmetic, creation guards, the three refusal paths a payer can hit,
 /// cancellation rules, expiry being derived rather than stored, payout
-/// atomicity and retry, and the gasless EIP-3009 payer path with its
+/// atomicity, and the gasless EIP-3009 payer path with its
 /// signature-to-link binding - so a reviewer coming from the Rust original can
-/// see that each property survived the port.
+/// see that each property survived the port. The master-prompt rules
+/// (docs/MASTER_PROMPT.md) that change existing behaviour live here too: terms
+/// consent on `pay`, and deferred payout legs. The rule/processor paths and the
+/// fuzz+invariant proofs have their own files: test/PagoRule.t.sol and
+/// test/Pago.invariant.t.sol.
 ///
 /// Runs against a local chain: no fork, no network, no keys.
 contract PagoTest is Test {
@@ -30,6 +35,13 @@ contract PagoTest is Test {
 
     uint256 internal constant AMOUNT = 1_000_000; // 1.00 mUSD at 6 decimals
 
+    /// Cached `termsHash` per link id. Terms are immutable after creation, so
+    /// reading the hash once at creation and reusing it is identical to calling
+    /// `pago.termsHash` inline - but an inline call would be an *external call*
+    /// evaluated before `pay`, consuming `vm.prank` / `vm.expectRevert` /
+    /// `vm.expectEmit` meant for the payment itself.
+    mapping(string => bytes32) internal terms_;
+
     function setUp() public {
         token = new MockToken("Mock USD", "mUSD", 6);
         feeAccount = makeAddr("feeAccount");
@@ -39,39 +51,66 @@ contract PagoTest is Test {
         relayer = makeAddr("relayer");
         payer = vm.addr(payerPk);
 
-        address[] memory tokens = new address[](1);
-        tokens[0] = address(token);
-        pago = new Pago(tokens, feeAccount);
+        // The rule path runs against the stand-in processor, which executes the
+        // real Split3 netlist bytes - so `changeDetector` passes at construction
+        // and the deployment is pinned (no cap) exactly like a mainnet tier-2
+        // deploy would be. The unpinned/capped path is covered in PagoRule.t.sol.
+        ProcessorStandIn standIn = new ProcessorStandIn();
+        Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
+        configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 10_000_000_000});
+        pago = new Pago(configs, feeAccount, address(standIn), 1);
     }
 
     // ══ construction ═════════════════════════════════════════════════════
 
     function test_constructorRejectsEmptyTokenList() public {
-        address[] memory tokens = new address[](0);
+        Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](0);
         vm.expectRevert("at least one token must be allowed");
-        new Pago(tokens, feeAccount);
+        new Pago(configs, feeAccount, address(0xDEAD), 1);
     }
 
     function test_constructorRejectsZeroFeeAccount() public {
-        address[] memory tokens = new address[](1);
-        tokens[0] = address(token);
+        Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
+        configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 1});
         vm.expectRevert("fee account required");
-        new Pago(tokens, address(0));
+        new Pago(configs, address(0), address(0xDEAD), 1);
     }
 
     function test_constructorRejectsZeroToken() public {
-        address[] memory tokens = new address[](1);
-        tokens[0] = address(0);
+        Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
+        configs[0] = Pago.TokenConfig({token: address(0), decimals_: 6, unpinnedCap: 1});
         vm.expectRevert("token cannot be the zero address");
-        new Pago(tokens, feeAccount);
+        new Pago(configs, feeAccount, address(0xDEAD), 1);
     }
 
     function test_constructorRejectsDuplicateToken() public {
-        address[] memory tokens = new address[](2);
-        tokens[0] = address(token);
-        tokens[1] = address(token);
+        Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](2);
+        configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 1});
+        configs[1] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 1});
         vm.expectRevert("duplicate token");
-        new Pago(tokens, feeAccount);
+        new Pago(configs, feeAccount, address(0xDEAD), 1);
+    }
+
+    /// Rule 6: a deployment that cannot pay its way out of the unpinned state
+    /// would silently create links nobody may ever claim in full - refused.
+    function test_constructorRejectsZeroUnpinnedCap() public {
+        Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
+        configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 0});
+        vm.expectRevert("unpinned cap must be positive");
+        new Pago(configs, feeAccount, address(0xDEAD), 1);
+    }
+
+    /// Rule 6: the stand-in answers every known-answer vector correctly, so the
+    /// deployment this suite runs against starts pinned.
+    function test_standInPassesChangeDetector() public view {
+        assertTrue(pago.evaluatorPinned(), "the stand-in must satisfy the known-answer check");
+        assertTrue(pago.changeDetector(), "anyone may re-run the check");
+    }
+
+    /// Rule 7: expected decimals are ours, stored at deploy, never queried back.
+    function test_expectedDecimalsAreStoredNotQueried() public view {
+        assertEq(pago.expectedDecimals(address(token)), 6);
+        assertEq(token.decimals(), 6, "the chain agrees - the deploy script aborts when it does not");
     }
 
     function test_constructorRegistersTheAllowlist() public view {
@@ -124,7 +163,7 @@ contract PagoTest is Test {
         emit Pago.LinkCreated(key, alice, address(token), AMOUNT, 0);
 
         vm.prank(alice);
-        Pago.Link memory l = pago.createLink("invoice-1", AMOUNT, address(token), "two coffees", 0);
+        Pago.Link memory l = pago.createLink("invoice-1", AMOUNT, address(token), "two coffees", 0, _defaultSplit(), _ruleSplit());
 
         assertEq(l.linkId, "invoice-1");
         assertEq(l.creator, alice);
@@ -141,13 +180,13 @@ contract PagoTest is Test {
     function test_createLinkRejectsShortLinkIds() public {
         vm.startPrank(alice);
         vm.expectRevert("link id must be 4-64 characters");
-        pago.createLink("abc", AMOUNT, address(token), "x", 0);
+        pago.createLink("abc", AMOUNT, address(token), "x", 0, _defaultSplit(), _ruleSplit());
 
         vm.expectRevert("link id must be 4-64 characters");
-        pago.createLink("", AMOUNT, address(token), "x", 0);
+        pago.createLink("", AMOUNT, address(token), "x", 0, _defaultSplit(), _ruleSplit());
 
         // Exactly four characters is fine.
-        pago.createLink("abcd", AMOUNT, address(token), "x", 0);
+        pago.createLink("abcd", AMOUNT, address(token), "x", 0, _defaultSplit(), _ruleSplit());
         vm.stopPrank();
     }
 
@@ -159,37 +198,37 @@ contract PagoTest is Test {
 
         vm.startPrank(alice);
         vm.expectRevert("link id must be 4-64 characters");
-        pago.createLink(string(tooLong), AMOUNT, address(token), "x", 0);
+        pago.createLink(string(tooLong), AMOUNT, address(token), "x", 0, _defaultSplit(), _ruleSplit());
 
         // Exactly 64 is fine.
         bytes memory justRight = new bytes(64);
         for (uint256 i; i < justRight.length; ++i) {
             justRight[i] = 0x61;
         }
-        pago.createLink(string(justRight), AMOUNT, address(token), "x", 0);
+        pago.createLink(string(justRight), AMOUNT, address(token), "x", 0, _defaultSplit(), _ruleSplit());
         vm.stopPrank();
     }
 
     function test_createLinkRejectsDisallowedToken() public {
         vm.prank(alice);
         vm.expectRevert("this token is not accepted");
-        pago.createLink("invoice-x", AMOUNT, keeper, "nope", 0);
+        pago.createLink("invoice-x", AMOUNT, keeper, "nope", 0, _defaultSplit(), _ruleSplit());
     }
 
     function test_createLinkRejectsZeroAmount() public {
         vm.startPrank(alice);
         vm.expectRevert("amount must be greater than zero");
-        pago.createLink("invoice-0", 0, address(token), "x", 0);
+        pago.createLink("invoice-0", 0, address(token), "x", 0, _defaultSplit(), _ruleSplit());
         vm.stopPrank();
     }
 
     function test_createLinkRejectsBlankDescription() public {
         vm.startPrank(alice);
         vm.expectRevert("description must be 1-280 characters");
-        pago.createLink("invoice-b", AMOUNT, address(token), "", 0);
+        pago.createLink("invoice-b", AMOUNT, address(token), "", 0, _defaultSplit(), _ruleSplit());
 
         vm.expectRevert("description must be 1-280 characters");
-        pago.createLink("invoice-b2", AMOUNT, address(token), "   \t\n  ", 0);
+        pago.createLink("invoice-b2", AMOUNT, address(token), "   \t\n  ", 0, _defaultSplit(), _ruleSplit());
         vm.stopPrank();
     }
 
@@ -201,23 +240,23 @@ contract PagoTest is Test {
 
         vm.startPrank(alice);
         vm.expectRevert("description must be 1-280 characters");
-        pago.createLink("invoice-d", AMOUNT, address(token), string(desc), 0);
+        pago.createLink("invoice-d", AMOUNT, address(token), string(desc), 0, _defaultSplit(), _ruleSplit());
 
         bytes memory ok = new bytes(280);
         for (uint256 i; i < ok.length; ++i) {
             ok[i] = 0x61;
         }
-        pago.createLink("invoice-d2", AMOUNT, address(token), string(ok), 0);
+        pago.createLink("invoice-d2", AMOUNT, address(token), string(ok), 0, _defaultSplit(), _ruleSplit());
         vm.stopPrank();
     }
 
     function test_createLinkRejectsDuplicateId() public {
         vm.prank(alice);
-        pago.createLink("invoice-dup", AMOUNT, address(token), "first", 0);
+        pago.createLink("invoice-dup", AMOUNT, address(token), "first", 0, _defaultSplit(), _ruleSplit());
 
         vm.prank(bob);
         vm.expectRevert("link id already used");
-        pago.createLink("invoice-dup", AMOUNT, address(token), "second", 0);
+        pago.createLink("invoice-dup", AMOUNT, address(token), "second", 0, _defaultSplit(), _ruleSplit());
     }
 
     function test_createLinkRejectsExpiryInThePast() public {
@@ -226,24 +265,24 @@ contract PagoTest is Test {
 
         vm.startPrank(alice);
         vm.expectRevert("expiry must be in the future");
-        pago.createLink("invoice-e", AMOUNT, address(token), "x", atCreation - 1);
+        pago.createLink("invoice-e", AMOUNT, address(token), "x", atCreation - 1, _defaultSplit(), _ruleSplit());
 
         // Expiry exactly "now" is already too late to accept.
         vm.expectRevert("expiry must be in the future");
-        pago.createLink("invoice-e2", AMOUNT, address(token), "x", atCreation);
+        pago.createLink("invoice-e2", AMOUNT, address(token), "x", atCreation, _defaultSplit(), _ruleSplit());
         vm.stopPrank();
     }
 
     function test_createLinkAcceptsZeroExpiryAsNeverExpiring() public {
         vm.prank(alice);
-        Pago.Link memory l = pago.createLink("invoice-f", AMOUNT, address(token), "x", 0);
+        Pago.Link memory l = pago.createLink("invoice-f", AMOUNT, address(token), "x", 0, _defaultSplit(), _ruleSplit());
         assertEq(uint256(l.expiresAt), 0);
         assertTrue(l.status == Pago.Status.Open);
     }
 
     function test_createLinkIsVisibleToTheLedger() public {
         vm.prank(alice);
-        pago.createLink("invoice-l", AMOUNT, address(token), "x", 0);
+        pago.createLink("invoice-l", AMOUNT, address(token), "x", 0, _defaultSplit(), _ruleSplit());
 
         assertTrue(pago.linkExists("invoice-l"));
         assertFalse(pago.linkExists("invoice-missing"));
@@ -262,7 +301,7 @@ contract PagoTest is Test {
         emit Pago.LinkPaid(key, bob, AMOUNT);
 
         vm.prank(bob);
-        pago.pay("pay-1", AMOUNT);
+        pago.pay("pay-1", AMOUNT, terms_["pay-1"]);
 
         assertEq(token.balanceOf(address(pago)), AMOUNT, "the contract must hold what was paid in");
         assertEq(token.balanceOf(bob), 0);
@@ -278,7 +317,7 @@ contract PagoTest is Test {
         _fundAndApprove(bob, AMOUNT);
         vm.prank(bob);
         vm.expectRevert("link not found");
-        pago.pay("nope", AMOUNT);
+        pago.pay("nope", AMOUNT, terms_["nope"]);
     }
 
     function test_payeeCannotPayTheirOwnLink() public {
@@ -287,7 +326,7 @@ contract PagoTest is Test {
 
         vm.prank(alice);
         vm.expectRevert("the payee cannot pay their own link");
-        pago.pay("self-1", AMOUNT);
+        pago.pay("self-1", AMOUNT, terms_["self-1"]);
 
         // The refusal happens before any token moves: the link is untouched.
         (, Pago.Link memory l) = pago.getLink("self-1");
@@ -301,7 +340,7 @@ contract PagoTest is Test {
 
         vm.prank(bob);
         vm.expectRevert("payment amount is too small");
-        pago.pay("under-1", AMOUNT - 1);
+        pago.pay("under-1", AMOUNT - 1, terms_["under-1"]);
 
         assertEq(token.balanceOf(bob), AMOUNT, "a rejected payment must cost only gas");
         (, Pago.Link memory l) = pago.getLink("under-1");
@@ -314,7 +353,7 @@ contract PagoTest is Test {
         _fundAndApprove(bob, over);
 
         vm.prank(bob);
-        pago.pay("over-1", over);
+        pago.pay("over-1", over, terms_["over-1"]);
 
         (, Pago.Link memory l) = pago.getLink("over-1");
         assertEq(l.paidAmount, over);
@@ -337,7 +376,7 @@ contract PagoTest is Test {
 
         vm.prank(bob);
         vm.expectRevert("link has expired");
-        pago.pay("exp-1", AMOUNT);
+        pago.pay("exp-1", AMOUNT, terms_["exp-1"]);
 
         assertEq(token.balanceOf(bob), AMOUNT, "no tokens may move on an expired link");
         assertEq(token.balanceOf(address(pago)), 0);
@@ -351,7 +390,7 @@ contract PagoTest is Test {
         _fundAndApprove(bob, AMOUNT);
         vm.prank(bob);
         vm.expectRevert("link is not open");
-        pago.pay("cancel-pay-1", AMOUNT);
+        pago.pay("cancel-pay-1", AMOUNT, terms_["cancel-pay-1"]);
         assertEq(token.balanceOf(address(pago)), 0, "a cancelled link must never receive funds");
     }
 
@@ -360,9 +399,9 @@ contract PagoTest is Test {
         _fundAndApprove(bob, AMOUNT * 2);
 
         vm.startPrank(bob);
-        pago.pay("twice-1", AMOUNT);
+        pago.pay("twice-1", AMOUNT, terms_["twice-1"]);
         vm.expectRevert("link is not open");
-        pago.pay("twice-1", AMOUNT);
+        pago.pay("twice-1", AMOUNT, terms_["twice-1"]);
         vm.stopPrank();
 
         assertEq(token.balanceOf(address(pago)), AMOUNT, "double payment must not double the credit");
@@ -374,7 +413,7 @@ contract PagoTest is Test {
         // No approval at all - the transferFrom must fail and unwind everything.
         vm.prank(bob);
         vm.expectRevert("token transfer failed");
-        pago.pay("fail-1", AMOUNT);
+        pago.pay("fail-1", AMOUNT, terms_["fail-1"]);
 
         (, Pago.Link memory l) = pago.getLink("fail-1");
         assertTrue(l.status == Pago.Status.Open, "a failed payment must leave no partial state");
@@ -416,7 +455,7 @@ contract PagoTest is Test {
         _create("cancel-3");
         _fundAndApprove(bob, AMOUNT);
         vm.prank(bob);
-        pago.pay("cancel-3", AMOUNT);
+        pago.pay("cancel-3", AMOUNT, terms_["cancel-3"]);
 
         vm.prank(alice);
         vm.expectRevert("link is not open");
@@ -494,7 +533,7 @@ contract PagoTest is Test {
         _createWithExpiry("exp-3", uint64(pago.nowMs() + 10_000));
         _fundAndApprove(bob, AMOUNT);
         vm.prank(bob);
-        pago.pay("exp-3", AMOUNT);
+        pago.pay("exp-3", AMOUNT, terms_["exp-3"]);
 
         vm.warp(uint256(pago.nowMs() / 1000) + 11);
 
@@ -521,11 +560,11 @@ contract PagoTest is Test {
         _create("claim-1");
         _fundAndApprove(bob, AMOUNT);
         vm.prank(bob);
-        pago.pay("claim-1", AMOUNT);
+        pago.pay("claim-1", AMOUNT, terms_["claim-1"]);
         bytes32 key = pago.linkKeyOf("claim-1");
 
         vm.expectEmit(true, true, true, true);
-        emit Pago.LinkClaimed(key, alice, 995_000, 5_000);
+        emit Pago.LinkClaimed(key, 995_000, 5_000, false);
 
         vm.prank(keeper);
         pago.claim("claim-1");
@@ -544,7 +583,7 @@ contract PagoTest is Test {
         _create("claim-2");
         _fundAndApprove(bob, AMOUNT);
         vm.prank(bob);
-        pago.pay("claim-2", AMOUNT);
+        pago.pay("claim-2", AMOUNT, terms_["claim-2"]);
 
         // An uninvolved account triggers the payout and gains nothing.
         vm.prank(relayer);
@@ -579,7 +618,7 @@ contract PagoTest is Test {
         _create("claim-5");
         _fundAndApprove(bob, AMOUNT);
         vm.prank(bob);
-        pago.pay("claim-5", AMOUNT);
+        pago.pay("claim-5", AMOUNT, terms_["claim-5"]);
 
         vm.prank(keeper);
         pago.claim("claim-5");
@@ -592,42 +631,52 @@ contract PagoTest is Test {
         assertEq(token.balanceOf(feeAccount), 5_000);
     }
 
-    /// The property `on_claimed` existed to provide on NEAR: if a payout cannot
-    /// be delivered the whole thing unwinds to `Paid` and anybody may retry.
-    function test_failedPayoutLeavesTheLinkPaidAndRetryable() public {
+    /// Rule 3 + rule 9: a claim whose transfers all fail neither reverts nor
+    /// freezes. The status moves to `Claimed` exactly once, every leg becomes
+    /// owed to its recipient, the contract keeps precisely the money owed, and
+    /// each recipient later withdraws their own share with `withdrawOwed`. The
+    /// NEAR build's "rewind to Paid and re-claim" retry has no EVM equivalent
+    /// once legs are independent - `withdrawOwed` is the retry.
+    function test_failedPayoutsBecomeOwedAndAreWithdrawable() public {
         _create("claim-6");
         _fundAndApprove(bob, AMOUNT);
         vm.prank(bob);
-        pago.pay("claim-6", AMOUNT);
+        pago.pay("claim-6", AMOUNT, terms_["claim-6"]);
 
         token.setTransfersFailing(true);
         vm.prank(keeper);
-        vm.expectRevert("token transfer failed");
-        pago.claim("claim-6");
+        pago.claim("claim-6"); // must NOT revert
 
         (, Pago.Link memory afterFail) = pago.getLink("claim-6");
-        assertTrue(afterFail.status == Pago.Status.Paid, "a failed claim must not mark the link claimed");
+        assertTrue(afterFail.status == Pago.Status.Claimed, "claim completes even when transfers fail");
         assertEq(token.balanceOf(alice), 0, "no partial payout");
         assertEq(token.balanceOf(feeAccount), 0, "no partial fee");
         assertEq(token.balanceOf(address(pago)), AMOUNT, "the funds must still be held");
+        assertEq(pago.owed(alice, address(token)), 995_000, "alice's share is owed to alice");
+        assertEq(pago.owed(feeAccount, address(token)), 5_000, "the fee is owed to the fee account");
 
         token.setTransfersFailing(false);
-        vm.prank(relayer);
-        pago.claim("claim-6");
+        vm.prank(alice);
+        assertEq(pago.withdrawOwed(address(token)), 995_000);
+        vm.prank(feeAccount);
+        pago.withdrawOwed(address(token));
 
         assertEq(token.balanceOf(alice), 995_000);
         assertEq(token.balanceOf(feeAccount), 5_000);
-        (, Pago.Link memory afterRetry) = pago.getLink("claim-6");
-        assertTrue(afterRetry.status == Pago.Status.Claimed);
+        assertEq(token.balanceOf(address(pago)), 0, "nothing may be left behind");
+        vm.expectRevert("nothing owed");
+        vm.prank(alice);
+        pago.withdrawOwed(address(token));
     }
 
     function test_tinyInvoiceChargesNoFeeInsteadOfTransferringZero() public {
         vm.prank(alice);
-        pago.createLink("claim-tiny", 1, address(token), "x", 0);
+        pago.createLink("claim-tiny", 1, address(token), "x", 0, _defaultSplit(), _ruleSplit());
+        terms_["claim-tiny"] = pago.termsHash("claim-tiny");
 
         _fundAndApprove(bob, 1);
         vm.prank(bob);
-        pago.pay("claim-tiny", 1);
+        pago.pay("claim-tiny", 1, terms_["claim-tiny"]);
 
         vm.prank(keeper);
         pago.claim("claim-tiny");
@@ -648,13 +697,13 @@ contract PagoTest is Test {
 
     function test_ledgerListsACreatorInCreationOrder() public {
         vm.startPrank(alice);
-        pago.createLink("led-1", 10, address(token), "first", 0);
-        pago.createLink("led-2", 20, address(token), "second", 0);
-        pago.createLink("led-3", 30, address(token), "third", 0);
+        pago.createLink("led-1", 10, address(token), "first", 0, _defaultSplit(), _ruleSplit());
+        pago.createLink("led-2", 20, address(token), "second", 0, _defaultSplit(), _ruleSplit());
+        pago.createLink("led-3", 30, address(token), "third", 0, _defaultSplit(), _ruleSplit());
         vm.stopPrank();
 
         vm.prank(bob);
-        pago.createLink("led-other", 40, address(token), "someone else's", 0);
+        pago.createLink("led-other", 40, address(token), "someone else's", 0, _defaultSplit(), _ruleSplit());
 
         Pago.Link[] memory mine = pago.getLinksByCreator(alice);
         assertEq(mine.length, 3, "another creator's links must never appear in this ledger");
@@ -667,9 +716,9 @@ contract PagoTest is Test {
 
     function test_ledgerKeepsCancelledAndExpiredEntries() public {
         vm.startPrank(alice);
-        pago.createLink("led-a", 10, address(token), "stays open", 0);
-        pago.createLink("led-b", 20, address(token), "gets cancelled", 0);
-        pago.createLink("led-c", 30, address(token), "will expire", uint64(pago.nowMs() + 5_000));
+        pago.createLink("led-a", 10, address(token), "stays open", 0, _defaultSplit(), _ruleSplit());
+        pago.createLink("led-b", 20, address(token), "gets cancelled", 0, _defaultSplit(), _ruleSplit());
+        pago.createLink("led-c", 30, address(token), "will expire", uint64(pago.nowMs() + 5_000), _defaultSplit(), _ruleSplit());
         vm.stopPrank();
 
         vm.prank(alice);
@@ -703,7 +752,7 @@ contract PagoTest is Test {
         bytes memory sig = _sign(payerPk, payer, AMOUNT, 0, type(uint64).max, nonce);
 
         vm.prank(relayer);
-        pago.payWithAuthorization("auth-1", payer, AMOUNT, 0, type(uint64).max, nonce, sig);
+        pago.payWithAuthorization("auth-1", payer, AMOUNT, 0, type(uint64).max, nonce, sig, terms_["auth-1"]);
 
         assertEq(token.balanceOf(address(pago)), AMOUNT, "the signed value must have arrived");
         assertEq(token.balanceOf(payer), 0);
@@ -722,7 +771,7 @@ contract PagoTest is Test {
         bytes memory sig = _sign(payerPk, payer, AMOUNT, 0, type(uint64).max, nonce);
 
         vm.prank(relayer);
-        pago.payWithAuthorization("auth-2", payer, AMOUNT, 0, type(uint64).max, nonce, sig);
+        pago.payWithAuthorization("auth-2", payer, AMOUNT, 0, type(uint64).max, nonce, sig, terms_["auth-2"]);
 
         vm.prank(keeper);
         pago.claim("auth-2");
@@ -744,7 +793,7 @@ contract PagoTest is Test {
         // ...but submit it against the target.
         vm.prank(relayer);
         vm.expectRevert("authorization must be bound to this link");
-        pago.payWithAuthorization("auth-target", payer, AMOUNT, 0, type(uint64).max, decoyNonce, sig);
+        pago.payWithAuthorization("auth-target", payer, AMOUNT, 0, type(uint64).max, decoyNonce, sig, terms_["auth-target"]);
 
         assertEq(token.balanceOf(payer), AMOUNT * 2, "a misbound signature must move nothing");
         (, Pago.Link memory target) = pago.getLink("auth-target");
@@ -758,11 +807,11 @@ contract PagoTest is Test {
         bytes memory sig = _sign(payerPk, payer, AMOUNT, 0, type(uint64).max, nonce);
 
         vm.prank(relayer);
-        pago.payWithAuthorization("auth-replay", payer, AMOUNT, 0, type(uint64).max, nonce, sig);
+        pago.payWithAuthorization("auth-replay", payer, AMOUNT, 0, type(uint64).max, nonce, sig, terms_["auth-replay"]);
 
         vm.prank(relayer);
         vm.expectRevert("link is not open");
-        pago.payWithAuthorization("auth-replay", payer, AMOUNT, 0, type(uint64).max, nonce, sig);
+        pago.payWithAuthorization("auth-replay", payer, AMOUNT, 0, type(uint64).max, nonce, sig, terms_["auth-replay"]);
 
         assertEq(token.balanceOf(address(pago)), AMOUNT, "a replay must not double the credit");
     }
@@ -776,7 +825,7 @@ contract PagoTest is Test {
 
         vm.prank(relayer);
         vm.expectRevert("invalid signature");
-        pago.payWithAuthorization("auth-badkey", payer, AMOUNT, 0, type(uint64).max, nonce, sig);
+        pago.payWithAuthorization("auth-badkey", payer, AMOUNT, 0, type(uint64).max, nonce, sig, terms_["auth-badkey"]);
         assertEq(token.balanceOf(payer), AMOUNT);
     }
 
@@ -790,13 +839,13 @@ contract PagoTest is Test {
         bytes memory expired = _sign(payerPk, payer, AMOUNT, 0, nowTs, nonce);
         vm.prank(relayer);
         vm.expectRevert("authorization expired");
-        pago.payWithAuthorization("auth-window", payer, AMOUNT, 0, nowTs, nonce, expired);
+        pago.payWithAuthorization("auth-window", payer, AMOUNT, 0, nowTs, nonce, expired, terms_["auth-window"]);
 
         // validAfter not reached yet.
         bytes memory early = _sign(payerPk, payer, AMOUNT, nowTs, type(uint64).max, nonce);
         vm.prank(relayer);
         vm.expectRevert("authorization not yet valid");
-        pago.payWithAuthorization("auth-window", payer, AMOUNT, nowTs, type(uint64).max, nonce, early);
+        pago.payWithAuthorization("auth-window", payer, AMOUNT, nowTs, type(uint64).max, nonce, early, terms_["auth-window"]);
 
         assertEq(token.balanceOf(payer), AMOUNT * 2, "out-of-window authorizations must move nothing");
     }
@@ -810,12 +859,12 @@ contract PagoTest is Test {
         // Too small.
         vm.prank(relayer);
         vm.expectRevert("payment amount is too small");
-        pago.payWithAuthorization("auth-guards", payer, AMOUNT - 1, 0, type(uint64).max, nonce, sig);
+        pago.payWithAuthorization("auth-guards", payer, AMOUNT - 1, 0, type(uint64).max, nonce, sig, terms_["auth-guards"]);
 
         // Unknown link.
         vm.prank(relayer);
         vm.expectRevert("link not found");
-        pago.payWithAuthorization("auth-missing", payer, AMOUNT, 0, type(uint64).max, nonce, sig);
+        pago.payWithAuthorization("auth-missing", payer, AMOUNT, 0, type(uint64).max, nonce, sig, terms_["auth-missing"]);
     }
 
     function test_gaslessPathRefusesThePayeePayingThemselves() public {
@@ -824,7 +873,8 @@ contract PagoTest is Test {
 
         // The payee creates the invoice, then signs an authorization against it.
         vm.prank(payee);
-        pago.createLink("auth-self", AMOUNT, address(token), "x", 0);
+        pago.createLink("auth-self", AMOUNT, address(token), "x", 0, _defaultSplit(), _ruleSplit());
+        terms_["auth-self"] = pago.termsHash("auth-self");
         token.mint(payee, AMOUNT);
 
         bytes32 nonce = _nonce("auth-self", payee);
@@ -832,7 +882,7 @@ contract PagoTest is Test {
 
         vm.prank(relayer);
         vm.expectRevert("the payee cannot pay their own link");
-        pago.payWithAuthorization("auth-self", payee, AMOUNT, 0, type(uint64).max, nonce, sig);
+        pago.payWithAuthorization("auth-self", payee, AMOUNT, 0, type(uint64).max, nonce, sig, terms_["auth-self"]);
         assertEq(token.balanceOf(payee), AMOUNT, "a self-payment must move nothing");
     }
 
@@ -841,7 +891,7 @@ contract PagoTest is Test {
         bytes32 nonce = _nonce("auth-zero", address(0));
         vm.prank(relayer);
         vm.expectRevert("invalid payer");
-        pago.payWithAuthorization("auth-zero", address(0), AMOUNT, 0, type(uint64).max, nonce, hex"");
+        pago.payWithAuthorization("auth-zero", address(0), AMOUNT, 0, type(uint64).max, nonce, hex"", terms_["auth-zero"]);
     }
 
     // ══ internals ════════════════════════════════════════════════════════
@@ -852,7 +902,25 @@ contract PagoTest is Test {
 
     function _createWithExpiry(string memory id, uint64 expiresAt) internal {
         vm.prank(alice);
-        pago.createLink(id, AMOUNT, address(token), "one coffee", expiresAt);
+        pago.createLink(id, AMOUNT, address(token), "one coffee", expiresAt, _defaultSplit(), _ruleSplit());
+        terms_[id] = pago.termsHash(id);
+    }
+
+    /// The default table these tests create links with: alice takes 100% (20
+    /// steps), the other seats unused. Chosen so the payout assertions written
+    /// against the single-payee NEAR port stay literally true.
+    function _defaultSplit() internal view returns (Pago.Split memory s) {
+        s.recipients = [alice, address(0), address(0)];
+        s.shares = [uint8(20), 0, 0];
+    }
+
+    /// The rule table: three seats summing to 23 steps - invalid on purpose.
+    /// The circuit rejects it (23 != 20), so `claim` falls back to the default
+    /// table and every single-payee assertion above keeps holding. The rule
+    /// path itself is proven in test/PagoRule.t.sol with honest tables.
+    function _ruleSplit() internal view returns (Pago.Split memory s) {
+        s.recipients = [alice, bob, keeper];
+        s.shares = [uint8(10), 8, 5];
     }
 
     function _fundAndApprove(address who, uint256 amount) internal {

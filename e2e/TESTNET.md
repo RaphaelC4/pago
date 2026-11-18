@@ -8,7 +8,8 @@ faked — a step that has not happened has not happened, and the page says so.
 CI's part is small and read-only: the `E2E testnet (manual)` workflow
 (`.github/workflows/e2e-testnet.yml`) runs `--project=testnet` — the
 committed frontend served locally, reading live NEAR testnet over public
-JSON-RPC **view** calls. It never connects a wallet, never signs, never
+JSON-RPC **view** calls, plus live X Layer testnet (chain 1952) `eth_call`s
+from `frontend/xlayer.html`. It never connects a wallet, never signs, never
 POSTs a transaction, and has no secret to leak. Everything below is you.
 
 ## Before you start (one-time)
@@ -147,6 +148,56 @@ and **kept reporting `OPEN` after this cancellation** — by design: a
 When the two disagree, the direct `get_link` read wins; cite
 `onChainStatusCheckedAt` whenever quoting the summary's chain field.
 
+## Journey D — X Layer / Pago (chain 1952)
+
+The Solidity port's own UI, at `/xlayer.html` — a different page from the
+NEAR app above, sharing only `styles.css` and the theme key. Same rule as
+every other journey: the approvals happen in your hand.
+
+**One-time setup.**
+
+1. **A dedicated injected wallet** (MetaMask, OKX Wallet…) with an account
+   that holds only testnet funds. The page talks straight to
+   `window.ethereum`; there is no relayer and no vendored library.
+2. **Point it at X Layer testnet**: chain id **1952**, RPC
+   `https://testrpc.xlayer.tech`, explorer
+   `https://www.oklink.com/xlayer-test`. The page offers to add/switch the
+   network itself — approve that prompt, do not add it by hand while a
+   signature is pending.
+3. **Gas is OKB** (18 decimals, same as mainnet). Get testnet OKB from the
+   X Layer testnet faucet; every write needs it, because there is no relayer
+   on X Layer — the payer signs and pays for their own two transactions.
+4. **pUSD is MOCK.** It is a freely mintable test token with no backing. The
+   pay card offers **Mint 10 pUSD test tokens** while your balance is short;
+   that button calls the token's public `mint` and moves nothing real.
+
+**The journey.**
+
+1. **Create (payee).** `/xlayer.html#create` → connect → amount → note
+   (the contract refuses a blank one: 1–280 UTF-8 bytes) → expiry →
+   **Create link**. The page first reads the chain for a free id
+   (`linkExists`), then asks for **one signature**. The result is
+   `#ready/<id>` with the URL, a QR code and the payout split
+   (99.5% / 0.5%) computed by the same formula the contract uses.
+2. **Share.** Send `…/xlayer.html#pay/<id>` to the payer. Opening it needs
+   no wallet: the invoice renders read-only from `getLink`.
+3. **Pay (payer, a *different* account).** Connect → the card reads your
+   balance and allowance live and offers **Step 1 — approve**, then **Pay**
+   — two signatures, because an ERC-20 pull needs an allowance first. The
+   card states exactly what you send, what the payee gets and what the fee
+   is *before* you sign. The contract refuses the payee paying their own
+   link, and the page says so instead of letting the transaction fail.
+4. **Claim (anyone).** Once the card reads **Paid**, the button reads
+   *Release … to the payee*. Anyone may press it — the money can only ever
+   go to the invoice's creator minus the 0.5% fee. The claimer pays the gas.
+5. **Cancel (creator, while Open).** Offered only to the creator, only
+   before payment; it moves no money, because a link never holds any.
+
+**Read-only CI.** `npx playwright test --project=testnet` covers the health
+check, a creator's live ledger, a real claimed invoice
+(`pago-261118-002651-a` from Phase 2) and an unknown id — no wallet, no
+signing, nothing but `eth_call`.
+
 ## Hard rules (apply to every manual run)
 
 - **Never bypass wallet security** — no scripted approvals, no injected
@@ -175,9 +226,12 @@ When the two disagree, the direct `get_link` read wins; cite
 | Step | Where |
 |---|---|
 | UI states, validation, errors, receipts, mobile layout | automated, mocked — `e2e-smoke.yml` on every PR |
+| X Layer page states: MOCK labelling, fee split, wallet boundary, ledger filters | automated, mocked — `e2e-smoke.yml` (`specs/xlayer.spec.mjs`) |
 | Live chain reachable, a real invoice renders read-only | `e2e-testnet.yml`, manual dispatch |
+| Live X Layer: health check, live ledger, a claimed invoice read-only | `e2e-testnet.yml`, manual dispatch (`specs/testnet/xlayer.testnet.spec.mjs`) |
 | Creating a link (wallet approval) | **manual — Journey A.1** |
 | Paying (one wallet approval) | **manual — Journey A.2** |
 | PAID → CLAIMED keeper settlement + receipt | **manual — Journey A.3–5** (keeper itself: `workers/keeper` tests) |
 | Tidepool quote → deposit → polling → VERIFIED | **manual — Journey B** (Worker logic: `workers/tidepool/test/`) |
 | Creator cancellation (arm → confirm, one wallet approval) | **manual — Journey C** (relayer gate: `workers/relayer/test/parse.test.mjs`) |
+| X Layer: create → approve → pay → claim (two payer signatures, one claim) | **manual — Journey D** (contract rules: `contracts-evm/test/Pago.t.sol`) |

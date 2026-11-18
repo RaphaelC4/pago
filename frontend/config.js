@@ -198,7 +198,7 @@ export const XLAYER = {
     mintTransistorFee: 1_000_000, // 0.01 BEM
 
     /* Tape-out price, read live (published figures were stale). */
-    tapeoutFeeWei: "1300000000000000", // 0.0013 ETH
+    tapeoutFeeWei: "1300000000000000", // 0.0013 native coin (OKB — not ETH)
 
     /* Container opener, proven end to end in Phase 0 (test/Container.t.sol). */
     opener: "0x536adD8F30f03b69f6fbF29d425A816A0dC50106",
@@ -233,9 +233,20 @@ export const XLAYER = {
 
       /* The testnet asset is MockToken promoted to a real deployable: an
          ERC-20 with EIP-3009, which is what the gasless path needs. 6
-         decimals, read from the contract. */
+         decimals, read from the contract.
+
+         MOCK — not a stablecoin. Nothing backs pUSD; anyone can call its
+         public `mint`. It exists only so the payment path can be exercised
+         on testnet. Every surface that shows this token must render it as
+         "pUSD (MOCK)" — see `tokenIsMock`, which the UI reads rather than
+         guessing. */
       tokenSymbol: "pUSD",
       tokenDecimals: 6,
+      tokenIsMock: true,
+
+      /* Explorer permalinks, both confirmed to open in a browser. */
+      pagoExplorerUrl: "https://www.oklink.com/xlayer-test/address/0x3b5B96391039bf36A04CD447982a83510B23A6C5",
+      tokenExplorerUrl: "https://www.oklink.com/xlayer-test/address/0x229A19B9D237629FC0c94812d21a4cf2b22B3615",
 
       /* Both read live after deploy: `feeBps()` answered 50 (0.5%) and the
          fee account is the deployer itself. */
@@ -256,7 +267,7 @@ export const XLAYER = {
 
   /* The Split3 payment rule, once it is taped out onto a processor.
      `null` = not taped out: it needs mainnet approval and roughly 0.11 BEM
-     plus 0.0013 ETH (RESEARCH.md §14), which has deliberately not been
+     plus 0.0013 native OKB (RESEARCH.md §14), which has deliberately not been
      spent. The shape below is fixed by the circuit itself. */
   split3: {
     processor: null,

@@ -5,7 +5,8 @@
 # What runs when dispatched: Playwright's `testnet` project — the
 # READ-ONLY slice of e2e/specs/testnet/. The committed frontend is served
 # locally and reads live NEAR testnet over public JSON-RPC view calls
-# (`status`, optionally `get_link` for a link you supply). It never
+# (`status`, optionally `get_link` for a link you supply), plus live X Layer
+# testnet (chain 1952) over `eth_call` from frontend/xlayer.html. It never
 # connects a wallet, never signs, never POSTs a transaction, reads no
 # repository secrets and prints none.
 #

@@ -6,7 +6,7 @@ separate halves:
 | Layer | Project | Trigger | Network |
 |---|---|---|---|
 | **PR smoke** | `smoke` | every PR to `master`/`staging`, every push to `staging` (`.github/workflows/e2e-smoke.yml`) | **fully mocked in-process** — no egress beyond `127.0.0.1` |
-| **Testnet** | `testnet` | **only** by a human dispatching `.github/workflows/e2e-testnet.yml` (never automatic) | live, **read-only** NEAR testnet view calls |
+| **Testnet** | `testnet` | **only** by a human dispatching `.github/workflows/e2e-testnet.yml` (never automatic) | live, **read-only**: NEAR testnet view calls **and** X Layer testnet (chain 1952) `eth_call`s |
 
 The existing suites (`frontend/test/*.mjs`, `workers/*/test`, contract tests)
 are untouched and still run exactly as before in `ci.yml`.
@@ -32,7 +32,7 @@ The config starts a tiny dependency-free static server (`serve.mjs`) for
 `frontend/` on `127.0.0.1:4173` — no bundler, no build step, same files the
 site ships.
 
-## What the smoke suite covers (six areas)
+## What the smoke suite covers (seven areas)
 
 1. **`specs/homepage.spec.mjs`** — app boots from static files, hero/tabs/
    footer render, the mocked chain health check lights the net-dots green,
@@ -60,6 +60,15 @@ site ships.
 6. **`specs/mobile.spec.mjs`** — 390×844 and 360×740: floating tab bar
    replaces the header nav, tap-driven panel switching, and no horizontal
    overflow on home, create or the pay card.
+7. **`specs/xlayer.spec.mjs`** — the X Layer / Pago page
+   (`frontend/xlayer.html`): boots from static files with the mocked chain
+   answering `feeBps` + allowlist, tabs drive the hash, the create form
+   labels the token **pUSD (MOCK)** and fails loudly at the wallet boundary
+   (no `window.ethereum` exists, so nothing can be signed), the ledger reads
+   fixtures and filters by state, and the pay card renders **OPEN / PAID /
+   CLAIMED / unknown-id** — including the fee split the contract computes
+   (1.000000 → 0.995 / 0.005). Asserts zero console errors, zero
+   off-allowlist requests and **zero signing requests**.
 
 ## How the mocks work (`fixtures/mocks.mjs`)
 
@@ -76,6 +85,16 @@ One catch-all `page.route` per test dispatches by host:
 Failure modes are scenario flags (`rpcDown`, `getLinkError`,
 `hangWalletManifest`) so error-state tests flip mid-flight and recover —
 deterministically, still with no egress.
+
+The X Layer page has a second layer, `fixtures/xlayer-mocks.mjs`. It is
+registered **after** the catch-all (Playwright matches the most recently
+registered route first) and answers the one host the page talks to — the
+testnet JSON-RPC endpoint in `frontend/config.js`, which has no path, so it
+is matched by predicate rather than glob. Every byte it returns is encoded
+with **the same `frontend/abi.js` the browser uses**, so the mock cannot
+drift into a wire format the page would then wrongly accept. It also keeps a
+`log` of every JSON-RPC method asked for, which the spec asserts contains no
+signing method.
 
 ## Safety rules encoded here (plan items 4–7)
 

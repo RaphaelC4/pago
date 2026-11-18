@@ -257,7 +257,7 @@ contract Pago {
         _safeTransferFrom(l.token, msg.sender, address(this), amount);
     }
 
-    /// Settle an invoice without the payer holding any X Layer ETH for gas.
+    /// Settle an invoice without the payer holding any OKB for gas.
     ///
     /// The payer signs an EIP-3009 `TransferWithAuthorization` off-chain; a third party
     /// (the Pago relayer) submits it here and pays the gas. The token verifies the

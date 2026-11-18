@@ -365,9 +365,15 @@ invoiced one.
 
 ## Pago — the same product on X Layer
 
-**Status:** contracts written and tested locally; **not deployed anywhere yet**,
-and nothing has been spent onchain. This section describes what exists in
-`contracts-evm/` today.
+**Status:** live on **X Layer testnet (chain 1952)** — Pago
+`0x3b5B96391039bf36A04CD447982a83510B23A6C5`, pUSD **(MOCK)**
+`0x229A19B9D237629FC0c94812d21a4cf2b22B3615` — with both payer paths run end
+to end and reconciled to the unit
+([`docs/RESEARCH.md` §15](docs/RESEARCH.md)), and its own page at
+`frontend/xlayer.html` (below). **X Layer mainnet (chain 196) is read-only:**
+nothing has been spent there, and nothing will be without an explicit approval
+phrase. This section describes what exists in `contracts-evm/` and
+`frontend/` today.
 
 This repository now carries two builds of one product:
 
@@ -439,9 +445,17 @@ The other reason is the hackathon: the X Layer TapeOut Accelerate track
 explicitly asks for TapeOut circuits, contracts or onchain data
 ([evidence in `docs/RESEARCH.md` §11](docs/RESEARCH.md)).
 
-**Split3 has not been taped out.** That costs roughly 0.11 BEM plus 0.0013 ETH
-on X Layer mainnet, spends real funds, and is deliberately **not started** —
-it awaits an explicit go-ahead. `docs/RESEARCH.md` §14 itemises the cost.
+**Split3 has not been taped out.** That costs roughly 0.11 BEM plus 0.0013
+native OKB on X Layer mainnet, spends real funds, and is deliberately **not
+started** — it awaits an explicit go-ahead. `docs/RESEARCH.md` §14 itemises
+the cost. (Everything is on X Layer chain 196: OKB is that chain's gas token,
+and BEM is an ERC-20 on the same chain — no other network is involved.)
+
+There is a cheaper route — tape out onto one of the existing third-party
+processors for 0.0013 OKB plus one of its transistors — and it is **not**
+taken, because **the processor owner controls it**: who may mint, what a
+transistor costs, and the processor's own rules are theirs, not ours. Only our
+own processor (the ≈0.11 BEM route) keeps that control with the deployer.
 
 ### Security model
 
@@ -479,6 +493,46 @@ The local suites — `PagoTest` (the full contract: guards, money paths, ledger,
 both payer paths), `Split3Test` (the exhaustive circuit check) and the TAP-02
 reference evaluator's own suite — need no network at all. The five fork suites
 prove the Phase 0 claims against real X Layer mainnet state.
+
+### The X Layer page
+
+`frontend/xlayer.html` (+ `frontend/xlayer.js`) is Pago's own UI, sitting
+beside the NEAR app — `index.html` and `app.js` were not touched, so nothing
+that already worked can regress from it.
+
+- **Buildless on purpose**: no bundler, no npm dependency, no vendored ethers.
+  Calldata is encoded by `frontend/abi.js`, a hand-rolled ABI codec whose
+  selectors were produced with `cast sig` and cross-checked against the
+  deployed bytecode; `getLink` and `getLinksByCreator` decode to named
+  objects.
+- **Reads need no wallet.** Fee, allowlist, ledger, invoice state, balance,
+  allowance and the chain clock are unsigned `eth_call`s with endpoint
+  failover, so the page — and the read-only Playwright project — render with
+  nothing connected.
+- **Writes go through an injected wallet** (MetaMask, OKX Wallet…): create →
+  share card with QR → approve → pay → claim → cancel, plus a ledger with
+  stats and state filters. The contract's rules are mirrored, not re-invented:
+  a 1–280-byte note, expiry written in *chain* time, a `linkExists` id check
+  before anything is signed, the payee refused their own link with an
+  explanation instead of a reverting transaction, and **no approve/pay button
+  while the balance is short** — only the MOCK faucet.
+- **pUSD is labelled `MOCK` everywhere** it is named.
+
+```powershell
+node frontend/test/abi.test.mjs       # 62 assertions: selectors + encoding vs cast, decoding vs live-chain vectors
+cd e2e; npm install
+npx playwright test --project=smoke   # 29 tests: 21 NEAR + 8 X Layer, mocked, no egress
+npx playwright test --project=testnet # read-only live checks, dispatched manually only
+```
+
+**What it does not prove:** no signing is automated — wallet approvals stay
+human, in `e2e/TESTNET.md` Journey D — and the browser journey has not been
+run end to end yet (the *scripted* journey has: nine transactions, deltas
+summing to zero, [`docs/RESEARCH.md` §15](docs/RESEARCH.md)). The gasless
+payment leg is proven by that script rather than by this page, because **no
+relayer runs on X Layer**: v1 has the payer sign and pay both transactions
+themselves. Gasless link creation is not ported either. Full record:
+[`docs/RESEARCH.md` §16](docs/RESEARCH.md).
 
 ---
 
@@ -602,6 +656,15 @@ Stated plainly, because saying otherwise would be worse than saying it.
   constrains browsers, which a script is free to ignore — so the real limit
   is the relayer's 1 NEAR balance floor, several hundred links away at the
   current balance. Testnet NEAR only, so nothing of value is at stake.
+- **X Layer build: testnet only, and the UI proves less than the script.**
+  `frontend/xlayer.html` runs against chain 1952 with pUSD — a **MOCK** token
+  with a public `mint` and nothing behind it. Its automated tests cover the
+  read path and every rendered state (62 codec assertions, 8 mocked page
+  tests, 4 live read-only tests); the signing journeys stay manual in
+  `e2e/TESTNET.md` Journey D, because wallet approvals are the security
+  boundary and are never automated here. The payer signs and pays both
+  transactions themselves, since no relayer runs on X Layer, and X Layer
+  mainnet remains read-only.
 
 ---
 
@@ -687,6 +750,11 @@ node frontend/test/parse-errors.test.mjs    # 48 assertions: parse errors + L-06
 node frontend/test/rpc-retry.test.mjs       # 23 assertions: one read retry, never for writes
 node frontend/test/relayer-fallback.test.mjs # 120 assertions: relayer outage → chain check → consent → direct
 node frontend/test/cancel.test.mjs          # 52 assertions: creator-only cancel, arm→confirm, cancelled surfaces
+node frontend/test/abi.test.mjs             # 62 assertions: X Layer ABI codec vs cast and live-chain vectors
+
+# browser E2E (two projects, e2e/README.md has the detail)
+cd e2e && npm install && npx playwright test --project=smoke   # mocked, no egress, runs on PRs
+npx playwright test --project=testnet                          # live read-only, manual dispatch only
 
 # build the wasm with its NEP-330 ABI embedded
 cargo near build non-reproducible-wasm --abi-features near-sdk/unit-testing

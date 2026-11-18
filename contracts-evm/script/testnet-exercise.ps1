@@ -21,6 +21,10 @@
 # and the script sends a slice across to `pago-payee` itself — the whole run
 # costs about 0.0001 OKB at the testnet's 20 gwei gas price.
 #
+# The token is pUSD — MOCK. It is a freely mintable test token with no
+# backing and no redemption value, deployed by Deploy.s.sol purely so the
+# payment path can be exercised. Every amount below is fake money.
+#
 # Passwords: cast prompts for the keystore password each time it signs. To run
 # without prompts, put `ETH_PASSWORD=<password>` in the repository's .env —
 # that file is gitignored and this script never prints it.
@@ -119,6 +123,7 @@ function Call {
 Write-Host "Pago -> X Layer testnet" -ForegroundColor Cyan
 Write-Host ("  rpc     {0}" -f $Rpc)
 Write-Host ("  aliases {0} / {1}" -f $DeployerAlias, $PayeeAlias)
+Write-Host "  token   pUSD (MOCK - a mintable test token, not a stablecoin)" -ForegroundColor DarkYellow
 
 foreach ($alias in @($DeployerAlias, $PayeeAlias)) {
     $ks = Join-Path $env:USERPROFILE ".foundry\keystores\$alias"

@@ -65,7 +65,7 @@ contract Deploy is Script {
             // A starting balance so the deployer can immediately create and
             // settle an invoice end to end.
             t.mint(deployer, 1_000_000_000); // 1,000 pUSD
-            console.log("deployed test token (pUSD):", token);
+            console.log("deployed test token (pUSD, MOCK - not a stablecoin):", token);
         }
 
         address[] memory tokens = new address[](1);

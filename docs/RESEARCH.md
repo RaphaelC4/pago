@@ -492,9 +492,9 @@ creating the processor). `nextId()` per processor: #340 → 1, #333 → 20,
 So there are two routes to a Pago circuit on mainnet, both in BEM:
 
 1. **Our own processor**: `approve` 0.1 BEM → `createCPU` → mint a transistor
-   (0.01 BEM) → `tapeout` (0.0013 ETH). One-time ≈ 0.11 BEM + 0.0013 ETH.
+   (0.01 BEM) → `tapeout` (0.0013 native). One-time ≈ 0.11 BEM + 0.0013 native.
 2. **Someone else's processor**: hold one of its transistors → `tapeout`
-   (0.0013 ETH). Cheaper, but we do not control the processor.
+   (0.0013 native). Cheaper, but we do not control the processor.
 
 Both spend real funds, so **neither has been started** — see §14.
 
@@ -569,8 +569,17 @@ Taped out as a *new* processor (route 1 in §13):
 |---|---|---|
 | Create processor | **0.1 BEM** | `approve` first, then `createCPU` with no value |
 | Mint one transistor | **0.01 BEM** | needed before `tapeout` accepts the call |
-| Tape out Split3 | **0.0013 ETH** (`TAPEOUT_FEE` = 1.3e15 wei) | 15 inputs, 1 output, 104 NANDs, 728-byte netlist |
-| **Total** | **≈ 0.11 BEM + 0.0013 ETH** | BEM is buyable with OKB on Uniswap V3 X Layer |
+| Tape out Split3 | **0.0013 native coin** (`TAPEOUT_FEE` = 1.3e15 wei) | 15 inputs, 1 output, 104 NANDs, 728-byte netlist |
+| **Total** | **≈ 0.11 BEM + 0.0013 native + gas** | BEM is buyable with OKB on Uniswap V3 X Layer |
+
+**Units, corrected 2026-11-18:** everything above is on **X Layer mainnet,
+chain 196** — there is no second network involved. X Layer's native gas
+token is **OKB** (18 decimals) on both mainnet and testnet, so "0.0013 ETH"
+in earlier notes means 0.0013 **OKB** of native value; the `wei` figure is
+right, the symbol was wrong. BEM is an ERC-20 *on this same chain*
+(`0x60e62efa…3952`, symbol `BEM`, 8 decimals, 13,138 bytes of code — re-read
+live 2026-11-18). Gas for every transaction is also OKB. So the whole
+tape-out costs OKB: buy BEM with OKB, plus 0.0013 OKB, plus gas.
 
 Alternatively, tapping out onto an existing third-party processor costs 0.0013
 ETH plus whatever one of its transistors costs, but hands control of the
@@ -593,8 +602,18 @@ Everything in this section was read back from the chain or printed by
 | | Address | Proof |
 |---|---|---|
 | Pago | `0x3b5B96391039bf36A04CD447982a83510B23A6C5` | 8,325 bytes of code |
-| pUSD (MockToken) | `0x229A19B9D237629FC0c94812d21a4cf2b22B3615` | 3,864 bytes of code, 6 decimals |
+| pUSD — **MOCK**, not a stablecoin | `0x229A19B9D237629FC0c94812d21a4cf2b22B3615` | 3,864 bytes of code, 6 decimals, publicly mintable by anyone |
 | chain id | 1952 | `cast chain-id`, asserted by the script before it spends anything |
+
+Both open on the testnet explorer (checked 2026-11-18):
+
+- Pago — `https://www.oklink.com/xlayer-test/address/0x3b5B96391039bf36A04CD447982a83510B23A6C5`
+- pUSD — `https://www.oklink.com/xlayer-test/address/0x229A19B9D237629FC0c94812d21a4cf2b22B3615`
+
+pUSD is `MockToken` (`test/mocks/MockToken.sol`): a real ERC-20 with EIP-3009
+so the gasless path can be exercised, but **nothing backs it** and its `mint`
+is public. It is test scaffolding, not a stablecoin, and no surface should
+present it as one.
 
 Deploy transactions (`broadcast/Deploy.s.sol/1952/run-latest.json`):
 
@@ -685,6 +704,142 @@ payer.
 
 ### Not done
 
-Taping out Split3 still needs mainnet and ≈0.11 BEM + 0.0013 ETH (§14), and
+Taping out Split3 still needs mainnet and ≈0.11 BEM + 0.0013 native OKB (§14), and
 mainnet remains read-only until the exact approval phrase is given.
+
+---
+
+## 16. Phase 3 — the X Layer frontend, 2026-11-19
+
+`frontend/xlayer.html` + `frontend/xlayer.js`: the port's own page, sitting
+beside the NEAR app. `index.html`, `app.js` and `styles.css` were not
+modified, so nothing that already worked can regress from this phase. Static
+and buildless: no bundler, no npm dependency, no vendored ethers, no server of
+our own. Everything quoted below was **run** on 2026-11-19, not reasoned.
+
+### The codec — `frontend/abi.js`
+
+The page cannot import ethers (buildless), and Pago needs a closed set of a
+dozen functions, so the calldata codec is written by hand:
+
+- **Selectors are constants**, produced with `cast sig` and cross-checked
+  against the deployed Pago runtime bytecode on chain 1952 — each appears as
+  `63<selector>` in the dispatcher. Nothing computes a hash in the browser, so
+  a wrong selector would be caught by the codec tests rather than by a failed
+  transaction.
+- **Types cover what the contract uses**: static words, `string`/`bytes`,
+  plain tuples, dynamic arrays, and a **named struct** form
+  `{ struct: [[name, type], …] }` so `getLink` / `getLinksByCreator` decode
+  to objects with field names. The wire format is identical to a plain tuple —
+  only the in-memory shape differs — and encoding accepts an object *or* an
+  array, so decode→encode round-trips exactly.
+- **`node frontend/test/abi.test.mjs` → 62 passed, 0 failed.** The fixtures
+  are live-chain vectors: `createLink` calldata compared byte for byte against
+  `cast abi-encode`, return data captured from the deployed contract.
+
+Four real bugs were found by writing those tests rather than by reading the
+code: structs decoded positionally instead of by name; one offset expectation
+was wrong (a dynamic member's offset is relative to its tuple, not to its own
+head); `TextEncoder` silently coerces non-strings, so a number in a `string`
+slot would have encoded into a wrong-but-plausible invoice id — now refused;
+and one test destructured `getLink`'s `[found, link]` as if the first element
+were the link. A UTF-8 BOM in the fixture JSON was stripped too.
+
+### What the page does
+
+- **Reads need no wallet.** Every fact on screen — fee, allowlist, ledger,
+  invoice state, balance, allowance, chain clock — comes from unsigned
+  `eth_call` with three-round endpoint failover (the testnet RPC resolves
+  intermittently, §15). That is what makes the read-only Playwright project
+  possible.
+- **Writes go through an injected EIP-1193 wallet** (`window.ethereum`):
+  `eth_sendTransaction` for `createLink`, `approve`, `pay`, `claim`,
+  `cancelLink` and the MOCK token's `mint`, each followed by 90 s of receipt
+  polling. No key, no relayer, no backend; the page never sees a private key.
+- **The contract's rules are mirrored, not re-invented**: the note must be
+  1–280 UTF-8 bytes (stated in the label, enforced before signing); expiry is
+  written in *chain* time from `nowMs()` so a skewed browser clock cannot mint
+  an already-expired link; the id is checked with `linkExists` before anything
+  is signed; the payee is refused their own link with an explanation instead
+  of a transaction that would revert; and when the balance is short the page
+  offers **no approve/pay button at all** — only the MOCK faucet — because
+  paying against a zero allowance would just manufacture a failed
+  transaction.
+- **pUSD is labelled `MOCK` on every surface** that names it: token pill,
+  badge, note, hero line, footer, pay card. The faucet button exists only
+  while that label says MOCK.
+- **Routing is hash-based** (`#pay/<id>`, `#ready/<id>`), so a share link is
+  just the URL; the QR code and Copy button are built from the id alone and
+  therefore survive a dead RPC.
+
+### Scope decisions, recorded rather than implied
+
+- **Leg A only in the UI**: the payer signs `approve` then `pay` themselves —
+  two transactions, two signatures. No relayer runs on X Layer, so nobody can
+  submit a gasless EIP-3009 authorization on the payer's behalf. Leg B is
+  proven by the Phase 2 script (§15), not by this page.
+- **Gasless link creation is not ported** (same limitation as §15).
+- **Mainnet is not in the page**: `config.js`'s `pago.mainnet` is `null` and
+  the page reads only `pago.testnet` — there is nothing to point at until a
+  mainnet deploy is explicitly approved.
+
+### Test evidence — all run 2026-11-19
+
+| Suite | Command | Result |
+|---|---|---|
+| ABI codec vs live-chain vectors | `node frontend/test/abi.test.mjs` | **62 passed, 0 failed** |
+| X Layer page, mocked chain, no wallet | `npx playwright test --project=smoke specs/xlayer.spec.mjs` | **8 passed** |
+| whole smoke suite (21 NEAR + 8 X Layer) | `npx playwright test --project=smoke` | **29 passed** — zero regressions |
+| X Layer page, live chain 1952, read-only | `npx playwright test --project=testnet specs/testnet/xlayer.testnet.spec.mjs` | **4 passed** |
+
+The 8 mocked tests assert: boot from static files with the health dot driven
+by real `eth_call`s; tabs driving the hash; the create form labelling the
+token MOCK and **failing loudly at the wallet boundary** — the fixture logs
+every JSON-RPC method and the spec asserts none of them is a signing method;
+the ledger reading fixtures and filtering by state with the 0.995 payout the
+contract's split produces; the OPEN card's fee split (2.4875 / 0.0125); the
+CLAIMED receipt; the PAID claim button; and an unknown id saying so instead of
+inventing an invoice. Zero console errors and zero off-allowlist requests in
+every one. (Two bugs the suite caught while being written: the mock route
+needed a predicate because the endpoint URL has no path, and `encodeTuple`
+returns bare hex where the decoder demands `0x`.)
+
+The 4 live tests hit chain 1952 with no mocks: the health check, the payee's
+real ledger (a `Claimed` pill must appear or the test fails), the claimed
+invoice `pago-261118-002651-a` rendering "live test: ordinary payer path"
+with its 0.995 receipt, and an unknown id.
+
+### What the UI does **not** prove
+
+- **No signing is automated.** Wallet approvals stay human, in a dedicated
+  testnet wallet — `e2e/TESTNET.md` Journey D is the runbook. The automated
+  suites assert the *absence* of signing requests, never their success.
+- **The create → pay → claim journey through the browser has not been run end
+  to end yet.** The equivalent journey has been run end to end by script: nine
+  transactions, deltas summing to zero (§15).
+- The gasless payment leg and gasless creation are not in the page (above).
+
+### Master-prompt items still open
+
+- **Q2 — what each approval phrase authorises.** As recorded from the prompt:
+  **`deploy to mainnet tier 1` covers the payment contract only**, and **the
+  Split3 tape-out is part of tier 2**. Tier 3's scope is written nowhere in
+  this repository and is deliberately not guessed.
+  `send mainnet demo payment` authorises a single demo payment on mainnet.
+  **All of them remain unsent** — no phrase has been given, and mainnet (chain
+  196) stays read-only.
+- **Q3 — the `createCPU` blocker.** Solved in §13: the fee is an ERC-20
+  `transferFrom` in BEM, so the sequence is `approve(factory, 1e7)` then
+  `createCPU` with **no** value. **Third-party processor control:** tapping
+  out onto someone else's existing processor is cheaper (0.0013 native plus
+  one of its transistors) but **the processor owner controls it** — mint
+  pricing, admission and that processor's rules are theirs; only route 1 in
+  §13 (our own processor, ≈0.11 BEM) keeps control with the deployer. The
+  README says the same. **Per-link cap:** not implemented.
+- **The contract-rule audit was made against the code alone**, because the
+  master prompt's rule list is not in this repository: token allowlist ✅
+  (`_allowedTokens`, fixed at construction); Split3 rule ❌ (the circuit exists
+  and is exhaustively verified, but `Pago` never calls it); default-split
+  fallback ❌; terms hash ❌; per-link cap ❌. Closing this audit needs the
+  prompt's exact rule text.
 

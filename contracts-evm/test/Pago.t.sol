@@ -52,13 +52,15 @@ contract PagoTest is Test {
         payer = vm.addr(payerPk);
 
         // The rule path runs against the stand-in processor, which executes the
-        // real Split3 netlist bytes - so `changeDetector` passes at construction
-        // and the deployment is pinned (no cap) exactly like a mainnet tier-2
-        // deploy would be. The unpinned/capped path is covered in PagoRule.t.sol.
+        // real Split3 netlist bytes. The constructor is handed that stand-in's
+        // own codehash as the implementation reference, so rule 6's code check
+        // passes and the deployment starts pinned (no cap) - the same shape a
+        // mainnet tier-2 deploy takes with the recorded TapeOut codehash. The
+        // unpinned/capped path is covered in PagoRule.t.sol.
         ProcessorStandIn standIn = new ProcessorStandIn();
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
         configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 10_000_000_000});
-        pago = new Pago(configs, feeAccount, address(standIn), 1);
+        pago = new Pago(configs, feeAccount, address(standIn), 1, address(standIn).codehash);
     }
 
     // ══ construction ═════════════════════════════════════════════════════
@@ -66,21 +68,21 @@ contract PagoTest is Test {
     function test_constructorRejectsEmptyTokenList() public {
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](0);
         vm.expectRevert("at least one token must be allowed");
-        new Pago(configs, feeAccount, address(0xDEAD), 1);
+        new Pago(configs, feeAccount, address(0xDEAD), 1, bytes32(uint256(0xDEAD)));
     }
 
     function test_constructorRejectsZeroFeeAccount() public {
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
         configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 1});
         vm.expectRevert("fee account required");
-        new Pago(configs, address(0), address(0xDEAD), 1);
+        new Pago(configs, address(0), address(0xDEAD), 1, bytes32(uint256(0xDEAD)));
     }
 
     function test_constructorRejectsZeroToken() public {
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
         configs[0] = Pago.TokenConfig({token: address(0), decimals_: 6, unpinnedCap: 1});
         vm.expectRevert("token cannot be the zero address");
-        new Pago(configs, feeAccount, address(0xDEAD), 1);
+        new Pago(configs, feeAccount, address(0xDEAD), 1, bytes32(uint256(0xDEAD)));
     }
 
     function test_constructorRejectsDuplicateToken() public {
@@ -88,7 +90,7 @@ contract PagoTest is Test {
         configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 1});
         configs[1] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 1});
         vm.expectRevert("duplicate token");
-        new Pago(configs, feeAccount, address(0xDEAD), 1);
+        new Pago(configs, feeAccount, address(0xDEAD), 1, bytes32(uint256(0xDEAD)));
     }
 
     /// Rule 6: a deployment that cannot pay its way out of the unpinned state
@@ -97,14 +99,25 @@ contract PagoTest is Test {
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
         configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 0});
         vm.expectRevert("unpinned cap must be positive");
-        new Pago(configs, feeAccount, address(0xDEAD), 1);
+        new Pago(configs, feeAccount, address(0xDEAD), 1, bytes32(uint256(0xDEAD)));
     }
 
-    /// Rule 6: the stand-in answers every known-answer vector correctly, so the
-    /// deployment this suite runs against starts pinned.
-    function test_standInPassesChangeDetector() public view {
-        assertTrue(pago.evaluatorPinned(), "the stand-in must satisfy the known-answer check");
-        assertTrue(pago.changeDetector(), "anyone may re-run the check");
+    /// Rule 6: a missing implementation reference is refused outright - the
+    /// flag must never be decidable from an empty configuration.
+    function test_constructorRejectsMissingExpectedCodehash() public {
+        Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
+        configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 1});
+        vm.expectRevert("expected codehash required");
+        new Pago(configs, feeAccount, address(0xDEAD), 1, bytes32(0));
+    }
+
+    /// Rule 6: the stand-in's code equals the reference the constructor was
+    /// handed, so the deployment this suite runs against starts pinned. The
+    /// known-answer view passes separately, as behavioural evidence only -
+    /// it is never what sets the flag.
+    function test_standInPassesTheImplementationCheck() public view {
+        assertTrue(pago.evaluatorPinned(), "code present and equal to the expected codehash");
+        assertTrue(pago.changeDetector(), "anyone may re-run the known-answer check");
     }
 
     /// Rule 7: expected decimals are ours, stored at deploy, never queried back.

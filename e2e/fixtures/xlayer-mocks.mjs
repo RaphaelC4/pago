@@ -30,7 +30,7 @@ export const XLAYER_CHAIN_ID = 1952;
 
 const PAYEE = "0x7fce520d881454ea234d371e1256b75843609b62";
 const DEPLOYER = "0x3f1004aaed662227d535d794da679110111a2fc4";
-const TOKEN = "0x229a19b9d237629fc0c94812d21a4cf2b22b3615";
+const TOKEN = "0x15bc997887385520e3c906533f0d20cb8d6db7d0";
 const ZERO = "0x0000000000000000000000000000000000000000";
 
 /* Fixed clock, deliberately past every createdAt below so `fmtDate` renders

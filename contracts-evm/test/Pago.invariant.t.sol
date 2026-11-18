@@ -96,7 +96,7 @@ contract PagoHandler is Test {
 
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
         configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 10_000_000_000});
-        pago = new Pago(configs, FEE_ACCOUNT, address(standIn), 1);
+        pago = new Pago(configs, FEE_ACCOUNT, address(standIn), 1, address(standIn).codehash);
 
         for (uint256 i; i < 12; ++i) {
             ids.push(string(abi.encodePacked("inv-", vm.toString(i))));
@@ -238,7 +238,7 @@ contract PagoFuzzTest is Test {
         ProcessorStandIn standIn = new ProcessorStandIn();
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
         configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 10_000_000_000});
-        pago = new Pago(configs, feeAccount, address(standIn), 1);
+        pago = new Pago(configs, feeAccount, address(standIn), 1, address(standIn).codehash);
     }
 
     function testFuzz_claimConservesEveryUnit(uint96 rawAmount, uint8 a, uint8 b) public {

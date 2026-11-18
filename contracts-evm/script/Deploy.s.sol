@@ -25,11 +25,19 @@ import {ProcessorStandIn} from "../test/mocks/ProcessorStandIn.sol";
 ///      the **EVM stand-in** (testnet only - TapeOut exists solely on mainnet,
 ///      docs/RESEARCH.md section 17) and says so loudly in the log. This is not
 ///      hardware and is never described as such.
-///   4. Deploys `Pago` with the allowlist, the unpinned cap
-///      (`PAGO_UNPINNED_CAP` base units, default 10,000 tokens at the expected
-///      decimals) and `PAGO_FEE_ACCOUNT` (falling back to `PAGO_DEPLOYER`).
-///      Pago then runs its own `changeDetector` known-answer check at
-///      construction and the resulting `evaluatorPinned` flag is printed.
+///   4. Resolves the reference for rule 6's implementation check: the recorded
+///      codehash of the live TapeOut processors by default (probed, identical
+///      across #340/#30/#333 - docs/RESEARCH.md section 17), overridable with
+///      `PAGO_PROCESSOR_CODEHASH`. Deploys `Pago` with the allowlist, the
+///      unpinned cap (`PAGO_UNPINNED_CAP` base units, default 10,000 tokens at
+///      the expected decimals) and `PAGO_FEE_ACCOUNT` (falling back to
+///      `PAGO_DEPLOYER`). Pago's constructor compares that reference against
+///      `extcodehash` of the deployed processor - the only path that may set
+///      `evaluatorPinned` - and the flag, the reference and a live
+///      `changeDetector` reading (evidence only, never the source of the flag)
+///      are printed. On testnet the stand-in's code differs from the reference,
+///      so the flag prints false and every link stays capped: honest, and
+///      exactly what rule 6 wants until a real tape-out exists.
 ///
 /// `PAGO_DEPLOYER` is read explicitly rather than taken from `msg.sender`
 /// because in a Foundry script `msg.sender` is whatever `--sender` says.
@@ -47,6 +55,10 @@ import {ProcessorStandIn} from "../test/mocks/ProcessorStandIn.sol";
 ///   $env:PAGO_EXPECTED_DECIMALS = "6"   # abort if the token disagrees
 ///   $env:PAGO_UNPINNED_CAP = "10000000000"  # base units, while unpinned
 ///   $env:PAGO_PROCESSOR = "0x..."       # skip the stand-in (mainnet tier 2)
+///   $env:PAGO_PROCESSOR_CODEHASH = "0x..."  # optional: reference the code
+///                                            # check compares against;
+///                                            # default = recorded TapeOut
+///                                            # codehash (docs/RESEARCH.md 17)
 ///   $env:PAGO_CIRCUIT_ID = "1"          # circuit id inside the processor
 ///
 ///   forge script script/Deploy.s.sol:Deploy `
@@ -54,6 +66,14 @@ import {ProcessorStandIn} from "../test/mocks/ProcessorStandIn.sol";
 ///     --account pago-deployer `
 ///     --broadcast
 contract Deploy is Script {
+    /// Recorded implementation codehash of the real TapeOut processors on X
+    /// Layer mainnet (chain 196): probed identical across processors #340, #30
+    /// and #333 via `cast code` + `cast keccak` (docs/RESEARCH.md section 17).
+    /// Rule 6's constructor check compares `extcodehash(processor)` against
+    /// this unless `PAGO_PROCESSOR_CODEHASH` overrides it. A live read would be
+    /// no check at all - the reference must come from our own recorded probe.
+    bytes32 internal constant RECORDED_TAPEOUT_PROCESSOR_CODEHASH = 0x57aa306fd0be97087da3534e03398f5ff4efd533b5be4e45a405ce86fa6717d5;
+
     function run() external {
         string memory tokenAddr = vm.envOr("PAGO_TOKEN", string(""));
         address deployer = vm.envOr("PAGO_DEPLOYER", msg.sender);
@@ -84,6 +104,14 @@ contract Deploy is Script {
         require(onchainDecimals == expectedDecimals, "DECIMALS MISMATCH: token disagrees with PAGO_EXPECTED_DECIMALS - aborting");
         console.log("token decimals (chain == expected):", onchainDecimals);
 
+        // Rule 6 reference: the recorded implementation codehash of the live
+        // TapeOut processors (probed identical across #340, #30 and #333 -
+        // docs/RESEARCH.md section 17). PAGO_PROCESSOR_CODEHASH overrides it,
+        // e.g. after a future tape-out, and must never be a live read: echoing
+        // back extcodehash(processor) from this RPC would make the
+        // constructor's check tautological (it could only ever pass).
+        bytes32 expectedProcessorCodehash = vm.envOr("PAGO_PROCESSOR_CODEHASH", RECORDED_TAPEOUT_PROCESSOR_CODEHASH);
+
         address processor;
         if (bytes(processorAddr).length != 0) {
             processor = vm.parseAddress(processorAddr);
@@ -96,11 +124,12 @@ contract Deploy is Script {
             processor = address(standIn);
             console.log("DEPLOYED PROCESSOR STAND-IN (EVM, not hardware):", processor);
         }
+        console.log("expected processor codehash (reference):", vm.toString(expectedProcessorCodehash));
 
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
         configs[0] = Pago.TokenConfig({token: token, decimals_: uint8(expectedDecimals), unpinnedCap: unpinnedCap});
 
-        Pago pago = new Pago(configs, feeAccount, processor, circuitId);
+        Pago pago = new Pago(configs, feeAccount, processor, circuitId, expectedProcessorCodehash);
 
         vm.stopBroadcast();
 
@@ -113,10 +142,14 @@ contract Deploy is Script {
         console.log("  fee bps:          ", pago.feeBps());
         console.log("  processor:        ", processor);
         console.log("  circuit id:       ", circuitId);
+        console.log("  expected codehash:", vm.toString(expectedProcessorCodehash));
         console.log("  evaluatorPinned:  ", pago.evaluatorPinned());
+        console.log("  changeDetector:   ", pago.changeDetector());
+        console.log("  (changeDetector is evidence only; rule 6 lets only the code check set evaluatorPinned)");
         console.log("  unpinned cap:     ", pago.MAX_LINK_AMOUNT_UNPINNED(token));
         if (!pago.evaluatorPinned()) {
-            console.log("  NOTE: changeDetector did not pass - every link is capped until it does.");
+            console.log("  NOTE: code check did not match - every link is capped. To pin: pass");
+            console.log("        PAGO_PROCESSOR_CODEHASH of the recorded implementation (docs/RESEARCH.md section 17).");
         }
         console.log("");
         console.log("Record these in frontend/config.js XLAYER.pago and docs/RESEARCH.md.");

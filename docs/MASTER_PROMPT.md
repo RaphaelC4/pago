@@ -26,7 +26,11 @@ Contract rules to implement and test (from the master prompt):
 4. terms(linkId) and termsHash. pay and payWithAuthorization take expectedTermsHash and
    revert on mismatch. This does NOT prove what the payer saw; don't claim it does.
 5. createLink reverts if the circuit's netlist identity can't be read. Store its hash.
-6. evaluatorPinned flag. Name the known-answer check "changeDetector", never "pin".
+6. evaluatorPinned flag. [paraphrase, added 2026-11-18] The flag may become true ONLY
+   through a real onchain implementation check - never via the change detector: the
+   constructor compares extcodehash(processor) against the expected implementation
+   codehash, and only an exact match with code present sets it. Name the known-answer
+   check "changeDetector", never "pin"; it stays a public view and never sets the flag.
    If unpinned: cap every link at MAX_LINK_AMOUNT_UNPINNED[token] in base units.
 7. Token allowlist fixed at deploy. Store expected decimals as written by us. Never read
    decimals() at runtime for safety limits. The deploy script aborts on a mismatch.

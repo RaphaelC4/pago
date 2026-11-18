@@ -9,10 +9,10 @@ import {ProcessorStandIn} from "./mocks/ProcessorStandIn.sol";
 import {FaultyProcessor} from "./mocks/FaultyProcessor.sol";
 
 /// The master-prompt contract rules (docs/MASTER_PROMPT.md), one file:
-/// terms consent (rule 4), circuit identity (rule 5), evaluatorPinned /
-/// changeDetector and the unpinned cap (rule 6), the rule-2/3 processor
-/// selection and every fallback that keeps a link from freezing (rules 2, 3),
-/// and per-recipient failure with withdrawOwed (rule 9).
+/// terms consent (rule 4), circuit identity (rule 5), the implementation
+/// check behind evaluatorPinned and the unpinned cap (rule 6), the rule-2/3
+/// processor selection and every fallback that keeps a link from freezing
+/// (rules 2, 3), and per-recipient failure with withdrawOwed (rule 9).
 ///
 /// Every processor fault the rules name has a matching mock: revert, malformed
 /// return (wrong length and dirty padding), gas exhaustion, a lie about an
@@ -248,14 +248,38 @@ contract PagoRuleTest is Test {
         assertEq(token.balanceOf(address(pago)), 0);
     }
 
-    // ══ rule 6: changeDetector and the unpinned cap ═════════════════════
+    // ══ rule 6: the implementation check and the unpinned cap ════════════
 
     function test_faultyProcessorLeavesTheDeploymentUnpinned() public {
+        // The fault mocks' code is never this suite's recorded reference, so
+        // the flag stays false whatever the mock does - and the known-answer
+        // view reports each fault too, as separate evidence.
         Pago reverter = _pagoWith(address(new FaultyProcessor(FaultyProcessor.Mode.Revert)));
-        assertFalse(reverter.evaluatorPinned(), "a reverting evaluator fails the known-answer check");
+        assertFalse(reverter.evaluatorPinned(), "code that is not the reference is never pinned");
+        assertFalse(reverter.changeDetector(), "the known-answer view reports the revert too");
 
         Pago liar = _pagoWith(address(new FaultyProcessor(FaultyProcessor.Mode.Lie)));
-        assertFalse(liar.evaluatorPinned(), "a lying evaluator fails the known-answer check");
+        assertFalse(liar.evaluatorPinned(), "code that is not the reference is never pinned");
+        assertFalse(liar.changeDetector(), "the known-answer view reports the lie too");
+    }
+
+    /// Rule 6's decisive clause, tested in both directions: the flag may come
+    /// ONLY from the onchain code check, never from the change detector.
+    function test_pinningComesOnlyFromTheCodeCheck() public {
+        // Matching code but a lying evaluator: pinned anyway. Safety here is
+        // rule 3 - claim's strict staticcall with default-split fallback - not
+        // the flag. Behaviour must not be able to clear or set it.
+        FaultyProcessor liar = new FaultyProcessor(FaultyProcessor.Mode.Lie);
+        Pago codeMatches = _pagoWith(address(liar), address(liar).codehash);
+        assertTrue(codeMatches.evaluatorPinned(), "matching code pins; behaviour never speaks");
+        assertFalse(codeMatches.changeDetector(), "the lie still shows in the view");
+
+        // Honest evaluator but code that is not the reference: never pinned,
+        // even though every known-answer vector passes - which is exactly the
+        // path rule 6 forbids the change detector from taking.
+        Pago wrongCode = _pagoWith(address(standIn), keccak256("some other implementation"));
+        assertFalse(wrongCode.evaluatorPinned(), "a passing changeDetector may never set the flag");
+        assertTrue(wrongCode.changeDetector(), "every vector answers correctly - and it still must not pin");
     }
 
     function test_unpinnedDeploymentCapsEveryLink() public {
@@ -274,8 +298,9 @@ contract PagoRuleTest is Test {
     }
 
     function test_pinnedDeploymentHasNoCap() public {
-        // The stand-in passes changeDetector, so a link above the unpinned cap
-        // is perfectly fine - the cap only ever applies while unpinned.
+        // The stand-in's own code is the reference this suite pins against, so
+        // the deployment is pinned and a link above the unpinned cap is
+        // perfectly fine - the cap only ever applies while unpinned.
         uint256 cap = pago.MAX_LINK_AMOUNT_UNPINNED(address(token));
         vm.prank(alice);
         pago.createLink("pin-big", cap + 1, address(token), "x", 0, _defaultAlice(), _ruleValid());
@@ -357,10 +382,19 @@ contract PagoRuleTest is Test {
 
     // ══ internals ═══════════════════════════════════════════════════════
 
+    /// One-argument form: the implementation reference is always this suite's
+    /// recorded one - the stand-in's runtime code. So the stand-in pins and
+    /// every fault mock's different code stays unpinned and capped, whatever
+    /// its behaviour (rule 6). The two-argument form sets the reference
+    /// explicitly, for the tests that probe the check itself.
     function _pagoWith(address processor) internal returns (Pago p) {
+        p = _pagoWith(processor, keccak256(type(ProcessorStandIn).runtimeCode));
+    }
+
+    function _pagoWith(address processor, bytes32 expectedCodehash) internal returns (Pago p) {
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
         configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 10_000_000_000});
-        p = new Pago(configs, feeAccount, processor, 1);
+        p = new Pago(configs, feeAccount, processor, 1, expectedCodehash);
     }
 
     function _split(address r0, address r1, address r2, uint8 s0, uint8 s1, uint8 s2) internal pure returns (Pago.Split memory s) {

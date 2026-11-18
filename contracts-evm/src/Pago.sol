@@ -43,10 +43,13 @@ import {IRuleProcessor} from "./IRuleProcessor.sol";
 ///     prove what the payer's screen displayed, and nothing here claims it does.
 ///   * **Rule 5 - circuit identity.** `createLink` reverts if the processor's
 ///     netlist cannot be read, and stores `keccak256(netlist)` on the link.
-///   * **Rule 6 - evaluatorPinned / changeDetector.** The known-answer check is
-///     named `changeDetector` (never "pin"); the flag it sets is `evaluatorPinned`.
-///     While unpinned, every link is capped at `MAX_LINK_AMOUNT_UNPINNED[token]`
-///     in base units.
+///   * **Rule 6 - evaluatorPinned / implementation check.** The flag may become
+///     true ONLY through a real onchain implementation check: the constructor
+///     compares `extcodehash(processor)` against `expectedProcessorCodehash`
+///     with code present, and a mismatch leaves the flag false. The
+///     known-answer check is named `changeDetector` (never "pin"); it stays a
+///     public view and never sets the flag. While unpinned, every link is
+///     capped at `MAX_LINK_AMOUNT_UNPINNED[token]` in base units.
 ///   * **Rule 7 - decimals are ours, not the token's.** Expected decimals are given
 ///     by us at deploy time and stored; this contract never calls `decimals()` for
 ///     any safety decision. The deploy script aborts if the onchain value differs.
@@ -176,7 +179,14 @@ contract Pago {
     /// The circuit's id inside `processor` (Split3 is #1 on our processor).
     uint256 public immutable circuitId;
 
-    /// Known-answer check passed at construction; see `changeDetector` (rule 6).
+    /// The exact `extcodehash(processor)` the constructor compared against when
+    /// deciding `evaluatorPinned` (rule 6). Public so anyone can audit the
+    /// reference the implementation check used.
+    bytes32 public immutable expectedProcessorCodehash;
+
+    /// True only when the constructor's real onchain implementation check found
+    /// code at `processor` hashing to exactly `expectedProcessorCodehash`.
+    /// `changeDetector` never sets it (rule 6); false means every link is capped.
     bool public evaluatorPinned;
 
     /// Expected decimals per token, as written by us at deploy time. This
@@ -232,8 +242,17 @@ contract Pago {
     /// @param feeAccount_ Account that receives the fee at `claim`.
     /// @param processor_ TapeOut processor to query; address(0) = none.
     /// @param circuitId_ Circuit id inside `processor_`.
-    constructor(TokenConfig[] memory tokens, address feeAccount_, address processor_, uint256 circuitId_) {
+    /// @param expectedProcessorCodehash_ keccak256 of the code expected at
+    ///        `processor_`: the reference for rule 6's implementation check.
+    constructor(
+        TokenConfig[] memory tokens,
+        address feeAccount_,
+        address processor_,
+        uint256 circuitId_,
+        bytes32 expectedProcessorCodehash_
+    ) {
         require(tokens.length > 0, "at least one token must be allowed");
+        require(expectedProcessorCodehash_ != bytes32(0), "expected codehash required");
         require(feeAccount_ != address(0), "fee account required");
         for (uint256 i; i < tokens.length; ++i) {
             require(tokens[i].token != address(0), "token cannot be the zero address");
@@ -246,11 +265,15 @@ contract Pago {
         feeAccount = feeAccount_;
         processor = processor_;
         circuitId = circuitId_;
+        expectedProcessorCodehash = expectedProcessorCodehash_;
 
-        // Rule 6: the deployment starts life already checked against the
-        // known-answer vectors. A processor that reverts, lies or cannot be
-        // reached leaves the flag false and every link capped.
-        evaluatorPinned = changeDetector();
+        // Rule 6: the ONLY path that may turn this flag on - a real onchain
+        // implementation check. Code must exist at the processor and hash to
+        // exactly the expected value. `changeDetector` is never consulted here:
+        // a wrong, missing or replaced implementation leaves the flag false and
+        // every link capped.
+        bytes32 liveCodehash = processor_.codehash;
+        evaluatorPinned = processor_ != address(0) && processor_.code.length > 0 && liveCodehash == expectedProcessorCodehash_;
     }
 
     // ── payee ──────────────────────────────────────────────────────────────
@@ -545,14 +568,22 @@ contract Pago {
         return keccak256(_termsBytes(l));
     }
 
-    /// The known-answer check that sets `evaluatorPinned` (rule 6).
+    /// The known-answer check - a public view, never the source of `evaluatorPinned`
+    /// (rule 6).
     ///
     /// Runs the processor over vectors whose correct verdict is known from
     /// Split3's exhaustive proof (every input of the whole 2^15 space is checked
     /// in test/Split3.t.sol): valid sums must answer 1, invalid sums must answer
     /// 0. Reverts, malformed returns, gas exhaustion or a wrong answer all make
-    /// this return false - which leaves the deployment unpinned and its links
-    /// capped. Anyone may call it: it is a view over published hardware.
+    /// this return false. Anyone may call it: it is a view over published
+    /// hardware (or over the labelled testnet stand-in).
+    ///
+    /// Rule 6 forbids this check from ever turning the flag on: `evaluatorPinned`
+    /// comes only from the constructor's `extcodehash` implementation check.
+    /// This function answers "does the linked processor behave correctly right
+    /// now?" for anyone to read - the deploy log prints it as evidence - but it
+    /// writes nothing, and `claim` never trusts it (rule 3's per-call strict
+    /// staticcall with default-split fallback stands on its own).
     function changeDetector() public view returns (bool) {
         // (share1, share2, share3) -> expected single output bit.
         uint16[6] memory shares = [uint16(10 | (6 << 5) | (4 << 10)), uint16(20), uint16(0), uint16(10 | (8 << 5) | (4 << 10)), uint16(10 | (6 << 5) | (5 << 10)), uint16(31 | (31 << 5) | (31 << 10))];

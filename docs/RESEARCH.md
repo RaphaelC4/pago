@@ -884,7 +884,7 @@ still speaks the old ABI — updating the frontend is the next phase.
 | 3 | Default split fixed at creation with no setter; processor revert, malformed data, out of gas or failed check → default; a link must never freeze | `createLink` writes both tables once; no setter exists; any `_eval` anomaly returns false; plus a solvency check: a rule table whose shares don't sum to `SPLIT_STEPS` is refused **even if the evaluator said yes**; `claim` reverts only on "link not found" / "link is not paid" | every fallback test above, including `vm.etch(processor, "")` after creation ("the processor vanishes") |
 | 4 | `terms(linkId)` and `termsHash`; `pay` and `payWithAuthorization` take `expectedTermsHash` and revert on mismatch; does **not** prove what the payer saw | `_termsBytes` = `abi.encode` of every immutable field (id, amount, token, description, expiry, **both split tables**, fee bps, fee account, `netlistHash`, `processor`, `circuitId`); guard order: settleable → nonce → terms; the contract's own doc says this binds the payer to the terms *recorded onchain*, nothing more | `PagoRule.t.sol` terms tests (mismatch moves nothing); live `termsHash` read by the exercise script before each payment (below) |
 | 5 | `createLink` reverts if the circuit's netlist identity can't be read; store its hash | `_readNetlist()` staticcalls `netlist(circuitId)` under a 200k gas cap; empty/revert/malformed → `"circuit netlist is unreadable"`; `l.netlistHash = keccak256(nl)` stored per link | `PagoRule.t.sol`: `FaultyProcessor.NoNetlist` reverts creation; honest links store `keccak256(Split3.netlist())` |
-| 6 | `evaluatorPinned` flag; the known-answer check is named `changeDetector`, never "pin"; while unpinned, cap every link at `MAX_LINK_AMOUNT_UNPINNED[token]` in base units | constructor runs `evaluatorPinned = changeDetector()` — six known-answer vectors (valid sums → 1, invalid → 0) against the deployed processor; `createLink` enforces the cap while unpinned; the constructor refuses a zero cap | `Pago.t.sol` stand-in passes at deploy; `PagoRule.t.sol`: reverting/lying processor leaves unpinned, cap enforced to the unit, pinned deployment uncapped; live `evaluatorPinned: true` (below) |
+| 6 | `evaluatorPinned` flag; the known-answer check is named `changeDetector`, never "pin"; while unpinned, cap every link at `MAX_LINK_AMOUNT_UNPINNED[token]` in base units | **Full-rule clause, paraphrased: the flag may become true only through a real onchain implementation check, never via the change detector.** Implemented as: the constructor takes `expectedProcessorCodehash` and sets `evaluatorPinned = processor_ != 0 && processor_.code.length > 0 && processor_.codehash == expectedProcessorCodehash` — an exact `extcodehash` match with code present; a zero reference is refused. `changeDetector()` stays a public view over six known-answer vectors (valid sums → 1, invalid → 0) and never writes the flag. `createLink` enforces the cap while unpinned; the constructor refuses a zero cap. Deploy reference defaults to the recorded TapeOut codehash `0x57aa306f…17d5`, overridable via `PAGO_PROCESSOR_CODEHASH` (never a live read — that would be tautological) | `Pago.t.sol`: stand-in with its own codehash pins; zero reference refused. `PagoRule.t.sol`: fault mocks' different code never pins whatever their behaviour; a lying evaluator whose code matches pins while `changeDetector()` reports false; the honest stand-in with a wrong reference stays unpinned while `changeDetector()` reports true — decoupling proven in both directions; cap enforced to the unit; pinned deployment uncapped. Live testnet: `evaluatorPinned: false`, `changeDetector: true` (below) — the honest capped state until tier 2 |
 | 7 | Token allowlist fixed at deploy; store expected decimals as written by us; never read `decimals()` at runtime for safety limits; deploy script aborts on mismatch | `TokenConfig{token, decimals_, unpinnedCap}` is constructor-only; `expectedDecimals[token]` stored; `Pago` never calls `decimals()` anywhere; `Deploy.s.sol` reads the onchain value **once** and `require`s it equals `PAGO_EXPECTED_DECIMALS` | constructor tests; deploy log `token decimals (chain == expected): 6` (below) |
 | 8 | No `markPaid`; underpay reverts, overpay credited, double pay reverts, creator can't self-pay, fee leg skipped if it rounds to zero | `_requireSettleable` (allowlist → exists → `Open` → not creator → `amount >= l.amount` → not expired) before any transfer; `paidAmount` stores what arrived; `if (fee > 0)` skips a zero fee | `Pago.t.sol` pay suite + `test_tinyInvoiceChargesNoFeeInsteadOfTransferringZero` |
 | 9 | One failing recipient must not block the others | each seat (and the fee) is an **independent** `_payLeg`: a failed transfer becomes `owed[recipient][token]` + `LegOwed`, the other legs still run; `withdrawOwed(token)` pays the caller their own storage balance only; claim never reverts on transfer failure | `PagoRule.t.sol` with `MockToken.blockedRecipient`: blocked seat owed, others paid in the same tx, then withdrawn to the unit |
@@ -951,13 +951,18 @@ default split instead of freezing the link:
 Two bugs the suite caught while being written, both recorded because they
 are exactly what tests are for: the stand-in originally returned
 `abi.encode(bytes1(...))` — a 32-byte payload that Pago's strict decoder
-correctly rejected, which silently failed `changeDetector` and pinned
-nothing; and inline `pago.termsHash(...)` inside a `pay(...)` argument list
-is an *external call evaluated before `pay`*, consuming the test's
-`vm.prank`/`vm.expectRevert` — the suite now caches each link's hash at
-creation.
+correctly rejected, which made `changeDetector` answer false — the first
+symptom anyone noticed; and inline `pago.termsHash(...)` inside a `pay(...)`
+argument list is an *external call evaluated before `pay`*, consuming the
+test's `vm.prank`/`vm.expectRevert` — the suite now caches each link's hash
+at creation.
 
-### Live testnet redeploy (chain 1952), 2026-11-18
+### Live testnet redeploy (rules 1–10), superseded the same day (chain 1952), 2026-11-18
+
+**Superseded:** the rule-6 fix gave the constructor an
+`expectedProcessorCodehash` argument, which changed the bytecode and moved
+the address again. The current deployment is recorded in the next section;
+this one stands as the record of the rules 1–10 redeploy (commit `269428d`).
 
 Read back from chain after deploy:
 
@@ -994,6 +999,60 @@ path, with the two split tables doing different work on purpose:
 | `claim` leg B (fallback) | `0xec457bf075ce1545154d5729ee44909a25982cb3c4723ed1bdc374cc47c5f3fb` |
 
 Reconciliation, measured from a snapshot taken before either link existed:
+
+```
+payee change        1,492,500   (rule 497,500 + default 995,000)
+deployer change    -1,492,500   (two 1,000,000 payments + rule seat 497,500 + 2 x 5,000 fees)
+held by Pago change        0    (nothing left inside)
+deltas sum to              0    (every unit accounted for)
+PASS - leg A settled through the rule table, leg B through the fallback default,
+both payer paths live on X Layer testnet, every unit accounted for.
+```
+
+### Live testnet redeploy after the rule-6 fix (chain 1952), 2026-11-18
+
+The constructor now takes `expectedProcessorCodehash`, so the bytecode (and
+with it the address) changed again. Read back from chain after deploy:
+
+| What | Address | Deploy tx |
+|---|---|---|
+| **Pago** (rules 1–10 + the rule-6 code check, 14,580 bytes) | `0xd4337d6f6dba4DCea65Cfc53B457dBb21e7ba3aC` | `0x08a6cdd6ff5c5aeda7f15222d10f9f9f756c6afdc3b2808962b7379178c93fbb` |
+| pUSD **(MOCK**, 6 decimals, freely mintable, no backing, 4,118 bytes) | `0x15bc997887385520E3C906533F0d20CB8D6DB7D0` | `0x57c61f06546dea6b412af68057b75d1b704932dfb170689a3dbc7d247b1ae32f` (mint to deployer: `0x84a2e5b8e5551425f73f3f1eb699de9b6b823f0c838ee1306b08cea43b750848`) |
+| **ProcessorStandIn** (EVM, **not hardware**, 2,780 bytes) | `0x86A30B752d1cf860EC224885793Eb7d33011B1BC` | `0x05fd4883ba9b4ef99cd3ae3ff55f6d8613ba9e0409d6bb73e7bd20ad2e677b06` |
+
+Constructor state read back live: `evaluatorPinned: false` — the reference
+is the recorded TapeOut codehash `0x57aa306f…17d5` (probed identical across
+processors #340, #30 and #333) and the stand-in's code correctly does not
+match, so every link is capped at `10,000,000,000` base units (10,000 pUSD);
+`changeDetector: true` (behaviour evidence only — rule 6 never lets it set
+the flag), fee 50 bps, circuit id 1, fee account = deployer. On mainnet
+tier 2 the recorded processor satisfies the same reference and the flag
+flips true.
+
+`script/testnet-exercise.ps1` then settled two real invoices, one per payer
+path, with the two split tables doing different work on purpose:
+
+- **leg A** — ordinary `pay`, rule table `10/6/4` (= 20 steps, valid): the
+  circuit **accepts** it and `claim` pays the rule table (payee 497,500,
+  deployer-seat 497,500) instead of the default. The deployer receiving money
+  back is the visible proof the rule was selected.
+- **leg B** — gasless `payWithAuthorization` relayed by the payee, rule table
+  `10/8/5` (= 23 steps, invalid): the circuit **rejects** it and `claim`
+  falls back to the default table (payee 995,000 in full).
+
+| Step | Tx |
+|---|---|
+| mint 10 pUSD to the payer | `0xe9d7a59441dd0abfa1a4d557987c9277540fa313e5310475668cfe26c4d93475` |
+| leg A `createLink` (two split tuples) | `0x87b900a76d4ef715fef3f326073bac2d233def395d91035af75150165d0440ca` |
+| leg A `approve` | `0x9b7425d1ba15865641046b1812283902e9d716ef07e1608c263b90c76017b6ca` |
+| leg A `pay` (terms hash `0x57458005…54b07`) | `0x166612b20cb425f4e84a0f51cc5710d1f9c41104fe7069b56b13138f63d01235` |
+| leg B `createLink` (invalid rule table) | `0xf0464c34e1e4a29d499d5fb2f39baa7f8fefb09e044322e2a990f651d3fed464` |
+| leg B `payWithAuthorization` (terms hash `0x6c2ee9a8…0118b`) | `0x109b21b9327ddbd6493b5b00ff6999cdc9bba22de5dbe1ac65b440f32e8df5ac` |
+| `claim` leg A (rule table) | `0xdb61fb0be6dd624870289f91843d002a8a7d453e72319c87113767f039c2c081` |
+| `claim` leg B (fallback) | `0x0e7f79f8434d4d8ad71ccd58fc333636f1d479386011bc80c6314bd6cefcdd3d` |
+
+Reconciliation, measured from a snapshot taken before either link existed
+(link ids `pago-261118-144006-a` / `-b`):
 
 ```
 payee change        1,492,500   (rule 497,500 + default 995,000)

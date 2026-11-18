@@ -24,8 +24,12 @@ import {Tap02} from "../../src/Tap02.sol";
 ///   * `circuitInfo(1)` reports the shape those bytes actually have.
 ///
 /// On mainnet tier 2 this address is replaced by the real taped-out processor;
-/// nothing in Pago changes, only the constructor argument. Every doc that shows
-/// this contract says "stand-in" - it is never presented as hardware.
+/// nothing in Pago changes, only the constructor argument. The expected
+/// codehash reference defaults to the recorded TapeOut implementation, so the
+/// recorded processor satisfies rule 6's code check and `evaluatorPinned`
+/// flips true - against this stand-in it stays false and links stay capped.
+/// Every doc that shows this contract says "stand-in" - it is never presented
+/// as hardware.
 contract ProcessorStandIn is IRuleProcessor {
     uint32 internal constant N_IN = Split3.N_IN;
     uint32 internal constant N_OUT = Split3.N_OUT;

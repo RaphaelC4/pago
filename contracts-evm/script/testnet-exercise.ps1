@@ -245,14 +245,22 @@ $codeLen = (Call "Pago code" { cast code $Pago --rpc-url $Rpc }).Length
 Write-Host ("  Pago  {0}  ({1} hex chars of code)" -f $Pago, $codeLen) -ForegroundColor Cyan
 if ($codeLen -le 2) { throw "no contract code at $Pago" }
 
-# Rule 6 evidence, read straight from the deployment: the stand-in processor
-# must pass Pago's known-answer check, or every link would be capped. The
-# processor is an EVM stand-in, NOT hardware — TapeOut exists only on mainnet.
+# Rule 6 evidence, read straight from the deployment. The reference is the
+# recorded codehash of the real TapeOut processors; the stand-in's code
+# deliberately differs, so the implementation check cannot pass: on testnet
+# evaluatorPinned must read false and every link stays capped - honestly, and
+# exactly what rule 6 wants until a tape-out exists. Mainnet tier 2 passes the
+# recorded processor and flips it true. The processor is an EVM stand-in,
+# NOT hardware - TapeOut exists only on mainnet.
 $processor = Call "processor" { cast call $Pago "processor()(address)" }
 $pinned = Call "evaluatorPinned" { cast call $Pago "evaluatorPinned()(bool)" }
+$expectedCodehash = Call "expected codehash" { cast call $Pago "expectedProcessorCodehash()(bytes32)" }
+$changeDetector = Call "changeDetector" { cast call $Pago "changeDetector()(bool)" }
 Write-Host ("  processor {0}  (EVM stand-in for the TapeOut processor - not hardware)" -f $processor) -ForegroundColor DarkYellow
-if ($pinned -ne "true") { throw "changeDetector did not pass (evaluatorPinned = $pinned): every link would be capped. Inspect the processor before going further." }
-Write-Host ("  evaluatorPinned {0}  (known-answer check passed at deploy)" -f $pinned) -ForegroundColor Green
+Write-Host ("  expected codehash {0}  (recorded TapeOut implementation)" -f $expectedCodehash) -ForegroundColor DarkGray
+if ($pinned -ne "false") { throw "evaluatorPinned = $pinned on testnet: the stand-in must never satisfy the recorded TapeOut codehash check. Inspect PAGO_PROCESSOR_CODEHASH before going further." }
+Write-Host ("  evaluatorPinned {0}  (expected on testnet: implementation check vs recorded TapeOut code; links are capped)" -f $pinned) -ForegroundColor Green
+Write-Host ("  changeDetector {0}  (behaviour evidence only - never what sets the flag)" -f $changeDetector) -ForegroundColor DarkGray
 
 # ── 3. fund the payer with test tokens ─────────────────────────────────────
 

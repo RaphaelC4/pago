@@ -366,9 +366,9 @@ invoiced one.
 ## Pago — the same product on X Layer
 
 **Status:** live on **X Layer testnet (chain 1952)** — Pago
-`0x2fC4180db7318F4364F6FC559A25359c9F537D3e`, pUSD **(MOCK)**
-`0x3693a61572C1c5f120Da39A6F4e616ce46D32de4`, processor stand-in **(EVM, not
-hardware)** `0x67a9B6F2AE5488B8ee993F019FE867E97585DEEF` — with both payer
+`0xd4337d6f6dba4DCea65Cfc53B457dBb21e7ba3aC`, pUSD **(MOCK)**
+`0x15bc997887385520E3C906533F0d20CB8D6DB7D0`, processor stand-in **(EVM, not
+hardware)** `0x86A30B752d1cf860EC224885793Eb7d33011B1BC` — with both payer
 paths run end to end, the circuit's rule selecting one split table and its
 rejection falling back to the other, reconciled to the unit
 ([`docs/RESEARCH.md` §17](docs/RESEARCH.md)), and its own page at
@@ -454,9 +454,12 @@ decoding — whose single output bit only ever **selects** between those two
 stored tables; a rule can never invent a split, a recipient or an amount.
 Whatever the processor does — reverts, returns malformed data, runs out of
 gas, lies about an unsafe split, or vanishes — the default table pays, so a
-link can never freeze. If the evaluator is not pinned by its `changeDetector`
-known-answer check at deploy, every link is capped at
-`MAX_LINK_AMOUNT_UNPINNED[token]`. Full rule-by-rule audit:
+link can never freeze. `evaluatorPinned` turns true **only through rule 6's
+onchain implementation check**: the constructor compares `extcodehash` of the
+deployed processor against the recorded TapeOut codehash, and only an exact
+match with code present sets it — never the change detector, which stays a
+public view anyone may run as evidence. Until that check passes, every link
+is capped at `MAX_LINK_AMOUNT_UNPINNED[token]`. Full rule-by-rule audit:
 [`docs/RESEARCH.md` §17](docs/RESEARCH.md).
 
 **On testnet that processor is a labelled stand-in, not hardware.** TapeOut
@@ -465,8 +468,10 @@ probe recorded in §17), so `test/mocks/ProcessorStandIn.sol` implements the
 same interface and runs the **real Split3 netlist bytes** through the same
 TAP-02 evaluator that was proven bit-for-bit against a live mainnet
 processor. The verdicts come from the netlist; the deploy log says
-"EVM stand-in, not hardware"; mainnet tier 2 replaces only the constructor
-argument.
+"EVM stand-in, not hardware". Its code is not the recorded TapeOut
+implementation, so on testnet `evaluatorPinned` reads **false** and every
+link stays capped; mainnet tier 2 swaps in the recorded processor and the
+code check passes, flipping the flag true.
 
 The other reason is the hackathon: the X Layer TapeOut Accelerate track
 explicitly asks for TapeOut circuits, contracts or onchain data
@@ -535,13 +540,13 @@ forge test
 
 The local suites — `PagoTest` (the full contract: guards, money paths, ledger,
 both payer paths), `PagoRuleTest` (the master-prompt rules: terms consent,
-circuit identity, `evaluatorPinned` / `changeDetector`, and every processor
-fault proven to fall back instead of freezing), `PagoInvariantTest` +
+circuit identity, the implementation check behind `evaluatorPinned`, and every
+processor fault proven to fall back instead of freezing), `PagoInvariantTest` +
 `PagoFuzzTest` (conservation: payouts + fee == credited, balance ≥ owed,
 status never backward — 128,000 interleaved calls in the invariant run),
 `Split3Test` (the exhaustive circuit check) and the TAP-02 reference
 evaluator's own suite — need no network at all. The fork suites prove the
-Phase 0 claims against real X Layer mainnet state. **131 tests, 0 failed**
+Phase 0 claims against real X Layer mainnet state. **137 tests, 0 failed**
 (recorded 2026-11-18, [`docs/RESEARCH.md` §17](docs/RESEARCH.md)).
 
 ### The X Layer page

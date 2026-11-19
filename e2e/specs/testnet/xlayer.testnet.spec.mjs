@@ -12,7 +12,7 @@
  *     human, in a dedicated testnet wallet (e2e/TESTNET.md);
  *   - NO repository secrets are read; nothing here could print one;
  *   - success is asserted on UI state only, and the link ids below are real
- *     invoices from the 2026-11-19 redeploy run (docs/RESEARCH.md §17) — if
+ *     invoices from the 2026-11-19 live re-check run (docs/RESEARCH.md §17) — if
  *     one of them is ever absent the test fails honestly rather than skipping.
  *
  * pUSD is MOCK. Nothing here presents it as a stablecoin, and every assertion
@@ -21,9 +21,11 @@
 
 import { test, expect } from "@playwright/test";
 
-/* The 2026-11-19 redeploy's leg A: created, paid through the ordinary payer
-   path and claimed, with the rule table applied (RESEARCH.md §17). */
-const CLAIMED_LINK = "pago-261119-013711-a";
+/* The 2026-11-19 live re-check run's leg A: created, paid through the
+   ordinary payer path and claimed. While evaluatorPinned() does not pass
+   (always on testnet) the claim settled through the DEFAULT table —
+   RESEARCH.md §17 records the exercise and its reconciliation. */
+const CLAIMED_LINK = "pago-261119-061618-a";
 
 test.describe("X Layer testnet read-only", () => {
   test("the page's health check answers from the live X Layer RPC", async ({ page }) => {

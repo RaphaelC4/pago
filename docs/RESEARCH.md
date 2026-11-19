@@ -1068,6 +1068,11 @@ both payer paths live on X Layer testnet, every unit accounted for.
 
 ### Live testnet redeploy for the two-leg rule-6 check (chain 1952), 2026-11-19
 
+> **Superseded later the same day** by the live re-check redeploy below: the
+> constructor no longer stores a verdict, so this contract's
+> `evaluatorPinned` (a stored bool frozen at deploy) was replaced. Kept as
+> the record of the two-leg constructor deploy and its exercise run.
+
 The constructor gained `circuitBeacon` and `expectedImplementationCodehash`
 (§18), so the bytecode and addresses changed again. Deployed with
 `forge script script/Deploy.s.sol:Deploy` (stand-in processor, mock beacon
@@ -1125,6 +1130,105 @@ PASS - leg A settled through the rule table, leg B through the fallback default,
 both payer paths live on X Layer testnet, every unit accounted for.
 ```
 
+### Live testnet redeploy for the LIVE rule-6 re-check (chain 1952), 2026-11-19 (current)
+
+The rule-6 fix that gates the frontend phase: `evaluatorPinned` is no longer
+a bool frozen at deploy — per the master prompt's verbatim sentence
+("store the implementation address and its `extcodehash` and verify both at
+claim") the constructor now stores the **implementation address** alongside
+the references, and `evaluatorPinned()` is a view that re-runs both legs on
+every call; `claim` and `createLink` consult it live (§18, Q3/Q4 update).
+Bytecode and addresses therefore changed again.
+
+Deployed with `forge script script/Deploy.s.sol:Deploy --account
+pago-deployer --broadcast` from `contracts-evm/` (Foundry only auto-loads
+`.env` from the working directory, so the keystore password variable was
+loaded from the repository root `.env` into the session first — the file is
+gitignored and nothing was printed). The testnet RPC dropped the first
+submission round; `--resume` completed it. Character check by direct `cast`
+reads again — oklink remains unreachable from this machine, disclosed rather
+than claimed as an explorer confirmation.
+
+| What | Address | Code size (cast) | Deploy tx |
+|---|---|---|---|
+| **Pago** (rules 1–10 + the LIVE two-leg rule-6 re-check) | `0xA4AA0B191807c13c9c8b83de7B2f48b7dd017bfF` | 15,327 bytes | `0xa2daef6fa41bf44b5c4cf05485cd5c29a4a8196e06bd10eeb2f75d509b45338c` |
+| pUSD **(MOCK**, 6 decimals, freely mintable, no backing) | `0x1Bf9Fd0C674BcE9cdc9EFc7C2A70e20E84E6953C` | 4,117 bytes | `0x03fc9214dcdf9dcc005978d1c8bd487d799c1d84791b7c78e4d1b398e3c2c855` (mint to deployer: `0x7b5d1f6cab0ac5237ec1471f6bcd97e656dd0fdb8f530b6fed36f96c4dbe1b35`) |
+| **ProcessorStandIn** (EVM, **not hardware**) | `0xe4b4ABb2c6A0B15603b1A308Eba0264f8f676E02` | 2,779 bytes | `0xcbc37cbee29d6f7148e2456bafa447d04f8b7e80be0fb86b14e9300f9009bd58` |
+| **MockBeacon** (MOCK — reports the stand-in; not the TapeOut beacon) | `0x359749641523b7AcC791a856FC6afD35A756F723` | 240 bytes | `0x41d0dc33499aee123a77d3654d1876ab123eaa2168fb38df06926b7a07c2dbc5` |
+
+Runtime codehashes, `cast keccak $(cast code …)` on the deployed addresses:
+
+| Object | Codehash |
+|---|---|
+| Pago | `0x19fa780a9fa7ee14665e776225ee055a62bc5efdfcb9581184a599c2ba638389` |
+| pUSD (MOCK) | `0x09322da210af77b45b75730eeb9019a343f77d6fdc48e6ea94a3103139a3b682` |
+| ProcessorStandIn (EVM, not hardware) | `0x250c2eabb12262efcc680829e6c4e67e635abeeaf1c7b26c2eb0ccf9ae38108b` |
+| MockBeacon (MOCK) | `0xc54052711441e659904163308bbec570a18c16e82b7f7a4916b8c0d80f5474f2` |
+
+State, read back live with `cast call` after the broadcast:
+
+| Read | Value | Meaning |
+|---|---|---|
+| `evaluatorPinned()` | `false` | **unpinned, capped** — a live view now, re-run on every call, never stored |
+| `circuitImplementation` | `0xe4b4ABb2…76E02` | the stored implementation address — equals the stand-in, as the mock beacon reports |
+| `circuitBeacon` | `0x35974964…6F723` | the MOCK beacon |
+| `expectedProcessorCodehash` | `0x57aa306f…17d5` | leg 1: the recorded TapeOut shell (§18) |
+| live `extcodehash(processor)` | `0x250c2eab…8108b` | the stand-in's own code — correctly ≠ the recorded shell, so leg 1 fails |
+| `expectedImplementationCodehash` | `0x250c2eab…8108b` | leg 2's codehash reference = the stand-in's code |
+| live `beacon.implementation()` | `0xe4b4ABb2…76E02` | equals `circuitImplementation` and hashes to the reference — leg 2 passes |
+| `changeDetector` | `true` | behaviour evidence only; never sets the flag |
+| `MAX_LINK_AMOUNT_UNPINNED(pUSD)` | `10,000,000,000` | 10,000 pUSD cap while the live check does not pass |
+
+Same honest shape as before — **leg 2 passes, leg 1 fails, the flag reads
+false** — but now the verdict is recomputed at every `claim` and every
+`createLink`, which is what the swap tests in `ForkPin.t.sol` and
+`PagoRule.t.sol` prove: swap the beacon after a link exists and the same
+deployment's flag flips false, the claim pays the default split, and new
+links are capped.
+
+**Exercise run — 2026-11-19, PASS.** `script/testnet-exercise.ps1` settled
+both payer paths against this deployment after the deployer was topped up
+(0.2002 OKB faucet) and the script's own 0.0003 OKB payee top-up (tx
+`0x7140223498fc30b12958b9fd4069c97e47dbcc60da5f5dec9e68ee345d9af1e0`).
+Both legs settled through the **default** table — exactly what rule 6's live
+check demands while `evaluatorPinned()` reads false, which on this deployment
+it always does: the stand-in's code can never hash to the recorded TapeOut
+shell reference, so `claim` re-runs the two-leg check, fails leg 1, and never
+consults the circuit.
+
+| Step | Link / Tx |
+|---|---|
+| mint 10 pUSD **(MOCK)** to the payer | `0x97d4f0b8de6416f38432a92dd04d7eae07ccac5e22cd0b72fef3cdae5b382dc8` |
+| leg A `createLink` — `pago-261119-061618-a` | `0x30dca33df6a1090189db218f2c1d1f406f0e3bc369aa778613af44b53bc06e5b` |
+| leg A `approve` | `0x9133550f0f621a3ed41612fe71a8b12305b4e7ae8c74ae9eba9f88c684180b3b` |
+| leg A `pay` (terms hash `0x1f571714…e39f52`) | `0xaccf05312108021682647f45bfb8079f44c9188f245a8aa53fde25c83876ad8c` |
+| leg B `createLink` — `pago-261119-061618-b` | `0x3aafe412b91143c21ee809d959b7176750d5f849dd706733fb1d762a3e83136a` |
+| leg B `payWithAuthorization` (terms hash `0x087c9be6…09b51f`, relayed digest `0x55b8a737…fb37e4`) | `0x23622340a2c1643fb45fbff9b4974acad43a13d62269feecba45851f58a2945e` |
+| `claim` leg A (default table) | `0xc244e339c79809942abf7ac63fa2386d8ff784a5736ba97c7d01a7d6ce8605ee` |
+| `claim` leg B (default table) | `0x5236a6cc481344eb61e246da67adb5416eab8134686b05b7897c0b95b80bb5ce` |
+
+Reconciliation, measured from a snapshot taken before either link existed:
+
+```
+payee change        1,990,000   (default 995,000 x 2 - the live check gated claim)
+deployer change    -1,990,000   (two 1,000,000 payments + 2 x 5,000 fees; no rule seat while unpinned)
+held by Pago change        0    (nothing left inside)
+deltas sum to              0    (every unit accounted for)
+PASS - both payer paths live on X Layer testnet; while unpinned the
+live rule-6 check gated claim to the default table on both legs,
+every unit accounted for.
+```
+
+Leg A's link carries a *valid* rule table (10/6/4 = 20 steps) and leg B an
+invalid one (10/8/5 = 23 steps); neither was consulted, because `claim`
+re-runs the check and returns the default table whenever it does not pass.
+The rule-table path is proven where the check *does* pass: `PagoRule.t.sol`
+(pinned constructor arguments) and `ForkPin.t.sol` (the genuine mainnet
+shell + beacon). **Honest testnet consequence:** testnet can never show the
+rule table paying live — only the default fallback — because the stand-in
+cannot satisfy the recorded shell reference. `e2e/specs/testnet/` reads leg
+A (`pago-261119-061618-a`) back as the claimed invoice.
+
 ### Function selectors (`cast sig`, 2026-11-18)
 
 | Selector | Signature |
@@ -1175,6 +1279,11 @@ re-run.
 (`implementation()`) at the **beacon address hardcoded in the bytecode as a
 `PUSH32` literal** (`0xf70d1ed4…bd0991c`), then `DELEGATECALL`s the original
 calldata to whatever address came back and bubbles the result — or the revert |
+| opcode census (full disassembly) | **0 `SLOAD`** and exactly **one
+`PUSH32`**, of the beacon address. The EIP-1967 beacon slot also holds
+`0xf70d1ed4…bd0991c` (written once at construction), but the code never reads
+storage — the operative beacon binding lives in the bytecode itself, which is
+exactly what leg 1's codehash comparison pins |
 
 So Q1's answer: **a custom ERC-1967-beacon proxy shell**, neither a minimal
 proxy nor UUPS, whose beacon is pinned inside the very code whose hash we
@@ -1223,33 +1332,51 @@ code is the recorded one and the beacon it is hardcode-bound to reported an
 implementation whose code is the recorded one.* That is a real onchain
 implementation check — stronger than the shell-only comparison.
 
-### Q3 / Q4 — consequence
+### Q3 / Q4 — consequence, updated 2026-11-19 to the live re-check form
 
 Q2's answer is **yes**, so the conditional rename to `proxyCodeMatches` does
 not apply: `evaluatorPinned` keeps its rule-6 name and gains the second leg.
-Per Q4:
+Per Q4 — and then per the original verbatim sentence supplied on 2026-11-19
+("store the implementation address and its `extcodehash` and verify both at
+claim"), the flag is **not a bool frozen at deploy**:
 
-- the constructor now takes `circuitBeacon` and
-  `expectedImplementationCodehash` in addition to the shell reference, sets
-  the flag only when **both** legs pass, and never consults `changeDetector`;
+- the constructor stores the references — `expectedProcessorCodehash`,
+  `circuitBeacon`, the **implementation address** and
+  `expectedImplementationCodehash` — and computes no verdict;
+- `evaluatorPinned()` is a **view that re-runs both legs on every call**:
+  leg 1 `extcodehash(processor)` against the shell reference, leg 2 the
+  beacon's public `implementation()` answer against BOTH the stored address
+  and its stored codehash;
+- `claim` consults it in the same transaction: a failing check means the
+  rule table is never asked about and the **default split** applies;
+  `createLink` consults it too: while it fails, every link is capped at
+  `MAX_LINK_AMOUNT_UNPINNED[token]`;
+- `changeDetector` remains a public view that can never make it true;
 - `test/ForkPin.t.sol` runs against mainnet fork state: the genuine chain
-  pins (`true`), and `vm.etch`-swapping the beacon for one that reports a
-  different implementation flips the flag to `false`.
+  pins (`true`), `vm.etch`-swapping the beacon flips the **same
+  deployment's** flag to `false` at the next read, and the required case is
+  covered end to end — a link created and paid while both legs pass, the
+  beacon swapped **after the link exists**, then `claim` pays the default
+  split (event `usedRuleSplit = false`) and a new link above the cap is
+  refused. A unit-level twin lives in `PagoRule.t.sol`.
 
 ### What the flag does and does not prove (disclosed wording for UI/README)
 
-- **Proves, at construction, onchain:** the deployed shell's code hash equals
-  the recorded one, and the beacon's public `implementation()` getter returned
-  an address whose code hash equals the recorded implementation's.
+- **Proves, onchain, at every read (it is a view, not a stored value):** the
+  deployed shell's code hash equals the recorded one, AND the beacon's public
+  `implementation()` getter currently returns the stored implementation
+  address, AND the code at that address still hashes to the recorded
+  implementation's. `claim` re-verifies this in the transaction that pays, so
+  a change behind the beacon after link creation is caught at payout time.
 - **Does not prove:** that the proxy actually delegates where the configuration
   says (it doesn't need the configuration — it hardcodes its beacon; the
   binding was verified by the disassembly above, offchain);
-  that the beacon stays unchanged *after* construction (it is frozen —
-  `owner() = 0`, read live — and any later change would be visible to a
-  re-run of `changeDetector`, but the flag itself is not re-checked);
+  that a *future* change cannot happen — only that any change is visible to
+  the next read, which is why the check runs live rather than once;
   what the payer's screen showed (rule 4, unchanged).
-- **Until both legs pass, links stay capped** — which is the state on testnet
-  today (`evaluatorPinned: false`, stand-in shell ≠ recorded shell).
+- **While the check does not pass, links stay capped** — which is the state
+  on testnet today (`evaluatorPinned(): false`, stand-in shell ≠ recorded
+  shell), shown honestly as "unpinned, capped".
 
 Recorded values, all probed 2026-11-18 on chain 196:
 
@@ -1257,6 +1384,7 @@ Recorded values, all probed 2026-11-18 on chain 196:
 |---|---|
 | processor shell codehash (`PAGO_PROCESSOR_CODEHASH`) | `0x57aa306fd0be97087da3534e03398f5ff4efd533b5be4e45a405ce86fa6717d5` |
 | circuit beacon (`PAGO_BEACON`) | `0xf70d1ed4f62cf3780157b0b421b7e2f45bd0991c` |
+| circuit implementation address (`PAGO_IMPLEMENTATION`) | `0x977f217887E085D298Cb3819cDAD5A0ee35F29B2` |
 | circuit implementation codehash (`PAGO_IMPLEMENTATION_CODEHASH`) | `0x7a15c353205e5245f40f5f5524542a982a4bb3b9a28476e4f10845163f941b30` |
 | processor #340 (the example disassembled) | `0x9de448A1CE9537d24199B3b5355239d73aA6F591` |
 

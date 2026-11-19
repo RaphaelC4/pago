@@ -43,17 +43,24 @@ import {IRuleProcessor} from "./IRuleProcessor.sol";
 ///     prove what the payer's screen displayed, and nothing here claims it does.
 ///   * **Rule 5 - circuit identity.** `createLink` reverts if the processor's
 ///     netlist cannot be read, and stores `keccak256(netlist)` on the link.
-///   * **Rule 6 - evaluatorPinned / implementation check.** The flag may become
-///     true ONLY through a real onchain implementation check - two legs, both
-///     required (see docs/RESEARCH.md section 18): (1) `extcodehash(processor)`
-///     equals `expectedProcessorCodehash` with code present - the processor is
-///     a beacon proxy shell that hardcodes its beacon address in its own code;
+///   * **Rule 6 - evaluatorPinned / implementation check.** Master prompt,
+///     verbatim: "If Phase 0 proves the implementation can be checked onchain,
+///     store the implementation address and its `extcodehash` and verify both
+///     at claim." So the flag is NOT a value frozen at deploy: `evaluatorPinned`
+///     is a view that re-runs the two-leg check on every call, and `claim` and
+///     `createLink` both consult it live (docs/RESEARCH.md section 18). The two
+///     legs, both required: (1) `extcodehash(processor)` equals
+///     `expectedProcessorCodehash` with code present - the processor is a
+///     beacon proxy shell that hardcodes its beacon address in its own code;
 ///     (2) `circuitBeacon.implementation()`, the beacon's public getter, returns
-///     an address whose `extcodehash` equals `expectedImplementationCodehash`.
-///     A beacon that reverts or reports anything else fails leg 2. The
-///     known-answer check is named `changeDetector` (never "pin"); it stays a
-///     public view and never sets the flag. While unpinned, every link is
-///     capped at `MAX_LINK_AMOUNT_UNPINNED[token]` in base units. What the flag
+///     the stored implementation address whose `extcodehash` equals
+///     `expectedImplementationCodehash`. A beacon that reverts, reports a
+///     different address or shows different code fails leg 2 - a swap after
+///     deploy flips the flag false at the next call. When `claim` finds the
+///     check failing it uses the default split; while the check fails,
+///     `createLink` enforces `MAX_LINK_AMOUNT_UNPINNED[token]` in base units.
+///     The known-answer check is named `changeDetector` (never "pin"); it
+///     stays a public view and can never make the flag true. What the flag
 ///     proves and does not prove is disclosed in README and section 18.
 ///   * **Rule 7 - decimals are ours, not the token's.** Expected decimals are given
 ///     by us at deploy time and stored; this contract never calls `decimals()` for
@@ -164,7 +171,7 @@ contract Pago {
 
     /// Constructor input per allowed token (rule 7): the token, the decimals as
     /// written by us (the deploy script aborts if the chain disagrees), and the
-    /// per-link cap that applies while `evaluatorPinned` is false (rule 6).
+    /// per-link cap that applies while `evaluatorPinned()` is false (rule 6).
     struct TokenConfig {
         address token;
         uint8 decimals_;
@@ -184,33 +191,34 @@ contract Pago {
     /// The circuit's id inside `processor` (Split3 is #1 on our processor).
     uint256 public immutable circuitId;
 
-    /// The exact `extcodehash(processor)` the constructor compared against when
-    /// deciding `evaluatorPinned` (rule 6, leg 1). Public so anyone can audit
-    /// the reference the implementation check used.
+    /// The exact `extcodehash(processor)` `evaluatorPinned()` compares against
+    /// (rule 6, leg 1). Public so anyone can audit the reference the live
+    /// implementation check uses.
     bytes32 public immutable expectedProcessorCodehash;
 
-    /// The circuit beacon whose `implementation()` getter the constructor
-    /// called for rule 6's leg 2. On mainnet this is the address the recorded
+    /// The circuit beacon whose `implementation()` getter `evaluatorPinned()`
+    /// calls for rule 6's leg 2. On mainnet this is the address the recorded
     /// processor shell hardcodes; on testnet it is the stand-in's mock beacon.
-    /// Public so anyone can audit which beacon the second leg consulted.
+    /// Public so anyone can audit which beacon the second leg consults.
     address public immutable circuitBeacon;
 
-    /// The exact `extcodehash` the constructor expected of the address
-    /// `circuitBeacon.implementation()` returned (rule 6, leg 2).
-    bytes32 public immutable expectedImplementationCodehash;
+    /// The exact implementation address recorded at deploy (rule 6, leg 2).
+    /// Master prompt, verbatim: "store the implementation address and its
+    /// `extcodehash` and verify both at claim." The live check requires the
+    /// beacon to still report THIS address - a beacon swapped to point
+    /// elsewhere fails there - and the code at it to still hash to
+    /// `expectedImplementationCodehash`.
+    address public immutable circuitImplementation;
 
-    /// True only when BOTH legs of the constructor's real onchain
-    /// implementation check passed: the processor shell's code hash matched
-    /// `expectedProcessorCodehash` AND the beacon's public `implementation()`
-    /// getter reported code hashing to `expectedImplementationCodehash`.
-    /// `changeDetector` never sets it (rule 6); false means every link is capped.
-    bool public evaluatorPinned;
+    /// The exact `extcodehash` recorded at deploy for `circuitImplementation`
+    /// (rule 6, leg 2 - the second half of "verify both at claim").
+    bytes32 public immutable expectedImplementationCodehash;
 
     /// Expected decimals per token, as written by us at deploy time. This
     /// contract never calls `decimals()` (rule 7).
     mapping(address => uint8) public expectedDecimals;
 
-    /// Per-link cap in base units while `evaluatorPinned` is false (rule 6).
+    /// Per-link cap in base units while `evaluatorPinned()` is false (rule 6).
     mapping(address => uint256) public MAX_LINK_AMOUNT_UNPINNED;
 
     /// Token contracts this deployment accepts. Written only by the constructor.
@@ -265,6 +273,9 @@ contract Pago {
     ///        6's leg 2 calls. On mainnet the recorded shell hardcodes it.
     /// @param expectedImplementationCodehash_ keccak256 of the code expected
     ///        behind that beacon: rule 6's leg 2 reference.
+    /// @param circuitImplementation_ The implementation address the beacon
+    ///        reported at deploy (rule 6, leg 2). Stored, per the master
+    ///        prompt's verbatim sentence, and re-checked live forever after.
     constructor(
         TokenConfig[] memory tokens,
         address feeAccount_,
@@ -272,11 +283,13 @@ contract Pago {
         uint256 circuitId_,
         bytes32 expectedProcessorCodehash_,
         address circuitBeacon_,
+        address circuitImplementation_,
         bytes32 expectedImplementationCodehash_
     ) {
         require(tokens.length > 0, "at least one token must be allowed");
         require(expectedProcessorCodehash_ != bytes32(0), "expected codehash required");
         require(circuitBeacon_ != address(0), "circuit beacon required");
+        require(circuitImplementation_ != address(0), "circuit implementation required");
         require(expectedImplementationCodehash_ != bytes32(0), "expected implementation codehash required");
         require(feeAccount_ != address(0), "fee account required");
         for (uint256 i; i < tokens.length; ++i) {
@@ -292,10 +305,15 @@ contract Pago {
         circuitId = circuitId_;
         expectedProcessorCodehash = expectedProcessorCodehash_;
         circuitBeacon = circuitBeacon_;
+        circuitImplementation = circuitImplementation_;
         expectedImplementationCodehash = expectedImplementationCodehash_;
 
-        // Rule 6: the ONLY path that may turn this flag on - a real onchain
-        // implementation check in two legs (docs/RESEARCH.md section 18).
+        // Rule 6: the references are recorded here, but the verdict is not.
+        // The ONLY path that may report the flag true is `evaluatorPinned()`,
+        // which re-runs both legs of the real onchain implementation check on
+        // every call (docs/RESEARCH.md section 18). A bool stored now would
+        // freeze this moment's answer and outlive any later change behind the
+        // beacon; the live view cannot.
         //
         // Leg 1 - the processor is a beacon proxy shell (295 bytes,
         // disassembled in section 18) that hardcodes its beacon address in
@@ -303,32 +321,56 @@ contract Pago {
         // code is byte-for-byte that shell - the one bound to the beacon.
         //
         // Leg 2 - with the shell confirmed, ask the configured beacon's
-        // public `implementation()` getter what it currently reports and
-        // hash that address's code. The call is a low-level staticcall with
-        // strict decoding (the same discipline as `_eval`): a reverting
-        // beacon, an address with no code, a short or long return - all fail
-        // this leg and leave the flag false. A wrong configured beacon can
-        // only make the flag false (it cannot hash to the recorded
-        // implementation unless it points at byte-identical genuine code);
-        // it can never make a wrong evaluator pass, because the genuine
-        // shell ignores configuration and delegates to the beacon it
-        // hardcodes.
+        // public `implementation()` getter what it CURRENTLY reports: it must
+        // still be the recorded `circuitImplementation`, and the code at that
+        // address must still hash to `expectedImplementationCodehash`. The
+        // call is a low-level staticcall with strict decoding (the same
+        // discipline as `_eval`): a reverting beacon, an address with no
+        // code, a short or long return - all fail this leg. A wrong
+        // configured beacon can only make the flag false (it cannot report
+        // the recorded implementation unless it points at it); it can never
+        // make a wrong evaluator pass, because the genuine shell ignores
+        // configuration and delegates to the beacon it hardcodes.
         //
-        // `changeDetector` is never consulted here: a wrong, missing or
-        // replaced implementation leaves the flag false and every link capped.
-        bool shellMatches = processor_ != address(0) && processor_.code.length > 0 && processor_.codehash == expectedProcessorCodehash_;
-        bool implMatches = false;
-        if (shellMatches) {
-            (bool ok, bytes memory ret) =
-                circuitBeacon_.staticcall(abi.encodeWithSelector(IBeaconLike.implementation.selector));
-            if (ok && ret.length == 32) {
-                // Masked read, not abi.decode: dirty upper bits must fail the
-                // leg (flag false), never revert the constructor.
-                address impl = address(uint160(uint256(bytes32(ret))));
-                implMatches = impl != address(0) && impl.code.length > 0 && impl.codehash == expectedImplementationCodehash_;
-            }
+        // `changeDetector` is never consulted: a wrong, missing or replaced
+        // implementation leaves the flag false and every link capped.
+    }
+
+    /// Rule 6's verdict, recomputed on every call - never a stored bool.
+    ///
+    /// Leg 1: `processor` still carries exactly the recorded shell code
+    /// (`expectedProcessorCodehash`). Leg 2: the beacon still reports the
+    /// recorded `circuitImplementation`, and the code at that address still
+    /// hashes to `expectedImplementationCodehash`. Both legs must pass,
+    /// every time, for as long as links exist.
+    ///
+    /// `changeDetector` cannot reach this function: it only ever compares,
+    /// it never writes, and nothing else in this contract stores a verdict.
+    /// A swapped shell, a beacon pointing elsewhere, a re-taped
+    /// implementation - each fails here at the moment it is asked about, so
+    /// the flag follows the chain instead of freezing deploy time. False (or
+    /// any failure at all) means every link is capped and every claim uses
+    /// the default split if the rule check fails.
+    function evaluatorPinned() public view returns (bool) {
+        // Leg 1 - the processor is still byte-for-byte the recorded shell.
+        if (processor == address(0) || processor.code.length == 0 || processor.codehash != expectedProcessorCodehash) {
+            return false;
         }
-        evaluatorPinned = shellMatches && implMatches;
+
+        // Leg 2 - the beacon's public `implementation()` getter, called as a
+        // low-level staticcall with strict decoding (the same discipline as
+        // `_eval`): a reverting beacon, no code, a short or long return, or
+        // dirty padding all fail the leg rather than revert the caller.
+        (bool ok, bytes memory ret) = circuitBeacon.staticcall(abi.encodeWithSelector(IBeaconLike.implementation.selector));
+        if (!ok || ret.length != 32) return false;
+        // Masked read, not abi.decode: dirty upper bits must fail the leg.
+        address impl = address(uint160(uint256(bytes32(ret))));
+        // "store the implementation address and its extcodehash and verify
+        // both": the beacon must still name the recorded address, and the
+        // code there must still hash to the recorded reference.
+        if (impl != circuitImplementation) return false;
+        if (impl.code.length == 0 || impl.codehash != expectedImplementationCodehash) return false;
+        return true;
     }
 
     // ── payee ──────────────────────────────────────────────────────────────
@@ -371,7 +413,9 @@ contract Pago {
         require(_validRuleSplit(ruleSplit), "rule split shares must be 0-31 with matching seats");
 
         // Rule 6: while the evaluator is unpinned no link may exceed the cap.
-        if (!evaluatorPinned) {
+        // `evaluatorPinned()` is re-run here, so a link created after the
+        // implementation changed is capped even if deploy time was pinned.
+        if (!evaluatorPinned()) {
             require(amount <= MAX_LINK_AMOUNT_UNPINNED[token], "unpinned evaluator: link amount above cap");
         }
 
@@ -484,6 +528,12 @@ contract Pago {
     /// default split fixed at creation (rule 3), so this function's only revert
     /// paths are "link not found" and "link is not paid".
     ///
+    /// Rule 6 is checked HERE, live: `evaluatorPinned()` re-runs the two-leg
+    /// implementation check in the same transaction, so if the implementation
+    /// changed after the link was created the rule table is not even asked
+    /// about and the default split applies instead (the master prompt's
+    /// "verify both at claim").
+    ///
     /// Each seat's transfer is independent (rule 9): a seat whose transfer fails
     /// does not block the others; its amount stays in the contract as
     /// `owed[recipient][token]`. The fee leg behaves the same way, and a fee of
@@ -502,9 +552,11 @@ contract Pago {
         l.status = Status.Claimed;
         l.claimedAt = nowMs();
 
+        // Rule 6 first, live: an unpinned evaluator may not use the rule
+        // table at all - the default split fixed at creation applies.
         // Rule 2: the verdict only selects between the two tables fixed at
         // creation; rule 3: anything unexpected means the default table.
-        bool usedRule = _ruleApplies(l);
+        bool usedRule = evaluatorPinned() && _ruleApplies(l);
         address[3] memory recipients;
         uint8[3] memory shares;
         if (usedRule) {
@@ -633,8 +685,8 @@ contract Pago {
     /// this return false. Anyone may call it: it is a view over published
     /// hardware (or over the labelled testnet stand-in).
     ///
-    /// Rule 6 forbids this check from ever turning the flag on: `evaluatorPinned`
-    /// comes only from the constructor's `extcodehash` implementation check.
+    /// Rule 6 forbids this check from ever turning the flag on: `evaluatorPinned()`
+    /// comes only from the live two-leg `extcodehash` implementation check.
     /// This function answers "does the linked processor behave correctly right
     /// now?" for anyone to read - the deploy log prints it as evidence - but it
     /// writes nothing, and `claim` never trusts it (rule 3's per-call strict

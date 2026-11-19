@@ -3,22 +3,25 @@
 # What it proves, on chain 1952, with real transactions:
 #
 #   leg A  the ordinary payer path   create -> approve -> pay -> claim
-#                                    rule split VALID (10+6+4 = 20 steps):
-#                                    the circuit accepts it and claim pays the
-#                                    rule table — payee 50%, seat 2+3 50% —
-#                                    NOT the default table. The deployer seat
-#            receiving money back is the visible proof the rule was selected.
+#                                    rule split VALID (10+6+4 = 20 steps)
 #   leg B  the gasless payer path    create -> off-chain EIP-3009 signature ->
 #                                    a *third party* submits it and pays the gas
 #                                    -> claim
-#                                    rule split INVALID (10+8+5 = 23 steps):
-#                                    the circuit rejects it and claim falls
-#                                    back to the default table — payee 100%.
+#                                    rule split INVALID (10+8+5 = 23 steps)
 #
-# after both, measured from a snapshot taken before either link existed:
-#   payee    +1,492,500   (497,500 from the rule table + 995,000 default)
-#   deployer -1,492,500   (two 1,000,000 payments, +497,500 as a rule seat,
-#                          +2 x 5,000 fees it collects as the fee account)
+# Which table each claim pays is decided by rule 6's LIVE check (the master
+# prompt's "verify both at claim"): while evaluatorPinned() does not pass —
+# always the case on testnet, because the stand-in can never match the
+# recorded TapeOut shell — claim never consults the circuit and BOTH legs
+# settle through the DEFAULT table (payee 995,000 each). The rule-table
+# path is proven where the check passes: the pinned unit suite
+# (PagoRule.t.sol) and the genuine-chain fork (ForkPin.t.sol).
+#
+# after both, measured from a snapshot taken before either link existed
+# (this script refuses to run unless evaluatorPinned() reads false):
+#   payee    +1,990,000   (995,000 default x 2 — the live check gates claim)
+#   deployer -1,990,000   (two 1,000,000 payments + 2 x 5,000 fees it
+#                          collects as the fee account; no rule seat)
 #   Pago     no change — it must hold exactly what it held before
 # and the three deltas must sum to zero: nothing created, nothing lost.
 #
@@ -381,13 +384,16 @@ $deployerAfter = [bigint](Call "deployer pUSD" { cast call $Token "balanceOf(add
 $heldAfter = [bigint](Call "pUSD held by Pago" { cast call $Token "balanceOf(address)(uint256)" $Pago })
 $links = Call "links created by payee" { cast call $Pago "linkCountByCreator(address)(uint256)" $Payee }
 
-# What this run alone should have moved, measured from the snapshot above:
-#   leg A paid the RULE table (10/6/4 of 20 steps): payee 497,500,
-#           deployer-seat 497,500 — the deployer getting money back is what
-#           distinguishes "circuit selected the rule" from the fallback
-#   leg B fell back to the DEFAULT table: payee 995,000 in full
-#   payee    = 497,500 + 995,000 = 1,492,500
-#   deployer = -2 x 1,000,000 payments + 497,500 rule seat + 2 x 5,000 fees
+# What this run alone should have moved, measured from the snapshot above.
+# Rule 6's live check gates claim, and this script refuses to run unless
+# evaluatorPinned() reads false (the stand-in can never match the recorded
+# TapeOut shell), so claim never consults the circuit and BOTH legs settle
+# through the DEFAULT table:
+#   leg A: payee 995,000 in full — the valid rule table exists on the link
+#          but is never consulted while the check does not pass
+#   leg B: payee 995,000 in full — its 10/8/5 table would be rejected anyway
+#   payee    = 995,000 + 995,000 = 1,990,000
+#   deployer = -2 x 1,000,000 payments + 2 x 5,000 fees = -1,990,000
 #   Pago     no change: it must hold exactly what it held before
 # and the three deltas must sum to zero - nothing created, nothing lost.
 $payeeDelta = $payeeAfter - $payeeBefore
@@ -395,23 +401,22 @@ $deployerDelta = $deployerAfter - $deployerBefore
 $heldDelta = $heldAfter - $heldBefore
 $payout = [bigint]$Amount * [bigint](10000 - $FeeBps) / 10000     # 995,000 post-fee
 $fee = [bigint]$Amount * $FeeBps / 10000                          # 5,000
-$rulePayee = $payout * 10 / 20                                    # leg A, seat 1
-$ruleDeployer = $payout * (6 + 4) / 20                            # leg A, seats 2+3
-$expectedPayout = $rulePayee + $payout                            # 1,492,500
-$expectedDeployer = [bigint](-2 * $Amount) + $ruleDeployer + 2 * $fee   # -1,492,500
+$expectedPayout = 2 * $payout                                    # default table on both legs
+$expectedDeployer = [bigint](-2 * $Amount) + 2 * $fee            # no rule seat while unpinned
 $sum = $payeeDelta + $deployerDelta + $heldDelta
 
 Write-Host ("  links created by payee      {0} (informational)" -f $links)
-Write-Host ("  payee change                {0} (want {1} = rule 497,500 + default 995,000)" -f $payeeDelta, $expectedPayout)
-Write-Host ("  deployer change             {0} (want {1} = -2 payments + rule seat + 2 fees)" -f $deployerDelta, $expectedDeployer)
+Write-Host ("  payee change                {0} (want {1} = default 995,000 x 2)" -f $payeeDelta, $expectedPayout)
+Write-Host ("  deployer change             {0} (want {1} = -2 payments + 2 fees; no rule seat)" -f $deployerDelta, $expectedDeployer)
 Write-Host ("  held by Pago change         {0} (want 0 - nothing left inside)" -f $heldDelta)
 Write-Host ("  deltas sum to               {0} (want 0 - every unit accounted for)" -f $sum)
 
 $ok = ($heldDelta -eq 0) -and ($sum -eq 0) -and ($payeeDelta -eq $expectedPayout) `
     -and ($deployerDelta -eq $expectedDeployer)
 if ($ok) {
-    Write-Host "`nPASS - leg A settled through the rule table, leg B through the fallback default," -ForegroundColor Green
-    Write-Host "both payer paths live on X Layer testnet, every unit accounted for." -ForegroundColor Green
+    Write-Host "`nPASS - both payer paths live on X Layer testnet; while unpinned the" -ForegroundColor Green
+    Write-Host "live rule-6 check gated claim to the default table on both legs," -ForegroundColor Green
+    Write-Host "every unit accounted for." -ForegroundColor Green
 } else {
     Write-Host "`nFAIL - balances do not match the expected split. Inspect the transactions above." -ForegroundColor Red
     exit 1

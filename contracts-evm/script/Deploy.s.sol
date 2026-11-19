@@ -40,13 +40,14 @@ import {ProcessorStandIn} from "../test/mocks/ProcessorStandIn.sol";
 ///      not satisfy anyway. Deploys `Pago` with the allowlist, the unpinned
 ///      cap (`PAGO_UNPINNED_CAP` base units, default 10,000 tokens at the
 ///      expected decimals) and `PAGO_FEE_ACCOUNT` (falling back to
-///      `PAGO_DEPLOYER`). Pago's constructor compares both references onchain
-///      - the only path that may set `evaluatorPinned` - and the flag, the
-///      references and a live `changeDetector` reading (evidence only, never
-///      the source of the flag) are printed. On testnet the stand-in's code
-///      differs from the recorded shell reference, so the flag prints false
-///      and every link stays capped: honest, and exactly what rule 6 wants
-///      until a real tape-out exists.
+///      `PAGO_DEPLOYER`). Pago stores both references and reports the rule 6
+///      flag through `evaluatorPinned()`, which re-runs the two-leg onchain
+///      implementation check live - the only path that may report it true -
+///      and the flag, the references and a live `changeDetector` reading
+///      (evidence only, never the source of the flag) are printed. On testnet
+///      the stand-in's code differs from the recorded shell reference, so the
+///      flag prints false and every link stays capped: honest, and exactly
+///      what rule 6 wants until a real tape-out exists.
 ///
 /// `PAGO_DEPLOYER` is read explicitly rather than taken from `msg.sender`
 /// because in a Foundry script `msg.sender` is whatever `--sender` says.
@@ -71,6 +72,10 @@ import {ProcessorStandIn} from "../test/mocks/ProcessorStandIn.sol";
 ///                                            # getter is called; default =
 ///                                            # beacon hardcoded in the
 ///                                            # recorded shell (section 18)
+///   $env:PAGO_IMPLEMENTATION = "0x..."   # leg 2: implementation address to
+///                                            # store and re-verify live;
+///                                            # required with PAGO_BEACON,
+///                                            # default = recorded impl
 ///   $env:PAGO_IMPLEMENTATION_CODEHASH = "0x..."  # leg 2: codehash the beacon's
 ///                                            # answer must equal; default =
 ///                                            # recorded circuit impl hash
@@ -96,6 +101,15 @@ contract Deploy is Script {
     /// Rule 6's leg 2 calls `implementation()` on this. Overridable with
     /// `PAGO_BEACON`.
     address internal constant RECORDED_CIRCUIT_BEACON = 0xf70d1ed4f62CF3780157B0b421b7E2F45bD0991C;
+
+    /// Recorded circuit implementation behind that beacon: what its
+    /// `implementation()` getter reported (12,562 bytes at this address,
+    /// section 18). Pago stores this address together with the codehash and
+    /// re-verifies BOTH live on every `evaluatorPinned()` call (master
+    /// prompt, verbatim: "store the implementation address and its
+    /// `extcodehash` and verify both at claim"). Overridable with
+    /// `PAGO_IMPLEMENTATION`.
+    address internal constant RECORDED_CIRCUIT_IMPLEMENTATION = 0x977f217887E085D298Cb3819cDAD5A0ee35F29B2;
 
     /// Recorded codehash of the circuit implementation behind that beacon
     /// (12,562 bytes at `0x977f2178…29B2`, `cast code` + `cast keccak`,
@@ -172,14 +186,15 @@ contract Deploy is Script {
         }
         console.log("leg 1 shell reference (codehash):", vm.toString(expectedProcessorCodehash));
 
-        // Rule 6 leg 2: the beacon and the implementation reference (helper
-        // below, kept out of run() for the stack limit).
-        (address beacon, bytes32 expectedImplCodehash) = _resolveBeacon(processor, usingStandIn);
+        // Rule 6 leg 2: the beacon, the implementation address to store and
+        // the codehash reference (helper below, kept out of run() for the
+        // stack limit).
+        (address beacon, address impl, bytes32 expectedImplCodehash) = _resolveBeacon(processor, usingStandIn);
 
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
         configs[0] = Pago.TokenConfig({token: token, decimals_: uint8(cfg.expectedDecimals), unpinnedCap: cfg.unpinnedCap});
 
-        Pago pago = new Pago(configs, cfg.feeAccount, processor, cfg.circuitId, expectedProcessorCodehash, beacon, expectedImplCodehash);
+        Pago pago = new Pago(configs, cfg.feeAccount, processor, cfg.circuitId, expectedProcessorCodehash, beacon, impl, expectedImplCodehash);
 
         vm.stopBroadcast();
 
@@ -189,26 +204,38 @@ contract Deploy is Script {
     }
 
     /// Rule 6 leg 2 resolution: the beacon whose public `implementation()`
-    /// getter the constructor calls, and the codehash its answer must equal.
-    /// On mainnet (PAGO_PROCESSOR set) the defaults are the recorded beacon
-    /// hardcoded in the recorded shell and the recorded circuit
-    /// implementation's codehash (docs/RESEARCH.md section 18). On testnet
-    /// there is no genuine beacon for a stand-in, so the mock the test suite
-    /// uses is deployed instead - reporting the stand-in, so the second leg
-    /// runs live against real code rather than being skipped, and the flag's
-    /// false result stays honest.
-    function _resolveBeacon(address processor, bool usingStandIn) internal returns (address beacon, bytes32 expectedImplCodehash) {
+    /// getter the live check calls, the implementation address to store, and
+    /// the codehash that address's code must keep hashing to. On mainnet
+    /// (PAGO_PROCESSOR set) the defaults are the recorded beacon hardcoded
+    /// in the recorded shell and the recorded circuit implementation
+    /// (docs/RESEARCH.md section 18). On testnet there is no genuine beacon
+    /// for a stand-in, so the mock the test suite uses is deployed instead -
+    /// reporting the stand-in, so the second leg runs live against real code
+    /// rather than being skipped, and the flag's false result stays honest.
+    function _resolveBeacon(address processor, bool usingStandIn)
+        internal
+        returns (address beacon, address impl, bytes32 expectedImplCodehash)
+    {
         string memory beaconAddr = vm.envOr("PAGO_BEACON", string(""));
         if (bytes(beaconAddr).length != 0) {
             beacon = vm.parseAddress(beaconAddr);
             console.log("using beacon from PAGO_BEACON:", beacon);
+            // A custom beacon needs the address to store alongside the
+            // codehash: the live check verifies both, so guessing one would
+            // be a fabricated reference.
+            impl = vm.envOr("PAGO_IMPLEMENTATION", address(0));
+            require(impl != address(0), "PAGO_IMPLEMENTATION is required with PAGO_BEACON");
+            console.log("using implementation from PAGO_IMPLEMENTATION:", impl);
         } else if (usingStandIn) {
             MockBeacon mockBeacon = new MockBeacon(processor);
             beacon = address(mockBeacon);
+            impl = processor;
             console.log("DEPLOYED MOCK BEACON reporting the stand-in (not the TapeOut beacon):", beacon);
         } else {
             beacon = RECORDED_CIRCUIT_BEACON;
+            impl = RECORDED_CIRCUIT_IMPLEMENTATION;
             console.log("using recorded circuit beacon:", beacon);
+            console.log("using recorded circuit implementation:", impl);
         }
         expectedImplCodehash = vm.envOr("PAGO_IMPLEMENTATION_CODEHASH", usingStandIn ? address(processor).codehash : RECORDED_CIRCUIT_IMPL_CODEHASH);
         console.log("leg 2 implementation reference (codehash):", vm.toString(expectedImplCodehash));
@@ -232,11 +259,12 @@ contract Deploy is Script {
         console.log("  processor:        ", processor);
         console.log("  circuit id:       ", pago.circuitId());
         console.log("  circuit beacon:   ", beacon);
+        console.log("  circuit impl:     ", pago.circuitImplementation());
         console.log("  leg 1 reference:  ", vm.toString(pago.expectedProcessorCodehash()));
         console.log("  leg 2 reference:  ", vm.toString(pago.expectedImplementationCodehash()));
-        console.log("  evaluatorPinned:  ", pago.evaluatorPinned());
+        console.log("  evaluatorPinned:  ", pago.evaluatorPinned(), " (live: re-read on every call, not stored)");
         console.log("  changeDetector:   ", pago.changeDetector());
-        console.log("  (changeDetector is evidence only; rule 6 lets only the two-leg code check set evaluatorPinned)");
+        console.log("  (changeDetector is evidence only; rule 6 lets only the live two-leg code check report evaluatorPinned)");
         console.log("  unpinned cap:     ", pago.MAX_LINK_AMOUNT_UNPINNED(token));
         // Live reads of what each leg saw, as evidence next to the flag.
         console.log("  live leg 1 read:  ", vm.toString(address(processor).codehash));
@@ -247,9 +275,10 @@ contract Deploy is Script {
             console.log("  live leg 2 read:  beacon.implementation() reverted or returned nothing");
         }
         if (!pago.evaluatorPinned()) {
-            console.log("  NOTE: rule 6's two-leg check did not pass - every link is capped. Legs:");
+            console.log("  NOTE: rule 6's two-leg check does not pass right now - every link is capped. Legs:");
             console.log("        1. extcodehash(processor) vs PAGO_PROCESSOR_CODEHASH (recorded shell)");
-            console.log("        2. extcodehash(beacon.implementation()) vs PAGO_IMPLEMENTATION_CODEHASH");
+            console.log("        2. beacon.implementation() must still be the stored circuit impl address,");
+            console.log("           and extcodehash of it vs PAGO_IMPLEMENTATION_CODEHASH");
             console.log("        Recorded values: docs/RESEARCH.md section 18.");
         }
     }

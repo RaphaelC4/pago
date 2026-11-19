@@ -64,7 +64,7 @@ contract PagoTest is Test {
         MockBeacon standInBeacon = new MockBeacon(address(standIn));
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
         configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 10_000_000_000});
-        pago = new Pago(configs, feeAccount, address(standIn), 1, address(standIn).codehash, address(standInBeacon), address(standIn).codehash);
+        pago = new Pago(configs, feeAccount, address(standIn), 1, address(standIn).codehash, address(standInBeacon), address(standIn), address(standIn).codehash);
     }
 
     // ══ construction ═════════════════════════════════════════════════════
@@ -72,21 +72,21 @@ contract PagoTest is Test {
     function test_constructorRejectsEmptyTokenList() public {
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](0);
         vm.expectRevert("at least one token must be allowed");
-        new Pago(configs, feeAccount, address(0xDEAD), 1, bytes32(uint256(0xDEAD)), address(0xBEEF), bytes32(uint256(0xBEEF)));
+        new Pago(configs, feeAccount, address(0xDEAD), 1, bytes32(uint256(0xDEAD)), address(0xBEEF), address(0xDEAD), bytes32(uint256(0xBEEF)));
     }
 
     function test_constructorRejectsZeroFeeAccount() public {
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
         configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 1});
         vm.expectRevert("fee account required");
-        new Pago(configs, address(0), address(0xDEAD), 1, bytes32(uint256(0xDEAD)), address(0xBEEF), bytes32(uint256(0xBEEF)));
+        new Pago(configs, address(0), address(0xDEAD), 1, bytes32(uint256(0xDEAD)), address(0xBEEF), address(0xDEAD), bytes32(uint256(0xBEEF)));
     }
 
     function test_constructorRejectsZeroToken() public {
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
         configs[0] = Pago.TokenConfig({token: address(0), decimals_: 6, unpinnedCap: 1});
         vm.expectRevert("token cannot be the zero address");
-        new Pago(configs, feeAccount, address(0xDEAD), 1, bytes32(uint256(0xDEAD)), address(0xBEEF), bytes32(uint256(0xBEEF)));
+        new Pago(configs, feeAccount, address(0xDEAD), 1, bytes32(uint256(0xDEAD)), address(0xBEEF), address(0xDEAD), bytes32(uint256(0xBEEF)));
     }
 
     function test_constructorRejectsDuplicateToken() public {
@@ -94,7 +94,7 @@ contract PagoTest is Test {
         configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 1});
         configs[1] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 1});
         vm.expectRevert("duplicate token");
-        new Pago(configs, feeAccount, address(0xDEAD), 1, bytes32(uint256(0xDEAD)), address(0xBEEF), bytes32(uint256(0xBEEF)));
+        new Pago(configs, feeAccount, address(0xDEAD), 1, bytes32(uint256(0xDEAD)), address(0xBEEF), address(0xDEAD), bytes32(uint256(0xBEEF)));
     }
 
     /// Rule 6: a deployment that cannot pay its way out of the unpinned state
@@ -103,7 +103,7 @@ contract PagoTest is Test {
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
         configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 0});
         vm.expectRevert("unpinned cap must be positive");
-        new Pago(configs, feeAccount, address(0xDEAD), 1, bytes32(uint256(0xDEAD)), address(0xBEEF), bytes32(uint256(0xBEEF)));
+        new Pago(configs, feeAccount, address(0xDEAD), 1, bytes32(uint256(0xDEAD)), address(0xBEEF), address(0xDEAD), bytes32(uint256(0xBEEF)));
     }
 
     /// Rule 6: a missing implementation reference is refused outright - the
@@ -112,7 +112,7 @@ contract PagoTest is Test {
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
         configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 1});
         vm.expectRevert("expected codehash required");
-        new Pago(configs, feeAccount, address(0xDEAD), 1, bytes32(0), address(0xBEEF), bytes32(uint256(0xBEEF)));
+        new Pago(configs, feeAccount, address(0xDEAD), 1, bytes32(0), address(0xBEEF), address(0xDEAD), bytes32(uint256(0xBEEF)));
     }
 
     /// Rule 6 leg 2: the beacon address is configuration, not optional - a
@@ -121,7 +121,7 @@ contract PagoTest is Test {
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
         configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 1});
         vm.expectRevert("circuit beacon required");
-        new Pago(configs, feeAccount, address(0xDEAD), 1, bytes32(uint256(0xDEAD)), address(0), bytes32(uint256(0xBEEF)));
+        new Pago(configs, feeAccount, address(0xDEAD), 1, bytes32(uint256(0xDEAD)), address(0), address(0xDEAD), bytes32(uint256(0xBEEF)));
     }
 
     /// Rule 6 leg 2: same for the implementation reference the beacon's
@@ -130,7 +130,18 @@ contract PagoTest is Test {
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
         configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 1});
         vm.expectRevert("expected implementation codehash required");
-        new Pago(configs, feeAccount, address(0xDEAD), 1, bytes32(uint256(0xDEAD)), address(0xBEEF), bytes32(0));
+        new Pago(configs, feeAccount, address(0xDEAD), 1, bytes32(uint256(0xDEAD)), address(0xBEEF), address(0xDEAD), bytes32(0));
+    }
+
+    /// Rule 6 leg 2: the implementation ADDRESS is stored per the master
+    /// prompt's verbatim sentence ("store the implementation address and its
+    /// `extcodehash`") - a zero address would make the live check's address
+    /// comparison meaningless, so it is refused outright.
+    function test_constructorRejectsZeroImplementation() public {
+        Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
+        configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 1});
+        vm.expectRevert("circuit implementation required");
+        new Pago(configs, feeAccount, address(0xDEAD), 1, bytes32(uint256(0xDEAD)), address(0xBEEF), address(0), bytes32(uint256(0xBEEF)));
     }
 
     /// Rule 6, both legs: shell code matches but the beacon reports a
@@ -141,7 +152,7 @@ contract PagoTest is Test {
         MockBeacon beacon = new MockBeacon(address(0xDEAD));
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
         configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 1});
-        Pago p = new Pago(configs, feeAccount, address(standIn), 1, address(standIn).codehash, address(beacon), address(standIn).codehash);
+        Pago p = new Pago(configs, feeAccount, address(standIn), 1, address(standIn).codehash, address(beacon), address(standIn), address(standIn).codehash);
         assertFalse(p.evaluatorPinned(), "shell matched, beacon reported a different implementation");
     }
 
@@ -156,13 +167,13 @@ contract PagoTest is Test {
         // (a) the getter reverts
         MockBeacon reverting = new MockBeacon(address(standIn));
         vm.mockCallRevert(address(reverting), abi.encodeWithSignature("implementation()"), "beacon is down");
-        Pago p1 = new Pago(configs, feeAccount, address(standIn), 1, address(standIn).codehash, address(reverting), address(standIn).codehash);
+        Pago p1 = new Pago(configs, feeAccount, address(standIn), 1, address(standIn).codehash, address(reverting), address(standIn), address(standIn).codehash);
         assertFalse(p1.evaluatorPinned(), "a reverting beacon cannot pin");
         vm.clearMockedCalls();
 
         // (b) the getter reports the zero address
         MockBeacon empty = new MockBeacon(address(0));
-        Pago p2 = new Pago(configs, feeAccount, address(standIn), 1, address(standIn).codehash, address(empty), address(standIn).codehash);
+        Pago p2 = new Pago(configs, feeAccount, address(standIn), 1, address(standIn).codehash, address(empty), address(standIn), address(standIn).codehash);
         assertFalse(p2.evaluatorPinned(), "a beacon reporting nothing cannot pin");
     }
 

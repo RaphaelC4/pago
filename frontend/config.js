@@ -229,16 +229,32 @@ export const XLAYER = {
          contracts-evm/.testnet-deploy.json and read back from chain with
          `cast code` (oklink is unreachable from this machine, so the explorer
          check falls back to direct reads - disclosed in RESEARCH.md §17):
-         Pago has 14,679 bytes of code, the token 4,117, the stand-in 2,779,
+         Pago has 15,327 bytes of code, the token 4,117, the stand-in 2,779,
          the mock beacon 240.
          Rule 6 state of this deployment, read live: evaluatorPinned false -
-         "unpinned, capped". Leg 1 compares the stand-in shell against the
-         recorded TapeOut shell reference (0x57aa306f...17d5) and fails, as it
-         must; leg 2's mock beacon reports the stand-in; changeDetector true
-         (behaviour evidence only). Every link is capped at
-         MAX_LINK_AMOUNT_UNPINNED. */
-      pago: "0x773A8dddc01d623a0E19df2E67F8e6FC70523b88",
-      token: "0x5D00e40242B75Fe964F0a1f59D9C8Ee7A04F8e87",
+         "unpinned, capped". evaluatorPinned is NOT a stored flag: it is a
+         view that re-runs both legs of the implementation check on every
+         call, so `claim` and `createLink` consult it live (the master
+         prompt's "verify both at claim"). Leg 1 compares the stand-in shell
+         against the recorded TapeOut shell reference (0x57aa306f...17d5)
+         and fails, as it must; leg 2's mock beacon reports the stand-in;
+         changeDetector true (behaviour evidence only). Every link is capped
+         at unpinnedCap below while the check does not pass. */
+      pago: "0xA4AA0B191807c13c9c8b83de7B2f48b7dd017bfF",
+      token: "0x1Bf9Fd0C674BcE9cdc9EFc7C2A70e20E84E6953C",
+
+      /* The testnet rule-6 supporting cast, all three MOCK / stand-in, never
+         hardware: an EVM contract standing in for the TapeOut processor, and
+         a mock beacon reporting it. Shown as such on every surface. */
+      processorStandIn: "0xe4b4ABb2c6A0B15603b1A308Eba0264f8f676E02",
+      circuitBeaconMock: "0x359749641523b7AcC791a856FC6afD35A756F723",
+
+      /* Per-link cap while evaluatorPinned() does not pass, in base units:
+         10,000 pUSD at 6 decimals, read back live as
+         MAX_LINK_AMOUNT_UNPINNED(token). This value belongs to THIS
+         deployment only - the mainnet deployment carries its own separate
+         cap, never this one. */
+      unpinnedCap: 10_000_000_000,
 
       /* The testnet asset is MockToken promoted to a real deployable: an
          ERC-20 with EIP-3009, which is what the gasless path needs. 6
@@ -253,9 +269,12 @@ export const XLAYER = {
       tokenDecimals: 6,
       tokenIsMock: true,
 
-      /* Explorer permalinks, both confirmed to open in a browser. */
-      pagoExplorerUrl: "https://www.oklink.com/xlayer-test/address/0x773A8dddc01d623a0E19df2E67F8e6FC70523b88",
-      tokenExplorerUrl: "https://www.oklink.com/xlayer-test/address/0x5D00e40242B75Fe964F0a1f59D9C8Ee7A04F8e87",
+      /* Explorer permalinks. The oklink URL pattern was confirmed to open in
+         a browser earlier; these NEW addresses still need the explorer
+         comparison (oklink is unreachable from the assistant's machine) -
+         see RESEARCH.md §17. */
+      pagoExplorerUrl: "https://www.oklink.com/xlayer-test/address/0xA4AA0B191807c13c9c8b83de7B2f48b7dd017bfF",
+      tokenExplorerUrl: "https://www.oklink.com/xlayer-test/address/0x1Bf9Fd0C674BcE9cdc9EFc7C2A70e20E84E6953C",
 
       /* Both read live after deploy: `feeBps()` answered 50 (0.5%) and the
          fee account is the deployer itself. */
@@ -271,6 +290,10 @@ export const XLAYER = {
       payee: "0x7FCe520D881454EA234d371E1256B75843609b62",
     },
 
+    /* null = no mainnet deployment approved yet (chain 196 stays read-only
+       until the exact approval phrase is given). When deployed, this block
+       carries its OWN addresses and its OWN unpinnedCap - separate from the
+       testnet values above, never shared between the two chains. */
     mainnet: null,
   },
 

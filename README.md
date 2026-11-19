@@ -366,16 +366,21 @@ invoiced one.
 ## Pago — the same product on X Layer
 
 **Status:** live on **X Layer testnet (chain 1952)** — Pago
-`0x773A8dddc01d623a0E19df2E67F8e6FC70523b88`, pUSD **(MOCK)**
-`0x5D00e40242B75Fe964F0a1f59D9C8Ee7A04F8e87`, processor stand-in **(EVM, not
-hardware)** `0x65Ec22321E3FC3823c5fDF235eEd20f2BcA66D71`, mock circuit beacon
-`0x6a8498A5d0a18d5785220152a3dD3020272fdeeB` — with both payer
-paths run end to end, the circuit's rule selecting one split table and its
-rejection falling back to the other, reconciled to the unit
-([`docs/RESEARCH.md` §17](docs/RESEARCH.md)), and its own page at
-`frontend/xlayer.html` (below). The contract gained the master prompt's
-split-rule interface (rules 1–10, [`docs/MASTER_PROMPT.md`](docs/MASTER_PROMPT.md))
-in that phase; the page's ABI codec is being updated to match as the next
+`0xA4AA0B191807c13c9c8b83de7B2f48b7dd017bfF`, pUSD **(MOCK)**
+`0x1Bf9Fd0C674BcE9cdc9EFc7C2A70e20E84E6953C`, processor stand-in **(EVM, not
+hardware)** `0xe4b4ABb2c6A0B15603b1A308Eba0264f8f676E02`, mock circuit beacon
+**(MOCK)** `0x359749641523b7AcC791a856FC6afD35A756F723` — deployed for the
+live rule-6 re-check described below. Both payer paths were run end to end
+against this deployment and reconciled to the unit: payee +1,990,000, payer
+−1,990,000, Pago unchanged, deltas sum zero. Because the stand-in can never
+match the recorded TapeOut shell reference, `evaluatorPinned()` reads false
+on testnet and **both claims settled through the default split** — the live
+check gating `claim` exactly as rule 6 specifies; the rule-table path is
+proven in the pinned and fork suites instead
+([`docs/RESEARCH.md` §17](docs/RESEARCH.md)). Its own page is at
+`frontend/xlayer.html` (below). The contract carries the master prompt's
+split-rule interface (rules 1–10, [`docs/MASTER_PROMPT.md`](docs/MASTER_PROMPT.md));
+the page's ABI codec is being updated to match as the next
 phase. **X Layer mainnet (chain 196) is read-only:** nothing has been spent
 there, and nothing will be without an explicit approval phrase. This section
 describes what exists in `contracts-evm/` and `frontend/` today.
@@ -455,23 +460,36 @@ decoding — whose single output bit only ever **selects** between those two
 stored tables; a rule can never invent a split, a recipient or an amount.
 Whatever the processor does — reverts, returns malformed data, runs out of
 gas, lies about an unsafe split, or vanishes — the default table pays, so a
-link can never freeze. `evaluatorPinned` turns true **only through rule 6's
-two-leg onchain implementation check**: the constructor first compares
-`extcodehash` of the deployed processor against the recorded TapeOut shell
-codehash (the shell is a beacon proxy that hardcodes its beacon — probe and
-disassembly in [`docs/RESEARCH.md` §18](docs/RESEARCH.md)), then calls the
-beacon's public `implementation()` getter and compares `extcodehash` of the
-returned address against the recorded circuit implementation codehash. Both
-legs must pass with code present — never the change detector, which stays a
-public view anyone may run as evidence. **What that proves:** at construction,
-the shell code and the beacon-reported implementation code were the recorded
-byte sequences. **What it does not prove:** the proxy's delegation binding
-(verified offchain by disassembly), that the beacon never changes after
-construction (it is frozen — `owner() = 0`, probed live), or anything about
-what the payer's screen showed. Until both legs pass, every link is capped at
-`MAX_LINK_AMOUNT_UNPINNED[token]`. Full rule-by-rule audit:
-[`docs/RESEARCH.md` §17](docs/RESEARCH.md); the pin investigation itself:
-[§18](docs/RESEARCH.md).
+link can never freeze. `evaluatorPinned()` turns true **only through rule 6's
+two-leg onchain implementation check, and it is a live view rather than a
+value frozen at deploy**: on every call it first compares `extcodehash` of
+the deployed processor against the recorded TapeOut shell codehash (the shell
+is a beacon proxy that hardcodes its beacon — probe and disassembly in
+[`docs/RESEARCH.md` §18](docs/RESEARCH.md)), then calls the beacon's public
+`implementation()` getter and requires the answer to equal the **stored
+implementation address** *and* `extcodehash` of that address's code to equal
+the recorded circuit implementation codehash — the master prompt's verbatim
+instruction: "store the implementation address and its `extcodehash` and
+verify both at claim." `claim` consults this check in the transaction that
+pays (a failing check means the default table, not the rule table, applies)
+and `createLink` consults it too (while it fails, every new link is capped at
+`MAX_LINK_AMOUNT_UNPINNED[token]`) — so a change behind the beacon after
+link creation is caught at payout time. Never the change detector, which
+stays a public view anyone may run as evidence. **What a passing check
+proves, at that moment:** the shell code is the recorded byte sequence and
+the beacon still reports the recorded implementation address whose code is
+the recorded byte sequence. **What it does not prove:** the proxy's
+delegation binding (verified offchain by disassembly), that a future change
+cannot happen — only that any change is visible to the next read, which is
+exactly why the check runs live — or anything about what the payer's screen
+showed. **The Q3 probe behind this (§18):** the recorded implementation
+(`0x977f…29B2`) has no proxy layer of its own — no upgrade selectors, zero
+EIP-1967 implementation/admin slots, no `DELEGATECALL`, no `SELFDESTRUCT` —
+and the beacon's upgrade path is owner-gated with `owner() = 0` (frozen),
+read-only probes today; nobody can swap it now, but a pin only ever proves
+the code at the moment it was checked, hence the live re-run. Full
+rule-by-rule audit: [`docs/RESEARCH.md` §17](docs/RESEARCH.md); the pin
+investigation itself: [§18](docs/RESEARCH.md).
 
 **On testnet that processor is a labelled stand-in, not hardware.** TapeOut
 exists only on X Layer mainnet (the factory has no code on chain 1952 —
@@ -480,7 +498,7 @@ same interface and runs the **real Split3 netlist bytes** through the same
 TAP-02 evaluator that was proven bit-for-bit against a live mainnet
 processor. The verdicts come from the netlist; the deploy log says
 "EVM stand-in, not hardware". Its code is not the recorded TapeOut
-implementation, so on testnet `evaluatorPinned` reads **false** — shown
+implementation, so on testnet `evaluatorPinned()` reads **false** — shown
 honestly as "unpinned, capped" — and every link stays capped; mainnet tier 2
 swaps in the recorded processor and the recorded beacon, both legs of the
 code check pass, and the flag flips true.
@@ -525,8 +543,9 @@ properties:
   the same transaction.
 - **The evaluator is never trusted blindly.** Any anomaly in its answer
   (revert, malformed return, gas exhaustion, a verdict that would overdraw the
-  contract) falls back to the default table; while `evaluatorPinned` is false,
-  every link is capped at `MAX_LINK_AMOUNT_UNPINNED[token]`.
+  contract) falls back to the default table; while `evaluatorPinned()` reads
+  false — re-checked live at every claim and link creation — every link is
+  capped at `MAX_LINK_AMOUNT_UNPINNED[token]`.
 - **The payee cannot settle their own link**, on either payer path.
 - **An EIP-3009 signature is bound to exactly one link**: the nonce it must
   carry is derived from `(linkKey, payer)`, so an authorization signed for
@@ -552,7 +571,7 @@ forge test
 
 The local suites — `PagoTest` (the full contract: guards, money paths, ledger,
 both payer paths), `PagoRuleTest` (the master-prompt rules: terms consent,
-circuit identity, the implementation check behind `evaluatorPinned`, and every
+circuit identity, the live implementation check behind `evaluatorPinned()`, and every
 processor fault proven to fall back instead of freezing), `PagoInvariantTest` +
 `PagoFuzzTest` (conservation: payouts + fee == credited, balance ≥ owed,
 status never backward — 128,000 interleaved calls in the invariant run),

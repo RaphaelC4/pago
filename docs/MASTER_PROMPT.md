@@ -27,17 +27,24 @@ Contract rules to implement and test (from the master prompt):
    revert on mismatch. This does NOT prove what the payer saw; don't claim it does.
 5. createLink reverts if the circuit's netlist identity can't be read. Store its hash.
 6. evaluatorPinned flag. [paraphrase, added 2026-11-18; updated same day to the
-   two-leg form after the mainnet probe - docs/RESEARCH.md section 18] The flag may
-   become true ONLY through a real onchain implementation check - never via the
-   change detector: the constructor takes the expected processor shell codehash AND
-   the circuit beacon AND the expected implementation codehash, requires code present
-   at the processor whose extcodehash equals the shell reference, then calls the
-   beacon's public implementation() getter and requires that address's extcodehash to
-   equal the implementation reference. Both legs must pass; a reverting or wrong
-   beacon fails the second leg. Name the known-answer check "changeDetector", never
-   "pin"; it stays a public view and never sets the flag.
-   If unpinned: cap every link at MAX_LINK_AMOUNT_UNPINNED[token] in base units.
-   [Still a paraphrase: the original verbatim sentence has not been supplied.]
+   two-leg form after the mainnet probe - docs/RESEARCH.md section 18; updated
+   2026-11-19 to the live re-check form after the original verbatim sentence was
+   supplied] The original sentence, verbatim: "If Phase 0 proves the
+   implementation can be checked onchain, store the implementation address and
+   its `extcodehash` and verify both at claim." The flag may become true ONLY
+   through a real onchain implementation check - never via the change detector.
+   It is a live view, not a stored bool: it stores the expected processor shell
+   codehash AND the circuit beacon AND the implementation address AND its
+   expected extcodehash; on every call it requires code present at the
+   processor whose extcodehash equals the shell reference, then calls the
+   beacon's public implementation() getter, requires the answer to equal the
+   stored implementation address, and requires that address's extcodehash to
+   equal the stored reference. claim and createLink consult this view live: at
+   claim, a failing check means the default split applies instead of the rule
+   table; while the check fails, createLink caps every link at
+   MAX_LINK_AMOUNT_UNPINNED[token] in base units. A reverting or wrong beacon
+   fails the check. Name the known-answer check "changeDetector", never "pin";
+   it stays a public view and never sets the flag.
 7. Token allowlist fixed at deploy. Store expected decimals as written by us. Never read
    decimals() at runtime for safety limits. The deploy script aborts on a mismatch.
 8. No markPaid. Underpay reverts, overpay is credited, double pay reverts, the creator

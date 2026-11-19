@@ -308,6 +308,52 @@ contract PagoRuleTest is Test {
         assertTrue(pago.linkExists("pin-big"));
     }
 
+    /// The live re-check's decisive case (master prompt: "verify both at
+    /// claim"): a link is created and paid while BOTH legs pass, THEN the
+    /// beacon is swapped to report a different implementation. The flag was
+    /// never a stored bool - it flips false at the very next read on the
+    /// SAME deployment - so `claim` must ignore the rule table (which the
+    /// evaluator would happily accept) and pay the default split instead,
+    /// and a link created after the swap must be capped.
+    function test_beaconSwapAfterTheLinkExistsForcesDefaultAndCap() public {
+        // Precondition: this suite's deployment passes both legs right now.
+        assertTrue(pago.evaluatorPinned(), "precondition: stand-in shell + mock beacon both match");
+
+        // Created and paid under the passing verdict: rule table 50/30/20 -
+        // the exact table test_claimUsesTheRuleSplitWhenTheHardwareAccepts
+        // proves this evaluator accepts.
+        _createWith("swap-after", AMOUNT, _defaultAlice(), _split(alice, bob, keeper, 10, 6, 4));
+        _pay("swap-after", AMOUNT);
+
+        // The swap: what sits behind the beacon changes AFTER the link
+        // exists. Nothing about the link, the tables or the evaluator
+        // changed - only the implementation behind the proxy.
+        MockBeacon beacon = MockBeacon(pago.circuitBeacon());
+        beacon.setImplementation(makeAddr("some other implementation"));
+        assertFalse(pago.evaluatorPinned(), "the live check must flip false at the next read");
+
+        // Claim: the default table (100% alice) applies instead of the rule
+        // table - and the event says so.
+        bytes32 key = pago.linkKeyOf("swap-after");
+        vm.expectEmit(true, true, true, true);
+        emit Pago.LinkClaimed(key, 995_000, 5_000, false);
+        vm.prank(relayer);
+        pago.claim("swap-after");
+
+        assertEq(token.balanceOf(alice), 995_000, "the default split applies after the swap");
+        assertEq(token.balanceOf(bob), 0, "the rule seat must not be paid while unpinned");
+        assertEq(token.balanceOf(keeper), 0, "the rule seat must not be paid while unpinned");
+        assertEq(token.balanceOf(feeAccount), 5_000, "the fee is unaffected by the rule verdict");
+        assertEq(token.balanceOf(address(pago)), 0, "every unit accounted for");
+
+        // And a link created AFTER the swap is capped, on the same
+        // deployment that allowed an uncapped link minutes earlier.
+        uint256 cap = pago.MAX_LINK_AMOUNT_UNPINNED(address(token));
+        vm.prank(alice);
+        vm.expectRevert("unpinned evaluator: link amount above cap");
+        pago.createLink("swap-over", cap + 1, address(token), "x", 0, _defaultAlice(), _ruleValid());
+    }
+
     function test_splitStepsMatchTheCircuitTarget() public view {
         assertEq(pago.SPLIT_STEPS(), Split3.TARGET, "Pago's 100% and Split3's 100% must be the same number");
         assertEq(pago.SEATS(), 3, "three seats, because Split3 judges three shares");
@@ -405,7 +451,7 @@ contract PagoRuleTest is Test {
     {
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
         configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 10_000_000_000});
-        p = new Pago(configs, feeAccount, processor, 1, expectedCodehash, beacon, expectedImplCodehash);
+        p = new Pago(configs, feeAccount, processor, 1, expectedCodehash, beacon, processor, expectedImplCodehash);
     }
 
     function _split(address r0, address r1, address r2, uint8 s0, uint8 s1, uint8 s2) internal pure returns (Pago.Split memory s) {

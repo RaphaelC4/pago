@@ -549,17 +549,19 @@ The other reason is the hackathon: the X Layer TapeOut Accelerate track
 explicitly asks for TapeOut circuits, contracts or onchain data
 ([evidence in `docs/RESEARCH.md` §11](docs/RESEARCH.md)).
 
-**Split3 has not been taped out.** That costs roughly 0.11 BEM plus 0.0013
-native OKB on X Layer mainnet, spends real funds, and is deliberately **not
-started** — it awaits an explicit go-ahead. `docs/RESEARCH.md` §14 itemises
-the cost. (Everything is on X Layer chain 196: OKB is that chain's gas token,
+**Split3 has not been taped out.** That costs roughly 1.14 BEM plus 0.0013
+native OKB on X Layer mainnet (104 transistors at 0.01 BEM each — `tapeout`
+requires one held per gate of the netlist — plus 0.1 BEM to create the
+processor), spends real funds, and is deliberately **not started** — it
+awaits an explicit go-ahead. `docs/RESEARCH.md` §14 itemises the cost.
+(Everything is on X Layer chain 196: OKB is that chain's gas token,
 and BEM is an ERC-20 on the same chain — no other network is involved.)
 
 There is a cheaper route — tape out onto one of the existing third-party
-processors for 0.0013 OKB plus one of its transistors — and it is **not**
+processors for 0.0013 OKB plus 104 of its transistors — and it is **not**
 taken, because **the processor owner controls it**: who may mint, what a
 transistor costs, and the processor's own rules are theirs, not ours. Only our
-own processor (the ≈0.11 BEM route) keeps that control with the deployer.
+own processor (the ≈1.14 BEM route) keeps that control with the deployer.
 
 ### Security model
 

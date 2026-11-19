@@ -310,9 +310,11 @@ export const XLAYER = {
   },
 
   /* The Split3 payment rule, once it is taped out onto a processor.
-     `null` = not taped out: it needs mainnet approval and roughly 0.11 BEM
-     plus 0.0013 native OKB (RESEARCH.md §14), which has deliberately not been
-     spent. The shape below is fixed by the circuit itself. */
+     `null` = not taped out: it needs mainnet approval and roughly 1.14 BEM
+     plus 0.0013 native OKB (RESEARCH.md §14: 104 transistors at 0.01 BEM
+     each, one held per gate, plus 0.1 BEM to create the processor), which
+     has deliberately not been spent. The shape below is fixed by the
+     circuit itself. */
   split3: {
     processor: null,
     circuitId: null,

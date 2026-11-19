@@ -479,7 +479,7 @@ on those behaved differently from a call to the factory.
 
 BEM trades on Uniswap V3 X Layer (BEM/OKB pool), so it is buyable with OKB.
 
-### Taping out on an *existing* processor requires holding a transistor
+### Taping out requires holding one transistor PER GATE of the netlist
 
 `tapeout(netlist, nIn, nOut)` on processor #340, called by an account that
 holds nothing, reverts with:
@@ -488,17 +488,26 @@ holds nothing, reverts with:
 ERC1155InsufficientBalance(0x000000000000000000000000000000000000dEaD, 0, 1, 0)
 ```
 
-The processor's ERC-1155 id **0 is a "transistor"**, and minting one on a
-*new* processor costs **0.01 BEM** (the caller sets the price in BEM when
-creating the processor). `nextId()` per processor: #340 → 1, #333 → 20,
+The processor's ERC-1155 id **0 is a "transistor"**, and minting on a
+*new* processor costs **0.01 BEM each** (the caller sets the price in BEM
+when creating the processor). `nextId()` per processor: #340 → 1, #333 → 20,
 #30 → 6.
+
+**Corrected 2026-11-19 by the Tier 2 fork test (§19): the gate wants one
+transistor HELD PER GATE of the netlist, not one overall.** A fresh
+processor's tapeout refusal is error `0x03dee4c5` with arguments
+`(account, held, required, 0)` where `required` equals the netlist's gate
+count — 104 for Split3 (Phase 0's 1-gate probe saw `required = 1`, which is
+why this section used to say "one transistor").
 
 So there are two routes to a Pago circuit on mainnet, both in BEM:
 
-1. **Our own processor**: `approve` 0.1 BEM → `createCPU` → mint a transistor
-   (0.01 BEM) → `tapeout` (0.0013 native). One-time ≈ 0.11 BEM + 0.0013 native.
-2. **Someone else's processor**: hold one of its transistors → `tapeout`
-   (0.0013 native). Cheaper, but we do not control the processor.
+1. **Our own processor**: `approve` 0.1 BEM → `createCPU` → mint `gates`
+   transistors (104 × 0.01 = **1.04 BEM** for Split3) → `tapeout`
+   (0.0013 native). One-time ≈ **1.14 BEM** + 0.0013 native + gas.
+2. **Someone else's processor**: hold `gates` of its transistors → `tapeout`
+   (0.0013 native). Cheaper when its transistors are cheap, but we do not
+   control the processor.
 
 Both spend real funds, so **neither has been started** — see §14.
 
@@ -572,9 +581,9 @@ Taped out as a *new* processor (route 1 in §13):
 | Item | Cost | Notes |
 |---|---|---|
 | Create processor | **0.1 BEM** | `approve` first, then `createCPU` with no value |
-| Mint one transistor | **0.01 BEM** | needed before `tapeout` accepts the call |
+| Mint transistors | **0.01 BEM each** | `tapeout` requires one HELD PER GATE → **104 for Split3 = 1.04 BEM** (§19) |
 | Tape out Split3 | **0.0013 native coin** (`TAPEOUT_FEE` = 1.3e15 wei) | 15 inputs, 1 output, 104 NANDs, 728-byte netlist |
-| **Total** | **≈ 0.11 BEM + 0.0013 native + gas** | BEM is buyable with OKB on Uniswap V3 X Layer |
+| **Total** | **≈ 1.14 BEM + 0.0013 native + gas** | BEM is buyable with OKB on Uniswap V3 X Layer |
 
 **Units, corrected 2026-11-18:** everything above is on **X Layer mainnet,
 chain 196** — there is no second network involved. X Layer's native gas
@@ -586,7 +595,7 @@ live 2026-11-18). Gas for every transaction is also OKB. So the whole
 tape-out costs OKB: buy BEM with OKB, plus 0.0013 OKB, plus gas.
 
 Alternatively, tapping out onto an existing third-party processor costs 0.0013
-ETH plus whatever one of its transistors costs, but hands control of the
+ETH plus `gates` of its transistors (104 for Split3), but hands control of the
 processor to someone else.
 
 Everything else — Pago's contracts, the Split3 netlist, its exhaustive
@@ -714,7 +723,7 @@ payer.
 
 ### Not done
 
-Taping out Split3 still needs mainnet and ≈0.11 BEM + 0.0013 native OKB (§14), and
+Taping out Split3 still needs mainnet and ≈1.14 BEM + 0.0013 native OKB (§14), and
 mainnet remains read-only until the exact approval phrase is given.
 
 ---
@@ -842,10 +851,10 @@ with its 0.995 receipt, and an unknown id.
   `transferFrom` in BEM, so the sequence is `approve(factory, 1e7)` then
   `createCPU` with **no** value. **Third-party processor control:** tapping
   out onto someone else's existing processor is cheaper (0.0013 native plus
-  one of its transistors) but **the processor owner controls it** — mint
+  `gates` of its transistors) but **the processor owner controls it** — mint
   pricing, admission and that processor's rules are theirs; only route 1 in
-  §13 (our own processor, ≈0.11 BEM) keeps control with the deployer. The
-  README says the same. **Per-link cap:** not implemented.
+  §13 (our own processor, ≈1.14 BEM for Split3) keeps control with the
+  deployer. The README says the same. **Per-link cap:** not implemented.
 - **The contract-rule audit was made against the code alone**, because the
   master prompt's rule list was not in this repository. It has since been
   recorded verbatim (`docs/MASTER_PROMPT.md`) and every gap it found is closed
@@ -1543,3 +1552,76 @@ Recorded values, all probed 2026-11-18 on chain 196:
 | circuit implementation codehash (`PAGO_IMPLEMENTATION_CODEHASH`) | `0x7a15c353205e5245f40f5f5524542a982a4bb3b9a28476e4f10845163f941b30` |
 | processor #340 (the example disassembled) | `0x9de448A1CE9537d24199B3b5355239d73aA6F591` |
 
+
+## 19. Tier 2 on the fork: a real processor, a real tape-out, a real payout (2026-11-19)
+
+`test_realFactoryProcessorTapesOutSplit3AndPaysTheRuleTable` runs the whole
+Tier 2 chain against X Layer mainnet (chain 196) in a Foundry fork — no real
+funds move, but every contract it touches is the live one. **It passes
+end-to-end** (`forge test --match-test
+test_realFactoryProcessorTapesOutSplit3AndPaysTheRuleTable -vv`, ~51 s):
+
+`approve` BEM → `createCPU` → identify the two surfaces → mint 104
+transistors → `tapeout` Split3 → deploy Pago against the new processor's
+recorded references → `evaluatorPinned()` true → create link → pay → claim
+with `usedRuleSplit = true` — seats **746,250 / 149,250 / 99,500**, fee
+**5,000**, and the log line `TIER 2 REPRODUCIBLE: factory processor pinned
+and the rule table paid`.
+
+### What createCPU actually returns — roles assigned by capability
+
+The test interface's `(circuits, transistors)` return names were an
+unverified placeholder. The first fork probe had them **backwards**: the
+**first** address returned carries the transistors surface (ERC-1155 mint),
+the **second** the circuits surface (tapeout/netlist). The test no longer
+trusts position — `_discoverRoles` probes each address and assigns by what
+it *answers* (`TAPEOUT_FEE()` answers and `mintPrice()` doesn't → circuits;
+the reverse → transistors), logging both shapes:
+
+| | address | shape | evidence |
+|---|---|---|---|
+| first | `0x956bD5c56A947011e4B6A8bDF51e51108c4e9Be6` | 1 = transistors | answers `mintPrice()` (1e6), `protocolFee()`, `mint(uint256,uint256)` |
+| second | `0xb325b72EaBb03B3f6FE1eEAd6BCbF31796c394da` | 2 = circuits | answers `TAPEOUT_FEE()`; impl answers `netlist`/`eval`/`circuitInfo`/`tapeout` |
+
+Wiring confirmed by reading the circuits proxy's storage directly: **slot 0 =
+the transistors contract** (tapeout's gate reads it from there), **slot 3 =
+the factory**.
+
+### Shell diff resolved: same proxy source, different compilation
+
+The new processor's shell vs #340's recorded shell (`0x57aa306f…`): both
+**295 bytes**, differing in exactly **32 bytes starting at byte 252** — the
+trailing IPFS compiler-metadata hash. Both embed the **same recorded beacon
+`0xf70d1ed4…`**. Consequences:
+
+- the shell *codehash* is per-deploy (Tier 2 records its own, as the
+  procedure already says) — the test logs the diff rather than assuming
+  either way;
+- the recorded **beacon `0xf70d1ed4…`, implementation `0x977f2178…` and
+  implementation hash `0x7a15c353…` carry over unchanged** for new
+  processors on this factory — the test re-follows the beacon and re-checks
+  all four implementation-surface probes on every run.
+
+### The gate wants one transistor PER GATE (and it costs BEM)
+
+First tapeout attempt failed with error `0x03dee4c5`, arguments
+`(account, held=1, required=104, 0)` — **104 = Split3's NAND count**.
+Phase 0's 1-gate probe saw `required = 1`, which is why the docs used to say
+"one transistor". The mint: **no value + BEM allowance** (the native-value
+mint reverts empty — old processors charge native, new ones take BEM, §13);
+`mintPrice` = 1e6 = 0.01 BEM at 8 decimals. So the tape-out gate costs
+**104 × 0.01 = 1.04 BEM** — the route-1 total is **≈1.14 BEM + 0.0013
+native + gas** (§14, README and `config.js` corrected).
+
+### Proves / does not prove
+
+- **Proves:** the full Tier 2 chain is reproducible on this factory with a
+  real BEM fee, a real 104-gate tape-out (circuit id 1, netlist 728 bytes,
+  15-in/1-out roundtrip), Pago pinning against the new processor's recorded
+  references (`evaluatorPinned()` true), and the rule table paid through the
+  real factory circuit at claim time (`usedRuleSplit = true`).
+- **Does not prove:** that mainnet was spent on (nothing here moves funds —
+  a fork replays chain 196 read-only); that a *future* processor on the
+  factory would embed the same beacon (each Tier 2 run records its own
+  shell hash and re-follows the beacon — that is the procedure, not an
+  assumption); what a payer's screen showed (rule 4, unchanged).

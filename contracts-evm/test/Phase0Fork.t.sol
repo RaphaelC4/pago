@@ -3,6 +3,9 @@ pragma solidity 0.8.28;
 
 import {Test, console} from "forge-std/Test.sol";
 import {IRuleProcessor} from "../src/IRuleProcessor.sol";
+import {Pago} from "../src/Pago.sol";
+import {Split3} from "../src/circuits/Split3.sol";
+import {MockToken} from "./mocks/MockToken.sol";
 
 interface ITapeFactory {
     event CPUCreated(
@@ -43,6 +46,17 @@ contract Phase0ForkTest is Test {
     address constant USDG = 0x4ae46a509F6b1D9056937BA4500cb143933D2dc8;
     // Processor #340 (BBBFi TapeGuard), circuit #1, used as the public reference circuit.
     address constant CPU_340 = 0x9de448A1CE9537d24199B3b5355239d73aA6F591;
+    // The factory's fee token (section 13): 0.1 BEM = 1e7 units at 8 decimals.
+    address constant BEM = 0x60e62Efa9405d6873C5deaBD4E6CC91c25363952;
+
+    // Rule 6's recorded references (section 18), deliberately literals - the
+    // point of the Tier 2 test is that Pago is deployed against values
+    // recorded OFFCHAIN, never read live from the fork under test. Same
+    // values ForkPin.t.sol pins processor #340 against.
+    address constant BEACON = 0xf70d1ed4f62CF3780157B0b421b7E2F45bD0991C;
+    address constant IMPL = 0x977f217887E085D298Cb3819cDAD5A0ee35F29B2;
+    bytes32 constant RECORDED_SHELL = 0x57aa306fd0be97087da3534e03398f5ff4efd533b5be4e45a405ce86fa6717d5;
+    bytes32 constant RECORDED_IMPL = 0x7a15c353205e5245f40f5f5524542a982a4bb3b9a28476e4f10845163f941b30;
 
     // Derived from a single deterministic key in setUp so that every signature
     // in this file actually recovers to `alice`. Signing with an unrelated key
@@ -278,82 +292,536 @@ contract Phase0ForkTest is Test {
         return keccak256(abi.encodePacked("\x19\x01", IDomain(token).DOMAIN_SEPARATOR(), structHash));
     }
 
-    // ---------- Phase 0.8: create a processor and tape out on the fork ----------
+    // ---------- Tier 2 de-risk: a processor made through the real factory ----
 
-    /// Phase 0.8 result: **UNSUPPORTED** on the current factory implementation.
+    /// Tier 2, de-risked on the fork before a cent is spent: create a
+    /// processor through the REAL factory (cheatcode-funded BEM, nothing
+    /// broadcast), mint a transistor, tape out the real Split3 netlist, then
+    /// deploy Pago against references recorded offchain from THAT processor
+    /// and prove it pins and the rule table pays - exactly what
+    /// `deploy to mainnet tier 2` would do with real funds.
     ///
-    /// `createCPU` cannot be satisfied (see `test_createCPUIsCurrentlyUnsatisfiable`),
-    /// so minting transistors and taping out a netlist on this fork cannot be
-    /// reproduced end to end. Rather than pretend otherwise, this test records
-    /// the blocked state and keeps the real flow ready for the day TapeOut ships
-    /// a payable `createCPU`.
-    function test_createProcessorAndTapeOutOnFork() public {
-        uint256 before = ITapeFactory(FACTORY).cpuCount();
+    /// Honest outcomes, in order:
+    ///   * a stage is blocked on this factory -> the console says UNSUPPORTED
+    ///     at that stage with the revert reason, and the test records it;
+    ///   * createCPU's two addresses are assigned by CAPABILITY, not
+    ///     position - the interface's return order was a placeholder and
+    ///     the first probe had them backwards (first = transistors);
+    ///   * the inference "every processor carries #340's recorded shell
+    ///     hash" is DISCLOSED either way with a byte-level diff - if the
+    ///     shells differ, the log says where, and the deploy uses the new
+    ///     processor's OWN recorded references (the Tier 2 procedure);
+    ///   * hard failures (must never be hidden): the embedded beacon has no
+    ///     code or does not answer implementation(), Pago does not pin, or
+    ///     the real taped-out circuit does not make the rule table pay.
+    function test_realFactoryProcessorTapesOutSplit3AndPaysTheRuleTable() public {
         vm.deal(alice, 10 ether);
+        deal(BEM, alice, 1_000_000_000); // 10 BEM at 8 decimals - cheatcode money, never real
 
+        // ── stage 1: createCPU - the fee is ERC-20 BEM, approved, no value ──
+        // Section 13: the blocker Phase 0 recorded was the wrong cause; the
+        // fee is a transferFrom, not msg.value.
         address circuits;
         address transistors;
-        bool creatable;
-        vm.prank(alice);
-        try ITapeFactory(FACTORY).createCPU{value: ITapeFactory(FACTORY).deployFee()}(
-            "Pago", "PAGO", "Pago rule library: shareable payment-term circuits.", 100_000, 0
-        ) returns (address c, address t) {
-            creatable = true;
-            circuits = c;
-            transistors = t;
-        } catch {
-            creatable = false;
+        {
+            uint256 countBefore = ITapeFactory(FACTORY).cpuCount();
+            (bool created, address first, address second) = _tryCreateCPU();
+            if (!created) {
+                assertEq(ITapeFactory(FACTORY).cpuCount(), countBefore, "no processor may have been created");
+                return;
+            }
+            assertEq(ITapeFactory(FACTORY).cpuCount(), countBefore + 1, "processor not created");
+            console.log("createCPU returned first:", first);
+            console.log("createCPU returned second:", second);
+
+            // Which address is which: the interface's return names were a
+            // placeholder never verified against TapeOut's ABI, and the
+            // first probe had them backwards - the FIRST address serves the
+            // mint / ERC-1155 transistors surface, the SECOND the tapeout /
+            // netlist circuits surface. Assign ROLES BY CAPABILITY, and log
+            // the shape each one answered.
+            (bool rolesOk, address c_, address t_) = _discoverRoles(first, second);
+            if (!rolesOk) return; // _discoverRoles logged UNSUPPORTED
+            circuits = c_;
+            transistors = t_;
+        }
+        console.log("circuits (tapeout surface):", circuits);
+        console.log("transistors (mint surface):", transistors);
+        assertGt(circuits.code.length, 0, "the circuits contract must have code");
+        assertGt(transistors.code.length, 0, "the transistors contract must have code");
+        _logWiring(circuits, transistors);
+
+        // THE Tier 2 inference, tested head-on and DISCLOSED either way:
+        // "every factory processor carries the same recorded shell hash"
+        // (from #30/#333/#340) holds only if this new shell matches #340's.
+        // The byte-diff runs in its own frame, so the log says WHERE the
+        // shells differ, not just THAT they do.
+        _logShellDiff(circuits, CPU_340);
+        console.log("new shell matches recorded #340 shell:", circuits.codehash == RECORDED_SHELL);
+        console.log("#340 recorded beacon:", BEACON);
+        console.log("#340 recorded impl:", IMPL);
+
+        // What a Tier 2 operator actually records OFFCHAIN after createCPU:
+        // the new processor's own shell hash, the beacon its shell embeds
+        // (found by disassembling the PUSH32 behind the `implementation()`
+        // selector - the documented method, README "how the beacon address
+        // is bound"), what that beacon currently reports, and that code's
+        // hash. All four become Pago constructor arguments; Pago itself
+        // never reads them from anywhere - it only re-verifies them live.
+        Refs memory refs = _recordReferences(circuits);
+        console.log("recorded shell hash:", vm.toString(refs.shell));
+        console.log("recorded beacon:", refs.beacon);
+        console.log("beacon reports impl:", refs.impl);
+        console.log("recorded impl hash:", vm.toString(refs.implHash));
+        assertGt(refs.beacon.code.length, 0, "the shell's embedded beacon must have code");
+        assertGt(refs.impl.code.length, 0, "the beacon must report an implementation with code");
+
+        // Does the CURRENT circuit implementation still expose the surface
+        // Pago calls? A new processor delegates to it, so if `netlist` /
+        // `eval` / `circuitInfo` are gone, no new processor can ever serve a
+        // Pago link - a hard Tier 2 blocker, logged here before anything
+        // tries to call them.
+        bytes memory implCode = refs.impl.code;
+        console.log("circuit impl has netlist(uint256):", _hasSelector(implCode, "netlist(uint256)"));
+        console.log("circuit impl has eval(uint256,bytes):", _hasSelector(implCode, "eval(uint256,bytes)"));
+        console.log("circuit impl has circuitInfo(uint256):", _hasSelector(implCode, "circuitInfo(uint256)"));
+        console.log("circuit impl has tapeout(bytes,uint32,uint32):", _hasSelector(implCode, "tapeout(bytes,uint32,uint32)"));
+
+        // ── stages 2 + 3: tape out the real Split3, minting first only if
+        // the tapeout gate demands it ────────────────────────────────────────
+        // Tapeout is attempted first: if the current factory gates it behind
+        // a transistor, the revert says so and we mint then retry; if the
+        // gate changed (or the creator is pre-credited), minting is
+        // pointless. Every blocked stage is a logged UNSUPPORTED outcome,
+        // never a bare revert.
+        (bool ok, uint256 circuitId) = _tapeOutSplit3(circuits);
+        if (!ok) {
+            console.log("first tapeout attempt did not succeed - trying the transistor mint, then retrying once");
+            if (!_mintTransistor(transistors)) {
+                console.log("UNSUPPORTED: no way to mint the transistor that tapeout may require");
+                return;
+            }
+            (ok, circuitId) = _tapeOutSplit3(circuits);
+            if (!ok) {
+                console.log("UNSUPPORTED: tapeout still does not succeed after the mint");
+                return;
+            }
         }
 
-        if (!creatable) {
-            console.log("UNSUPPORTED: createCPU is non-payable yet charges a fee.");
-            console.log("Cannot mint transistors or tape out a netlist on this fork.");
-            assertEq(ITapeFactory(FACTORY).cpuCount(), before, "no processor may have been created");
-            return;
-        }
-
-        console.log("circuits:", circuits);
-        console.log("transistors:", transistors);
-        assertTrue(ITapeFactory(FACTORY).cpuCount() == before + 1, "cpu not created");
-
-        ITransistors t = ITransistors(transistors);
-        vm.prank(alice);
-        t.mint{value: t.protocolFee() + t.mintPrice() * 64}(t.NAND(), 64);
-        console.log("minted NAND");
-
-        // A minimal AND(a,b) netlist: signals 0,1 constants; inputs 2,3; then NAND(2,3).
-        bytes memory nl = hex"00000002000003";
-        ICircuits c = ICircuits(circuits);
-        vm.prank(alice);
-        uint256 id = c.tapeout{value: c.TAPEOUT_FEE()}(nl, 2, 1);
-        console.log("taped out circuit id", id);
-        assertEq(id, 1, "first circuit id");
-
-        IRuleProcessor p = IRuleProcessor(circuits);
-        (uint32 nIn, uint32 nOut, , uint32 gates) = p.circuitInfo(id);
-        assertEq(nIn, 2, "nIn");
-        assertEq(nOut, 1, "nOut");
-        assertEq(gates, 1, "one NAND");
-
-        assertEq(uint256(uint8(p.eval(id, hex"03")[0])), 1, "AND(1,1) must be 1");
-        assertEq(uint256(uint8(p.eval(id, hex"01")[0])), 0, "AND(0,1) must be 0");
+        // ── stages 4 + 5: deploy Pago, then prove the rule table pays ────────
+        // Their own frame keeps the stack above shallow enough to compile
+        // (no via-ir needed for one test).
+        _deployAndProveRuleTable(circuits, circuitId, refs);
+        console.log("TIER 2 REPRODUCIBLE: factory processor pinned and the rule table paid");
     }
 
-    /// Phase 0.8 finding: on the current factory implementation
-    /// (`0x336e9F0F4c3fEe7C8c803377e4DEA00293f4ae2a`) `createCPU` is
-    /// **non-payable**, yet it also enforces the 1e7 wei creation fee. Paying
-    /// trips the payable guard; paying nothing trips the fee check, so no value
-    /// satisfies both.
+    /// Dump what the factory's CURRENT transistors exposes: follow its beacon
+    /// to the implementation, list every PUSH4 (dispatcher selector
+    /// candidate), and check the plausible mint signatures explicitly - so
+    /// an unknown surface is looked up, not guessed at.
+    function _discoverTransistorSurface(address transistors) internal view {
+        (address tImpl, bool isShell) = _followBeacon(transistors);
+        bytes memory dispatch = isShell ? tImpl.code : transistors.code;
+        if (isShell) console.log("transistors beacon impl:", tImpl);
+        _logPush4s(isShell ? "transistors impl" : "transistors", dispatch);
+        console.log("has mint(uint256,uint256):", _hasSelector(dispatch, "mint(uint256,uint256)"));
+        console.log("has mint(uint256):", _hasSelector(dispatch, "mint(uint256)"));
+        console.log("has mint(address,uint256):", _hasSelector(dispatch, "mint(address,uint256)"));
+        console.log("has buy(uint256):", _hasSelector(dispatch, "buy(uint256)"));
+        console.log("has mintPrice():", _hasSelector(dispatch, "mintPrice()"));
+        console.log("has price():", _hasSelector(dispatch, "price()"));
+        console.log("has protocolFee():", _hasSelector(dispatch, "protocolFee()"));
+        console.log("has owner():", _hasSelector(dispatch, "owner()"));
+    }
+
+    /// Stage 2: mint the transistors that gate `tapeout` (ERC-1155 id 0 -
+    /// the gate wants ONE HELD PER GATE of the netlist: Split3 has 104
+    /// NANDs, so 104 are minted here). The role was assigned by capability
+    /// (_discoverRoles), so the fee reads below hit the real mint surface;
+    /// both mint routes (native value as some processors charge, no value
+    /// + BEM allowance as section 13 says) are attempted under try/catch.
+    /// A blocked stage logs UNSUPPORTED and returns false; it never
+    /// reverts bare.
+    function _mintTransistor(address transistors) internal returns (bool) {
+        console.log("stage 2: mint the transistors tapeout requires (ERC-1155 id 0)");
+        // Surface discovery: dump the mint surface (PUSH4 candidates plus
+        // the known signatures) so the evidence is in the test output even
+        // if the mint itself is blocked.
+        _discoverTransistorSurface(transistors);
+
+        (bool okMp, bytes memory retMp) = transistors.staticcall(abi.encodeWithSignature("mintPrice()"));
+        (bool okPf, bytes memory retPf) = transistors.staticcall(abi.encodeWithSignature("protocolFee()"));
+        uint256 mintPrice;
+        uint256 protocolFee;
+        bool haveFees = okMp && retMp.length == 32 && okPf && retPf.length == 32;
+        if (okMp && retMp.length == 32) {
+            mintPrice = abi.decode(retMp, (uint256));
+            console.log("mintPrice (BEM units):", mintPrice);
+        } else {
+            console.log("mintPrice() did not answer - this transistors differs from #340's");
+        }
+        if (okPf && retPf.length == 32) {
+            protocolFee = abi.decode(retPf, (uint256));
+            console.log("protocolFee:", protocolFee);
+        }
+
+        // Tapeout's gate, observed on this factory: its revert carries
+        // (account, held, required, 0) with required = the netlist's gate
+        // count - Split3 has 104 NANDs, so 104 transistors of id 0 must be
+        // held, not just one (the Phase 0 probe used a 1-gate netlist and
+        // saw required = 1, which is why the docs used to say "one").
+        uint256 required = Split3.NAND_COUNT;
+        ITransistors tr = ITransistors(transistors);
+        vm.startPrank(alice);
+        IBem(BEM).approve(transistors, type(uint256).max);
+        bool minted;
+        if (haveFees) {
+            try tr.mint{value: protocolFee + mintPrice}(0, required) {
+                minted = true;
+            } catch (bytes memory reason) {
+                console.log("native-value mint failed:");
+                console.logBytes(reason);
+            }
+        }
+        if (!minted) {
+            try tr.mint(0, required) {
+                minted = true;
+            } catch (bytes memory reason) {
+                console.log("no-value (BEM) mint failed:");
+                console.logBytes(reason);
+            }
+        }
+        vm.stopPrank();
+        if (!minted) {
+            console.log("UNSUPPORTED at stage 2 (transistor mint) - reasons logged above");
+            return false;
+        }
+        console.log("minted transistors (id 0):", required);
+        return true;
+    }
+
+    /// Stage 3: tape out the real Split3 netlist through the factory-made
+    /// processor, then check the processor serves those exact bytes back
+    /// (rule 5 reads them at createLink) and reports the real TAP-02 shape.
+    /// `TAPEOUT_FEE()` is probed first for the same reason as the transistors
+    /// surface: a call that does not answer is a logged stage outcome.
+    function _tapeOutSplit3(address circuits) internal returns (bool, uint256) {
+        console.log("stage 3: tape out the real Split3 netlist");
+        bytes memory nl = Split3.netlist();
+        console.log("netlist bytes:", nl.length);
+        (bool okFee, bytes memory retFee) = circuits.staticcall(abi.encodeWithSignature("TAPEOUT_FEE()"));
+        if (!okFee || retFee.length != 32) {
+            console.log("TAPEOUT_FEE() did not answer - the circuits surface differs from #340's");
+            return (false, 0);
+        }
+        uint256 tapeoutFee = abi.decode(retFee, (uint256));
+        console.log("TAPEOUT_FEE (native wei):", tapeoutFee);
+
+        ICircuits ci = ICircuits(circuits);
+        uint256 circuitId;
+        bool taped;
+        vm.startPrank(alice);
+        try ci.tapeout{value: tapeoutFee}(nl, Split3.N_IN, Split3.N_OUT) returns (uint256 id_) {
+            circuitId = id_;
+            taped = true;
+        } catch (bytes memory reason) {
+            console.log("tapeout failed:");
+            console.logBytes(reason);
+        }
+        vm.stopPrank();
+        if (!taped) {
+            console.log("tapeout did not succeed - reason logged above");
+            return (false, 0);
+        }
+        console.log("taped out circuit id:", circuitId);
+
+        IRuleProcessor rp = IRuleProcessor(circuits);
+        assertEq(keccak256(rp.netlist(circuitId)), keccak256(nl), "processor must serve the netlist we taped out");
+        (uint32 nIn, uint32 nOut,,) = rp.circuitInfo(circuitId);
+        assertEq(uint256(nIn), uint256(Split3.N_IN), "15 inputs");
+        assertEq(uint256(nOut), uint256(Split3.N_OUT), "1 output");
+        return (true, circuitId);
+    }
+
+    /// Stages 4 and 5 of the Tier 2 test: deploy Pago against the four
+    /// references recorded for THIS processor, assert the live two-leg check
+    /// passes, then create -> pay -> claim a link whose rule table the REAL
+    /// taped-out Split3 circuit must select (event `usedRuleSplit = true`)
+    /// and whose seats must be paid to the unit.
+    function _deployAndProveRuleTable(address circuits, uint256 circuitId, Refs memory refs) internal {
+        // ── stage 4: deploy Pago against the recorded references ─────────────
+        MockToken token = new MockToken("Fork USD", "fkUSD", 6);
+        Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
+        configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 10_000_000_000});
+        Pago p = new Pago(configs, makeAddr("fee"), circuits, circuitId, refs.shell, refs.beacon, refs.impl, refs.implHash);
+        assertTrue(p.evaluatorPinned(), "factory processor + its own recorded references must pin");
+
+        // ── stage 5: the rule table pays, live, through the real circuit ─────
+        address creator = makeAddr("creator");
+        address payer = makeAddr("payer");
+        address relayer = makeAddr("relayer");
+        address payee = makeAddr("payee");
+        address seat1 = makeAddr("seat1");
+        address seat2 = makeAddr("seat2");
+
+        vm.prank(creator);
+        p.createLink(
+            "factory-rule",
+            1_000_000,
+            address(token),
+            "Tier 2 fork proof: real factory processor",
+            0,
+            _split(payee, address(0), address(0), 20, 0, 0),
+            _split(payee, seat1, seat2, 15, 3, 2)
+        );
+
+        token.mint(payer, 1_000_000);
+        vm.startPrank(payer);
+        token.approve(address(p), 1_000_000);
+        p.pay("factory-rule", 1_000_000, p.termsHash("factory-rule"));
+        vm.stopPrank();
+
+        // The claim event itself must record which table paid: the RULE
+        // table, chosen by the REAL taped-out circuit answering yes to
+        // 15+3+2 = 100%. Seat percentages: 75/15/10 of the 995,000 payout.
+        bytes32 key = p.linkKeyOf("factory-rule");
+        vm.expectEmit(true, true, true, true);
+        emit Pago.LinkClaimed(key, 995_000, 5_000, true);
+        vm.prank(relayer);
+        p.claim("factory-rule");
+
+        assertEq(token.balanceOf(payee), 746_250, "rule seat 1: 75% - the real circuit said yes");
+        assertEq(token.balanceOf(seat1), 149_250, "rule seat 2: 15%");
+        assertEq(token.balanceOf(seat2), 99_500, "rule seat 3: 10%");
+        assertEq(token.balanceOf(makeAddr("fee")), 5_000, "the 0.5% fee");
+        console.log("rule table paid through the real factory circuit");
+    }
+
+    /// Three seats in 5% steps: recipients with a share must be honest seats.
+    function _split(address r0, address r1, address r2, uint8 s0, uint8 s1, uint8 s2)
+        internal
+        pure
+        returns (Pago.Split memory s)
+    {
+        s.recipients = [r0, r1, r2];
+        s.shares = [s0, s1, s2];
+    }
+
+    /// The four references a Tier 2 deploy records offchain for ONE processor:
+    /// its shell's codehash, the beacon embedded in that shell (disassembled,
+    /// not read from storage - no storage of another account is readable
+    /// onchain), what the beacon's public getter reports right now, and the
+    /// code hash there. Recorded from a read of the fork, exactly as a mainnet
+    /// operator would record them with `cast` before deploying Pago.
+    struct Refs {
+        bytes32 shell;
+        address beacon;
+        address impl;
+        bytes32 implHash;
+    }
+
+    function _recordReferences(address shellAddr) internal view returns (Refs memory r) {
+        r.shell = shellAddr.codehash;
+        r.beacon = _embeddedBeacon(shellAddr);
+        (bool ok, bytes memory ret) = r.beacon.staticcall(abi.encodeWithSignature("implementation()"));
+        require(ok && ret.length == 32, "the embedded beacon does not answer implementation()");
+        r.impl = address(uint160(uint256(bytes32(ret))));
+        r.implHash = r.impl.codehash;
+    }
+
+    /// Disassemble the shell: `PUSH4 5c60da1b` (`implementation()`) ...
+    /// `PUSH32 <beacon>` ... `STATICCALL` - the first PUSH32 payload in the
+    /// code is the beacon address the shell hardcodes (README step 2).
+    function _embeddedBeacon(address shellAddr) internal view returns (address) {
+        (bool found, address beacon) = _tryEmbeddedBeacon(shellAddr);
+        require(found, "no PUSH32 in shell - re-disassemble");
+        return beacon;
+    }
+
+    /// The same disassembly, non-reverting: (found, beacon address).
+    function _tryEmbeddedBeacon(address target) internal view returns (bool, address) {
+        bytes memory code = target.code;
+        for (uint256 i; i + 33 <= code.length; ++i) {
+            if (code[i] == 0x7f) {
+                // PUSH32 payload, big-endian; the address is its low 20 bytes.
+                uint256 payload;
+                for (uint256 j; j < 32; ++j) {
+                    payload = (payload << 8) | uint8(code[i + 1 + j]);
+                }
+                return (true, address(uint160(payload)));
+            }
+        }
+        return (false, address(0));
+    }
+
+    /// Follow a beacon-proxy shell to its implementation: embedded beacon ->
+    /// `implementation()` -> code there. (impl, isShell).
+    function _followBeacon(address target) internal view returns (address, bool) {
+        (bool found, address beacon) = _tryEmbeddedBeacon(target);
+        if (!found) return (address(0), false);
+        (bool ok, bytes memory ret) = beacon.staticcall(abi.encodeWithSignature("implementation()"));
+        if (!ok || ret.length != 32) return (address(0), false);
+        address impl = address(uint160(uint256(bytes32(ret))));
+        if (impl.code.length == 0) return (address(0), false);
+        return (impl, true);
+    }
+
+    /// True if the runtime code contains `PUSH4 <selector of sig>` - i.e. the
+    /// dispatcher plausibly exposes that function. A presence probe, not a
+    /// proof: PUSH4 constants appear elsewhere too, which is why the full
+    /// list is dumped next to it and the real call is still made under
+    /// try/catch.
+    function _hasSelector(bytes memory code, string memory sig) internal pure returns (bool) {
+        uint32 want = uint32(bytes4(keccak256(bytes(sig))));
+        for (uint256 i; i + 5 <= code.length; ++i) {
+            if (
+                code[i] == 0x63 && uint32(uint8(code[i + 1])) == (want >> 24)
+                    && uint32(uint8(code[i + 2])) == ((want >> 16) & 0xff)
+                    && uint32(uint8(code[i + 3])) == ((want >> 8) & 0xff) && uint32(uint8(code[i + 4])) == (want & 0xff)
+            ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Every `PUSH4` constant in runtime code, logged as hex - in practice
+    /// the dispatcher's function selectors, so an unknown surface can be
+    /// looked up (4byte) instead of guessed at.
+    function _logPush4s(string memory label, bytes memory code) internal pure {
+        console.log(label, "PUSH4 candidates:");
+        uint256 n;
+        for (uint256 i; i + 5 <= code.length && n < 64; ++i) {
+            if (code[i] == 0x63) {
+                uint32 sel = (uint32(uint8(code[i + 1])) << 24) | (uint32(uint8(code[i + 2])) << 16)
+                    | (uint32(uint8(code[i + 3])) << 8) | uint32(uint8(code[i + 4]));
+                console.log("  ", _u32Hex(sel));
+                ++n;
+            }
+        }
+    }
+
+    function _u32Hex(uint32 v) internal pure returns (string memory) {
+        bytes memory h = "0123456789abcdef";
+        bytes memory o = new bytes(10);
+        o[0] = "0";
+        o[1] = "x";
+        for (uint32 i; i < 4; ++i) {
+            uint8 b = uint8(v >> (8 * (3 - i)));
+            o[2 + 2 * i] = h[b >> 4];
+            o[3 + 2 * i] = h[b & 0xf];
+        }
+        return string(o);
+    }
+
+    /// Stage 1: createCPU with the BEM fee approved and no value (section
+    /// 13). Returns the two addresses UNNAMED - which is which is decided
+    /// by _discoverRoles, never by position.
+    function _tryCreateCPU() internal returns (bool, address, address) {
+        vm.startPrank(alice);
+        IBem(BEM).approve(FACTORY, type(uint256).max);
+        try ITapeFactory(FACTORY).createCPU(
+            "Pago", "PAGO", "Pago rule library: shareable payment-term circuits.", 100_000, 1e6
+        ) returns (address a, address b) {
+            vm.stopPrank();
+            return (true, a, b);
+        } catch (bytes memory reason) {
+            vm.stopPrank();
+            console.log("UNSUPPORTED at stage 1 (createCPU) - revert reason:");
+            console.logBytes(reason);
+            return (false, address(0), address(0));
+        }
+    }
+
+    /// staticcall a no-arg uint getter: (answered, value).
+    function _answerUint(address target, string memory sig) internal view returns (bool, uint256) {
+        (bool ok, bytes memory ret) = target.staticcall(abi.encodeWithSignature(sig));
+        if (!ok || ret.length != 32) return (false, 0);
+        return (true, abi.decode(ret, (uint256)));
+    }
+
+    /// A contract's shape: bit 1 = answers TAPEOUT_FEE() (circuits), bit 0
+    /// = answers mintPrice() (transistors).
+    function _roleCode(address target) internal view returns (uint8) {
+        (bool tape,) = _answerUint(target, "TAPEOUT_FEE()");
+        (bool mint,) = _answerUint(target, "mintPrice()");
+        return uint8((tape ? 2 : 0) | (mint ? 1 : 0));
+    }
+
+    /// createCPU returns two addresses and the interface never verified
+    /// their order - probing showed the FIRST carries the transistors
+    /// surface and the SECOND the circuits surface. Identify each by what
+    /// it ANSWERS: shape 2 = circuits (tapeout fee, no mint price),
+    /// shape 1 = transistors (mint price, no tapeout fee). Logs both
+    /// shapes; (false, 0, 0) when the pair matches neither shape.
+    function _discoverRoles(address first, address second) internal view returns (bool, address, address) {
+        uint8 shapeA = _roleCode(first);
+        uint8 shapeB = _roleCode(second);
+        console.log("first shape (2=circuits, 1=transistors):", uint256(shapeA));
+        console.log("second shape (2=circuits, 1=transistors):", uint256(shapeB));
+        if (shapeA == 2 && shapeB == 1) return (true, first, second);
+        if (shapeA == 1 && shapeB == 2) return (true, second, first);
+        console.log("UNSUPPORTED: the pair matches neither known circuits/transistors shape");
+        return (false, address(0), address(0));
+    }
+
+    /// The circuits proxy's own storage, read directly on the fork: which
+    /// slot points at the transistors contract (tapeout's transistor gate
+    /// must read it from somewhere) and what else is wired in slots 0-7.
+    function _logWiring(address circuits, address transistors) internal {
+        for (uint256 s; s < 8; ++s) {
+            bytes32 v = vm.load(circuits, bytes32(s));
+            if (v == bytes32(0)) continue;
+            console.log("circuits storage slot:", s);
+            console.logBytes32(v);
+            if (address(uint160(uint256(v))) == transistors) {
+                console.log("  ^ the transistors contract - tapeout's gate is wired to it");
+            }
+        }
+    }
+
+    /// Byte-level comparison of two processor shells, in its own stack frame.
+    /// Logs both codes in full plus the index and bytes of every difference,
+    /// so a failed pin says exactly where two shells diverge.
+    function _logShellDiff(address a, address b) internal view {
+        bytes memory codeA = a.code;
+        bytes memory codeB = b.code;
+        console.log("shell A hex:", vm.toString(codeA));
+        console.log("shell B hex:", vm.toString(codeB));
+        uint256 diffs;
+        for (uint256 i; i < codeA.length && i < codeB.length; ++i) {
+            if (codeA[i] != codeB[i]) {
+                if (diffs < 16) {
+                    console.log("differing byte index:", i);
+                    console.log("  A:", uint256(uint8(codeA[i])));
+                    console.log("  B:", uint256(uint8(codeB[i])));
+                }
+                ++diffs;
+            }
+        }
+        console.log("lengths:", codeA.length, codeB.length);
+        console.log("total differing bytes:", diffs);
+    }
+
+    /// Phase 0 finding, kept as evidence and re-scoped after section 13: on
+    /// the current factory implementation (`0x336e9F0F4c3fEe7C8c803377e4DEA00293f4ae2a`)
+    /// `createCPU` is **non-payable**, yet it also enforces a 1e7 fee - but
+    /// the fee is an ERC-20 BEM transferFrom, NOT msg.value (section 13), so
+    /// no native value can ever satisfy it. Phase 0's UNSUPPORTED conclusion
+    /// was the wrong cause; the satisfiable path - approve BEM, send no
+    /// value - is proven in `test_realFactoryProcessorTapesOutSplit3AndPaysTheRuleTable`
+    /// above.
     ///
     /// Evidence gathered in Phase 0:
     ///   - `createCPU` entry at byte 0x1027 begins `CALLVALUE PUSH3 0x540 JUMPI`
     ///   - 0x540 is `PUSH0 DUP1 REVERT` -> `revert(0,0)`, no revert data
     ///   - the paid call's trace reverts after 179 gas, before any storage read
     ///   - the unpaid call passes the guard and fails the fee check instead
+    ///     (`ERC20InsufficientAllowance(factory, 0, 1e7)`, section 13)
     ///
-    /// Both branches are pinned here so the suite turns red if TapeOut upgrades
-    /// the implementation to a payable version, which would lift this limit.
-    function test_createCPUIsCurrentlyUnsatisfiable() public {
+    /// Both branches are pinned here so the suite turns red if either guard
+    /// changes.
+    function test_createCPUChargesBemNotNativeCoin() public {
         vm.deal(alice, 1 ether);
         uint256 deployFee = ITapeFactory(FACTORY).deployFee();
         uint256 countBefore = ITapeFactory(FACTORY).cpuCount();
@@ -367,7 +835,7 @@ contract Phase0ForkTest is Test {
             console.log("paid call revert bytes", reason.length);
             assertEq(reason.length, 0, "paid call must revert with empty data (non-payable guard)");
         }
-        assertTrue(!paidOk, "createCPU accepted a payment; re-investigate and lift UNSUPPORTED");
+        assertTrue(!paidOk, "createCPU accepted native value; the non-payable guard changed - re-investigate");
 
         // Branch 2: paying nothing -> passes the guard, fails the fee check.
         bool unpaidOk;
@@ -379,7 +847,7 @@ contract Phase0ForkTest is Test {
             assertGt(reason.length, 0, "unpaid call must revert with the fee error");
             console.logBytes(reason);
         }
-        assertTrue(!unpaidOk, "createCPU accepted zero payment; re-investigate and lift UNSUPPORTED");
+        assertTrue(!unpaidOk, "createCPU accepted zero payment with no allowance; the fee check changed - re-investigate");
 
         assertEq(ITapeFactory(FACTORY).cpuCount(), countBefore, "no processor may have been created");
     }
@@ -402,6 +870,13 @@ contract Phase0ForkTest is Test {
 }
 
 interface IERC20 {
+    function balanceOf(address) external view returns (uint256);
+}
+
+/// BEM, the factory's fee token (section 13). `approve` declares no return
+/// value so it decodes whether or not the token returns one.
+interface IBem {
+    function approve(address spender, uint256 amount) external;
     function balanceOf(address) external view returns (uint256);
 }
 

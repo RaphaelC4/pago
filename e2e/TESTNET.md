@@ -195,7 +195,7 @@ every other journey: the approvals happen in your hand.
 
 **Read-only CI.** `npx playwright test --project=testnet` covers the health
 check, a creator's live ledger, a real claimed invoice
-(`pago-261119-061618-a` from the 2026-11-19 live re-check run, RESEARCH.md §17) and an
+(`pago-261119-115432-b` from the 2026-11-19 MOCK-pinned run, RESEARCH.md §17) and an
 unknown id — no wallet, no
 signing, nothing but `eth_call`.
 

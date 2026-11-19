@@ -21,11 +21,14 @@
 
 import { test, expect } from "@playwright/test";
 
-/* The 2026-11-19 live re-check run's leg A: created, paid through the
-   ordinary payer path and claimed. While evaluatorPinned() does not pass
-   (always on testnet) the claim settled through the DEFAULT table —
-   RESEARCH.md §17 records the exercise and its reconciliation. */
-const CLAIMED_LINK = "pago-261119-061618-a";
+/* The 2026-11-19 MOCK-pinned run's leg B: created, paid through the gasless
+   payer path by a third party and claimed, settling through the DEFAULT
+   table (claim event usedRuleSplit=false; payee received the full 995,000
+   post-fee, which is what the receipt below shows). Its sibling leg A
+   (pago-261119-115432-a) settled through the RULE table instead - payee
+   497,500 plus 497,500 back to the rule seat - and is asserted once the
+   page's receipt can show which table applied (RESEARCH.md §17). */
+const CLAIMED_LINK = "pago-261119-115432-b";
 
 test.describe("X Layer testnet read-only", () => {
   test("the page's health check answers from the live X Layer RPC", async ({ page }) => {
@@ -71,10 +74,12 @@ test.describe("X Layer testnet read-only", () => {
     await expect(page.locator("#payCard .pill")).toHaveText("Claimed", { timeout: 60_000 });
     await expect(page.locator("#payCard .pay-token")).toContainText("pUSD (MOCK)");
     await expect(page.locator("#payCard .pay-token")).toContainText("X Layer testnet");
-    await expect(page.locator("#payCard .pay-desc")).toContainText("live test: ordinary payer path");
+    await expect(page.locator("#payCard .pay-desc")).toContainText("live test: gasless payer path");
 
-    /* 1.000000 credited, 0.5% fee → 0.995000 to the payee. The same split
-       formula the contract uses, checked against a link that really paid. */
+    /* 1.000000 credited, 0.5% fee → 0.995000, which is exactly what this
+       link's default-table claim paid (its rule table 10/8/5 = 23 steps was
+       rejected, claim event usedRuleSplit=false). The same split formula the
+       contract uses, checked against a link that really paid. */
     await expect(page.locator("#payCard .pay-receipt")).toBeVisible();
     await expect(page.locator("#payCard .pay-receipt")).toContainText("Paid out to the payee");
     await expect(page.locator("#payCard .pay-receipt")).toContainText("0.995");

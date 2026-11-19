@@ -10,20 +10,30 @@
 #                                    rule split INVALID (10+8+5 = 23 steps)
 #
 # Which table each claim pays is decided by rule 6's LIVE check (the master
-# prompt's "verify both at claim"): while evaluatorPinned() does not pass —
-# always the case on testnet, because the stand-in can never match the
-# recorded TapeOut shell — claim never consults the circuit and BOTH legs
-# settle through the DEFAULT table (payee 995,000 each). The rule-table
-# path is proven where the check passes: the pinned unit suite
-# (PagoRule.t.sol) and the genuine-chain fork (ForkPin.t.sol).
+# prompt's "verify both at claim"): `claim` re-runs the two-leg check inside
+# the same transaction and only asks the circuit when it passes.
 #
-# after both, measured from a snapshot taken before either link existed
-# (this script refuses to run unless evaluatorPinned() reads false):
-#   payee    +1,990,000   (995,000 default x 2 — the live check gates claim)
-#   deployer -1,990,000   (two 1,000,000 payments + 2 x 5,000 fees it
-#                          collects as the fee account; no rule seat)
-#   Pago     no change — it must hold exactly what it held before
-# and the three deltas must sum to zero: nothing created, nothing lost.
+# This script reads evaluatorPinned() and BRANCHES its expectations - it
+# never assumes which deploy it is talking to:
+#
+#   PINNED   the MOCK-pinned testnet copy: leg 1's reference is the MOCK
+#            stand-in's own codehash, so the check passes and the rule path
+#            pays live. (Mainnet uses the recorded TapeOut references.)
+#              leg A rule table pays: payee 497,500 + fee seat 497,500
+#              leg B falls back:      payee 995,000 (its 10/8/5 = 23 steps)
+#              payee    +1,492,500
+#              deployer -1,492,500  (two 1,000,000 payments + 497,500 rule
+#                                    seat + 2 x 5,000 fees collected)
+#
+#   UNPINNED the honest failure-path copy: leg 1's reference is the recorded
+#            TapeOut shell, which the stand-in can never match, so the check
+#            fails and BOTH legs settle through the DEFAULT table:
+#              payee    +1,990,000  (995,000 default x 2)
+#              deployer -1,990,000  (two 1,000,000 payments + 2 x 5,000 fees;
+#                                    no rule seat while unpinned)
+#
+#   in both modes: Pago holds exactly what it held before, and the three
+#   deltas must sum to zero - nothing created, nothing lost.
 #
 # Signing: two Foundry keystore aliases, created in YOUR terminal so the keys
 # never enter this repository or this conversation. This script only ever
@@ -249,26 +259,34 @@ Write-Host ("  Pago  {0}  ({1} hex chars of code)" -f $Pago, $codeLen) -Foregrou
 if ($codeLen -le 2) { throw "no contract code at $Pago" }
 
 # Rule 6 evidence, read straight from the deployment. Two legs: (1) the
-# processor shell's codehash vs the recorded TapeOut shell reference, (2) the
-# circuit beacon's implementation() answer vs the recorded implementation
-# reference. The stand-in's code deliberately differs from the recorded shell,
-# so leg 1 cannot pass: on testnet evaluatorPinned must read false and every
-# link stays capped - honestly, and exactly what rule 6 wants until a tape-out
-# exists. Mainnet tier 2 passes the recorded processor and beacon and flips it
-# true. The processor is an EVM stand-in, NOT hardware - TapeOut exists only
-# on mainnet. Recorded references: docs/RESEARCH.md section 18.
+# processor's codehash vs the stored shell reference, (2) the circuit beacon's
+# implementation() answer vs the stored implementation address AND its codehash.
+# Which reference leg 1 holds decides the mode, and the mode decides the
+# expectations further down - the script never assumes. The processor is an
+# EVM stand-in, NOT hardware - TapeOut exists only on mainnet. References:
+# docs/RESEARCH.md sections 17 (testnet) and 18 (recorded mainnet values).
 $processor = Call "processor" { cast call $Pago "processor()(address)" }
 $pinned = Call "evaluatorPinned" { cast call $Pago "evaluatorPinned()(bool)" }
 $expectedCodehash = Call "leg 1 reference" { cast call $Pago "expectedProcessorCodehash()(bytes32)" }
 $beacon = Call "circuit beacon" { cast call $Pago "circuitBeacon()(address)" }
 $expectedImpl = Call "leg 2 reference" { cast call $Pago "expectedImplementationCodehash()(bytes32)" }
 $changeDetector = Call "changeDetector" { cast call $Pago "changeDetector()(bool)" }
+
+if ($pinned -eq "true") {
+    $Mode = "pinned"
+    $leg1Label = "MOCK stand-in codehash (testnet pin reference - mainnet uses the recorded TapeOut references)"
+} elseif ($pinned -eq "false") {
+    $Mode = "unpinned"
+    $leg1Label = "recorded TapeOut shell codehash (the stand-in can never match it)"
+} else {
+    throw "evaluatorPinned returned '$pinned', neither true nor false. Inspect the deployment before going further."
+}
+
 Write-Host ("  processor {0}  (EVM stand-in for the TapeOut processor - not hardware)" -f $processor) -ForegroundColor DarkYellow
-Write-Host ("  leg 1 shell reference {0}  (recorded TapeOut shell codehash)" -f $expectedCodehash) -ForegroundColor DarkGray
-Write-Host ("  circuit beacon {0}  (mock beacon reporting the stand-in)" -f $beacon) -ForegroundColor DarkGray
+Write-Host ("  leg 1 shell reference {0}  ({1})" -f $expectedCodehash, $leg1Label) -ForegroundColor DarkGray
+Write-Host ("  circuit beacon {0}  (MOCK beacon reporting the stand-in)" -f $beacon) -ForegroundColor DarkGray
 Write-Host ("  leg 2 implementation reference {0}" -f $expectedImpl) -ForegroundColor DarkGray
-if ($pinned -ne "false") { throw "evaluatorPinned = $pinned on testnet: the stand-in must never satisfy the recorded TapeOut shell codehash check. Inspect PAGO_PROCESSOR_CODEHASH before going further." }
-Write-Host ("  evaluatorPinned {0}  (expected on testnet: two-leg check vs recorded TapeOut shell fails; links are capped / unpinned, capped)" -f $pinned) -ForegroundColor Green
+Write-Host ("  evaluatorPinned {0}  (mode: {1})" -f $pinned, $Mode) -ForegroundColor Green
 Write-Host ("  changeDetector {0}  (behaviour evidence only - never what sets the flag)" -f $changeDetector) -ForegroundColor DarkGray
 
 # ── 3. fund the payer with test tokens ─────────────────────────────────────
@@ -385,39 +403,65 @@ $heldAfter = [bigint](Call "pUSD held by Pago" { cast call $Token "balanceOf(add
 $links = Call "links created by payee" { cast call $Pago "linkCountByCreator(address)(uint256)" $Payee }
 
 # What this run alone should have moved, measured from the snapshot above.
-# Rule 6's live check gates claim, and this script refuses to run unless
-# evaluatorPinned() reads false (the stand-in can never match the recorded
-# TapeOut shell), so claim never consults the circuit and BOTH legs settle
-# through the DEFAULT table:
-#   leg A: payee 995,000 in full — the valid rule table exists on the link
-#          but is never consulted while the check does not pass
-#   leg B: payee 995,000 in full — its 10/8/5 table would be rejected anyway
-#   payee    = 995,000 + 995,000 = 1,990,000
-#   deployer = -2 x 1,000,000 payments + 2 x 5,000 fees = -1,990,000
-#   Pago     no change: it must hold exactly what it held before
-# and the three deltas must sum to zero - nothing created, nothing lost.
+# Rule 6's live check gates claim, and $Mode (read from the deployment, never
+# assumed) says which table that check allowed the circuit to be asked about:
+#
+#   pinned    leg A's VALID rule table (10+6+4 = 20 steps) is consulted and
+#             pays payee 497,500 + fee-account seat 497,500; leg B's
+#             10+8+5 = 23 steps is rejected and falls to the default table
+#             (payee 995,000). The deployer receiving money back as a rule
+#             seat is what distinguishes this from the fallback.
+#               payee    = 497,500 + 995,000 = 1,492,500
+#               deployer = -2 x 1,000,000 + 497,500 rule seat + 2 x 5,000 fees
+#                        = -1,492,500
+#   unpinned  claim never consults the circuit and BOTH legs settle through
+#             the DEFAULT table:
+#               payee    = 995,000 + 995,000 = 1,990,000
+#               deployer = -2 x 1,000,000 payments + 2 x 5,000 fees
+#                        = -1,990,000
+#
+#   in both modes: Pago holds exactly what it held before, and the three
+#   deltas must sum to zero - nothing created, nothing lost.
 $payeeDelta = $payeeAfter - $payeeBefore
 $deployerDelta = $deployerAfter - $deployerBefore
 $heldDelta = $heldAfter - $heldBefore
 $payout = [bigint]$Amount * [bigint](10000 - $FeeBps) / 10000     # 995,000 post-fee
 $fee = [bigint]$Amount * $FeeBps / 10000                          # 5,000
-$expectedPayout = 2 * $payout                                    # default table on both legs
-$expectedDeployer = [bigint](-2 * $Amount) + 2 * $fee            # no rule seat while unpinned
+if ($Mode -eq "pinned") {
+    $rulePayee = $payout * 10 / 20                                # leg A seat 1 = payee, 50%
+    $ruleSeat = $payout * (6 + 4) / 20                            # leg A seats 2+3, 50%
+    $expectedPayout = $rulePayee + $payout                        # rule table + default
+    $expectedDeployer = [bigint](-2 * $Amount) + $ruleSeat + 2 * $fee
+    $payeeWant = "rule {0} + default {1}" -f $rulePayee, $payout
+    $deployerWant = "-2 payments + rule seat {0} + 2 fees" -f $ruleSeat
+} else {
+    $expectedPayout = 2 * $payout                                 # default table on both legs
+    $expectedDeployer = [bigint](-2 * $Amount) + 2 * $fee         # no rule seat while unpinned
+    $payeeWant = "default {0} x 2" -f $payout
+    $deployerWant = "-2 payments + 2 fees; no rule seat"
+}
 $sum = $payeeDelta + $deployerDelta + $heldDelta
 
+Write-Host ("  mode                        {0}" -f $Mode)
 Write-Host ("  links created by payee      {0} (informational)" -f $links)
-Write-Host ("  payee change                {0} (want {1} = default 995,000 x 2)" -f $payeeDelta, $expectedPayout)
-Write-Host ("  deployer change             {0} (want {1} = -2 payments + 2 fees; no rule seat)" -f $deployerDelta, $expectedDeployer)
+Write-Host ("  payee change                {0} (want {1})" -f $payeeDelta, $payeeWant)
+Write-Host ("  deployer change             {0} (want {1})" -f $deployerDelta, $deployerWant)
 Write-Host ("  held by Pago change         {0} (want 0 - nothing left inside)" -f $heldDelta)
 Write-Host ("  deltas sum to               {0} (want 0 - every unit accounted for)" -f $sum)
 
 $ok = ($heldDelta -eq 0) -and ($sum -eq 0) -and ($payeeDelta -eq $expectedPayout) `
     -and ($deployerDelta -eq $expectedDeployer)
 if ($ok) {
-    Write-Host "`nPASS - both payer paths live on X Layer testnet; while unpinned the" -ForegroundColor Green
-    Write-Host "live rule-6 check gated claim to the default table on both legs," -ForegroundColor Green
-    Write-Host "every unit accounted for." -ForegroundColor Green
+    Write-Host "`nPASS - both payer paths live on X Layer testnet, mode: $Mode." -ForegroundColor Green
+    if ($Mode -eq "pinned") {
+        Write-Host "The live rule-6 check passed, so the circuit decided leg A's split" -ForegroundColor Green
+        Write-Host "(money back to the rule seat) and leg B fell to the default table." -ForegroundColor Green
+    } else {
+        Write-Host "The live rule-6 check failed, so claim was gated to the default" -ForegroundColor Green
+        Write-Host "table on both legs and the rule table was never consulted." -ForegroundColor Green
+    }
+    Write-Host "Every unit accounted for." -ForegroundColor Green
 } else {
-    Write-Host "`nFAIL - balances do not match the expected split. Inspect the transactions above." -ForegroundColor Red
+    Write-Host "`nFAIL - balances do not match the expected split for mode '$Mode'. Inspect the transactions above." -ForegroundColor Red
     exit 1
 }

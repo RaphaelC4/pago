@@ -366,17 +366,20 @@ invoiced one.
 ## Pago — the same product on X Layer
 
 **Status:** live on **X Layer testnet (chain 1952)** — Pago
-`0xA4AA0B191807c13c9c8b83de7B2f48b7dd017bfF`, pUSD **(MOCK)**
+`0xfa47d03b5a30ed5105886590a12a7d63d88bacce`, pUSD **(MOCK)**
 `0x1Bf9Fd0C674BcE9cdc9EFc7C2A70e20E84E6953C`, processor stand-in **(EVM, not
 hardware)** `0xe4b4ABb2c6A0B15603b1A308Eba0264f8f676E02`, mock circuit beacon
-**(MOCK)** `0x359749641523b7AcC791a856FC6afD35A756F723` — deployed for the
-live rule-6 re-check described below. Both payer paths were run end to end
-against this deployment and reconciled to the unit: payee +1,990,000, payer
-−1,990,000, Pago unchanged, deltas sum zero. Because the stand-in can never
-match the recorded TapeOut shell reference, `evaluatorPinned()` reads false
-on testnet and **both claims settled through the default split** — the live
-check gating `claim` exactly as rule 6 specifies; the rule-table path is
-proven in the pinned and fork suites instead
+**(MOCK)** `0x359749641523b7AcC791a856FC6afD35A756F723`. **Testnet pin
+reference is the MOCK stand-in; mainnet uses the recorded TapeOut references** —
+never a bare "pinned". Both payer paths ran end to end against this copy and
+reconciled to the unit: the live rule-6 check passed, so leg A's claim was
+paid from the **rule table** — payee 497,500 plus 497,500 back to the rule
+seat, with the claim event recording `usedRuleSplit=true` — and leg B fell to
+the default split (payee 995,000, `usedRuleSplit=false`); payee +1,492,500,
+payer −1,492,500, the contract kept 0. An earlier copy (`0xA4AA0B19…17bfF`)
+stays on chain as the **failure-path proof**, where leg 1 is checked against
+the recorded TapeOut shell the stand-in can never match, so both claims fell
+to the default split instead
 ([`docs/RESEARCH.md` §17](docs/RESEARCH.md)). Its own page is at
 `frontend/xlayer.html` (below). The contract carries the master prompt's
 split-rule interface (rules 1–10, [`docs/MASTER_PROMPT.md`](docs/MASTER_PROMPT.md));

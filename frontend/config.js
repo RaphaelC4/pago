@@ -231,7 +231,9 @@ export const XLAYER = {
          check falls back to direct reads - disclosed in RESEARCH.md §17):
          Pago has 15,327 bytes of code, the token 4,117, the stand-in 2,779,
          the mock beacon 240.
-         Rule 6 state of this deployment, read live: evaluatorPinned TRUE -
+         THIS IS THE FROZEN BUILD (contract source frozen after a
+         comment-only fix; only bug fixes follow - mainnet tier 1 deploys
+         this same source). Rule 6 state, read live: evaluatorPinned TRUE -
          **MOCK-pinned**. The check itself is the real one and re-runs both
          legs on every call (a view, never a stored bool), but its leg-1
          reference is the MOCK stand-in's own codehash (0x250c2eab...8108b),
@@ -239,10 +241,11 @@ export const XLAYER = {
          "testnet pin reference is the MOCK stand-in; mainnet uses the
          recorded TapeOut references." NEVER render a bare "pinned".
          Both legs pass here, so the rule table can pay live on testnet
-         (RESEARCH.md §17). The superseded copy 0xA4AA0B19...17bfF stays on
-         chain as the failure-path proof: there leg 1 is checked against the
-         recorded shell, fails, and every link is capped. */
-      pago: "0xfa47d03b5a30ed5105886590a12a7d63d88bacce",
+         (RESEARCH.md §17). Superseded copies kept on chain: 0xfa47d03b...
+         (same MOCK-pinned config, pre-freeze source) and 0xA4AA0B19...
+         (the failure-path proof: leg 1 checked against the recorded shell,
+         fails, every link capped). */
+      pago: "0x36d212b8814470d60aaddb6e204f09efb3a3dce9",
       token: "0x1Bf9Fd0C674BcE9cdc9EFc7C2A70e20E84E6953C",
 
       /* The testnet rule-6 supporting cast, all three MOCK / stand-in, never
@@ -278,9 +281,11 @@ export const XLAYER = {
       /* Explorer permalinks. The oklink URL pattern was confirmed to open in
          a browser earlier; the addresses still need the explorer comparison
          (oklink is unreachable from the assistant's machine) - see
-         RESEARCH.md §17. The token, stand-in and beacon are unchanged from
-         the earlier run; only Pago is new. */
-      pagoExplorerUrl: "https://www.oklink.com/xlayer-test/address/0xfa47d03b5a30ed5105886590a12a7d63d88bacce",
+         RESEARCH.md §17. Compare AFTER the final redeploy: Pago changes
+         whenever the contract source changes, so check this frozen build's
+         address, not an earlier copy's. The token, stand-in and beacon are
+         unchanged from the earlier run. */
+      pagoExplorerUrl: "https://www.oklink.com/xlayer-test/address/0x36d212b8814470d60aaddb6e204f09efb3a3dce9",
       tokenExplorerUrl: "https://www.oklink.com/xlayer-test/address/0x1Bf9Fd0C674BcE9cdc9EFc7C2A70e20E84E6953C",
 
       /* Both read live after deploy: `feeBps()` answered 50 (0.5%) and the

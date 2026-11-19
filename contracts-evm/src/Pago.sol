@@ -326,11 +326,21 @@ contract Pago {
         // address must still hash to `expectedImplementationCodehash`. The
         // call is a low-level staticcall with strict decoding (the same
         // discipline as `_eval`): a reverting beacon, an address with no
-        // code, a short or long return - all fail this leg. A wrong
-        // configured beacon can only make the flag false (it cannot report
-        // the recorded implementation unless it points at it); it can never
-        // make a wrong evaluator pass, because the genuine shell ignores
-        // configuration and delegates to the beacon it hardcodes.
+        // code, a short or long return - all fail this leg.
+        //
+        // Two guarantees, stated precisely (docs/RESEARCH.md section 18 Q2):
+        // a wrong configured beacon can never make a WRONG EVALUATOR pass -
+        // leg 1 pins the shell, and the genuine shell ignores configuration
+        // and delegates to the beacon it hardcodes. What a wrong configured
+        // beacon CAN do is make this leg pass while pointing elsewhere: any
+        // address whose `implementation()` merely returns the recorded
+        // implementation satisfies the getter check. So leg 2 checks the
+        // CONFIGURED address, and the binding between that address and the
+        // shell's hardcoded one is established offchain by disassembling the
+        // shell - it cannot be rederived onchain (another account's storage
+        // is unreadable and bytecode cannot be parsed here). On mainnet the
+        // configured value IS that shell-embedded beacon, so the two agree
+        // by construction rather than by this check.
         //
         // `changeDetector` is never consulted: a wrong, missing or replaced
         // implementation leaves the flag false and every link capped.

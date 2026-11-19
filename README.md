@@ -366,27 +366,66 @@ invoiced one.
 ## Pago — the same product on X Layer
 
 **Status:** live on **X Layer testnet (chain 1952)** — Pago
-`0xfa47d03b5a30ed5105886590a12a7d63d88bacce`, pUSD **(MOCK)**
-`0x1Bf9Fd0C674BcE9cdc9EFc7C2A70e20E84E6953C`, processor stand-in **(EVM, not
-hardware)** `0xe4b4ABb2c6A0B15603b1A308Eba0264f8f676E02`, mock circuit beacon
-**(MOCK)** `0x359749641523b7AcC791a856FC6afD35A756F723`. **Testnet pin
-reference is the MOCK stand-in; mainnet uses the recorded TapeOut references** —
-never a bare "pinned". Both payer paths ran end to end against this copy and
-reconciled to the unit: the live rule-6 check passed, so leg A's claim was
-paid from the **rule table** — payee 497,500 plus 497,500 back to the rule
-seat, with the claim event recording `usedRuleSplit=true` — and leg B fell to
-the default split (payee 995,000, `usedRuleSplit=false`); payee +1,492,500,
-payer −1,492,500, the contract kept 0. An earlier copy (`0xA4AA0B19…17bfF`)
-stays on chain as the **failure-path proof**, where leg 1 is checked against
-the recorded TapeOut shell the stand-in can never match, so both claims fell
-to the default split instead
-([`docs/RESEARCH.md` §17](docs/RESEARCH.md)). Its own page is at
+`0x36d212b8814470d60aaddb6e204f09efb3a3dce9`, **the frozen build**: the
+contract source is frozen at this build, mainnet tier 1 deploys this same
+source, and only bug fixes may follow (each meaning a new build and a fresh
+testnet redeploy). pUSD **(MOCK)** `0x1Bf9Fd0C674BcE9cdc9EFc7C2A70e20E84E6953C`,
+processor stand-in **(EVM, not hardware)** `0xe4b4ABb2c6A0B15603b1A308Eba0264f8f676E02`,
+mock circuit beacon **(MOCK)** `0x359749641523b7AcC791a856FC6afD35A756F723`.
+**Testnet pin reference is the MOCK stand-in; mainnet uses the recorded
+TapeOut references** — never a bare "pinned". Both payer paths ran end to end
+against this build and reconciled to the unit: the live rule-6 check passed,
+so leg A's claim was paid from the **rule table** — payee 497,500 plus
+497,500 back to the rule seat, with the claim event recording
+`usedRuleSplit=true` — and leg B fell to the default split (payee 995,000,
+`usedRuleSplit=false`); payee +1,492,500, payer −1,492,500, the contract kept
+0. An earlier copy (`0xA4AA0B19…17bfF`) stays on chain as the
+**failure-path proof**, where leg 1 is checked against the recorded TapeOut
+shell the stand-in can never match, so both claims fell to the default split
+instead ([`docs/RESEARCH.md` §17](docs/RESEARCH.md)). Its own page is at
 `frontend/xlayer.html` (below). The contract carries the master prompt's
 split-rule interface (rules 1–10, [`docs/MASTER_PROMPT.md`](docs/MASTER_PROMPT.md));
 the page's ABI codec is being updated to match as the next
 phase. **X Layer mainnet (chain 196) is read-only:** nothing has been spent
 there, and nothing will be without an explicit approval phrase. This section
 describes what exists in `contracts-evm/` and `frontend/` today.
+
+### How the beacon address is bound — stated plainly
+
+`evaluatorPinned()`'s leg 2 asks a beacon for its `implementation()`. **That
+beacon address is a constructor argument** (`circuitBeacon`, readable on the
+contract): Pago cannot read another account's storage and cannot parse
+bytecode onchain, so the link between that argument and the real processor
+shell is established **offline, by disassembling the shell** — not derived
+onchain. On mainnet the configured value is the beacon the recorded shell
+hardcodes: **`0xf70d1ed4f62CF3780157B0b421b7E2F45bD0991C`**.
+
+So a user has to trust the deployed constructor arguments for that binding —
+this is **not "fully verified onchain"**, and nothing here claims it is.
+What *is* verified onchain, on every read: leg 1 — the processor's
+`extcodehash` equals the recorded shell hash; leg 2 — the configured beacon
+currently reports the stored implementation address, and the code there still
+hashes to the recorded implementation hash. `claim` re-runs both in the
+transaction that pays.
+
+Anyone can check the binding themselves on X Layer mainnet (chain 196):
+
+1. `cast code 0x9de448A1CE9537d24199B3b5355239d73aA6F591 --rpc-url https://rpc.xlayer.tech`
+   — processor #340: a 295-byte beacon-proxy shell.
+2. `cast keccak <that code>` → `0x57aa306f…17d5`, the recorded shell hash.
+   Look inside those bytes: the `PUSH32` literal and the EIP-1967 beacon
+   slot both read `0xf70d1ed4…bd0991c`.
+3. `cast call 0xf70d1ed4f62CF3780157B0b421b7E2F45bD0991C "implementation()(address)"`
+   → `0x977f217887E085D298Cb3819cDAD5A0ee35F29B2`.
+4. `cast keccak $(cast code 0x977f217887E085D298Cb3819cDAD5A0ee35F29B2 …)`
+   → `0x7a15c353…1b30`, the recorded implementation hash.
+5. `cast call <Pago> "circuitBeacon()(address)"` must return `0xf70d…` —
+   the argument the constructor was given, i.e. the same address steps 1–2
+   found inside the shell.
+
+The disassembly and every recorded value are in
+[`docs/RESEARCH.md` §18](docs/RESEARCH.md), and `ForkPin.t.sol` runs those
+references against a local fork of chain 196.
 
 This repository now carries two builds of one product:
 
@@ -758,6 +797,15 @@ Stated plainly, because saying otherwise would be worse than saying it.
   boundary and are never automated here. The payer signs and pays both
   transactions themselves, since no relayer runs on X Layer, and X Layer
   mainnet remains read-only.
+- **Pago is unaudited, and links are uncapped while the check passes.** The
+  contract's only amount cap, `MAX_LINK_AMOUNT_UNPINNED[token]`, is enforced
+  only when `evaluatorPinned()` is false: asked directly, there is **no
+  always-on cap that deploy-time configuration can set** — adding one would
+  be a contract change, and the source is frozen for the demo. On the
+  testnet build the check passes, so no cap applies; a pinned mainnet
+  deployment would behave the same way. The source carries 148 tests
+  (unit, fuzz, invariant and mainnet-fork) but **no audit**. Do not send
+  real funds to it.
 
 ---
 

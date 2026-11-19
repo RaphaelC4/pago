@@ -1230,7 +1230,7 @@ shell reference — so it stands as the failure-path proof. The second,
 MOCK-pinned copy below exists so the browser can show the rule path paying;
 `e2e/specs/testnet/` reads that run's link back.
 
-### Second testnet copy — MOCK-pinned, so the rule table pays live (2026-11-19)
+### Second testnet copy — MOCK-pinned, so the rule table pays live (2026-11-19) (superseded the same day by the frozen build below)
 
 **Why, and what it is not.** On the copy above a judge watching the browser
 would only ever see the default split, because the check is built to fail
@@ -1316,6 +1316,62 @@ caveat:** the "valid" verdict came from the **MOCK stand-in** executing the
 real Split3 netlist bytes — not hardware. On mainnet the same path runs the
 taped-out processor, which the fork suite proves with the recorded
 references.
+
+### Frozen build — comment-only fix, final testnet redeploy (2026-11-19) — **the frozen source**
+
+**What changed, and why now.** One sentence in `Pago`'s constructor comment
+overstated leg 2 ("a wrong configured beacon can only make the flag false");
+§18 Q2 above now states it precisely, and the source comment was aligned
+with it. A comment changes the compiler metadata, so the compiled hash
+changes even though behaviour does not — and this is the cheapest moment to
+absorb that: before the frontend exists and before any mainnet deploy.
+Same script, same six environment overrides, **no logic change**.
+
+> **The contract source is FROZEN at this build.** Mainnet tier 1 deploys
+> this same source. From here the only permitted changes are bug fixes, and
+> each one means a new build, a fresh testnet redeploy and a re-recorded
+> codehash.
+
+| What | Value |
+|---|---|
+| **Pago (frozen build)** | `0x36d212b8814470d60aaddb6e204f09efb3a3dce9` |
+| deploy tx | `0x92068542233917e177be30a66ce53ec0c452b4a54bb3e4bc87ea1ae8956729af` |
+| code size | 15,327 bytes |
+| runtime codehash | `0x6cd1693ca93d5480394ce880e95e7c1c13063c06eaf4e9757a81e92fa680dc21` |
+| `evaluatorPinned()` | `true` — **MOCK-pinned**: leg 1 = stand-in codehash `0x250c2eab…8108b` |
+| tests after the change | **148/148** (`forge test`, local + mainnet-fork suites) |
+
+Superseded testnet copies, all still on chain: `0xfa47d03b…bacce` (same
+MOCK-pinned configuration, pre-fix source) and `0xA4AA0B19…17bfF` (the
+failure-path proof).
+
+**Exercise — 2026-11-19, PASS (mode: pinned), identical figures to the copy
+it replaces:** links `pago-261119-124452-a` / `-b`, payee **+1,492,500**,
+deployer **−1,492,500**, contract held **0**, deltas sum **0**.
+
+| Step | Tx |
+|---|---|
+| mint 10 pUSD **(MOCK)** | `0x84b474a3c48648a561b0b36b2c23a3d777728d82fef10f1e07dd19124d1ce4d8` |
+| leg A `createLink` | `0xe1e6fd2e270adf5d564e6a9bd59f58b9717d79fccd4373f03bccc8267bcbb2ea` |
+| leg A `approve` | `0xfec4d1ae13e61708e14faed249f23de0c3a134b72e0a51f25a17d8dd41a24269` |
+| leg A `pay` (terms `0xc4b733f4…a9639`) | `0x0f8ee164ae4f9e3769a07ab532fd5675a5a9da260e2efc6eee53386de115f1e2` |
+| leg B `createLink` | `0xc71637a81f994e3f67c83d6fef406a9cc3ac7ae62fe176d9d1254d3035d02f83` |
+| leg B `payWithAuthorization` (terms `0xea1c675d…4c41f4`, digest `0x101bd975…a4295`) | `0xd272ff5da20b82a82d27f27ceac5d7023fc740c4e2de40795bc8bd800cf76ea5` |
+| `claim` leg A — **rule table** | `0xd645981905f6e97989285c857bd0967f20248fee7a1ffb2fc8707dfcca214c9e` |
+| `claim` leg B — default table | `0x9a661e7f0b6d26cd81cce54f27897d1392ca8a54b38825616be0c26def4c4183` |
+
+Claim events, decoded from the receipts: leg A `remainder 995,000 / fee
+5,000 / usedRuleSplit = true`; leg B `remainder 995,000 / fee 5,000 /
+usedRuleSplit = false`.
+
+**No always-on cap exists without a code change — asked, answered, recorded.**
+Can a modest cap that applies even while the check *passes* be set through
+deploy-time configuration? **No.** The constructor writes exactly one value
+per token, `MAX_LINK_AMOUNT_UNPINNED[token]`, and `createLink` enforces it
+only when `evaluatorPinned()` is false (src/Pago.sol:429); there is no
+second, always-enforced knob, so adding one would be a contract change —
+which the freeze rules out. The honest position instead: **this contract is
+unaudited**, and on a pinned deployment links are uncapped.
 
 ### Function selectors (`cast sig`, 2026-11-18)
 

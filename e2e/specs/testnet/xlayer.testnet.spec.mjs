@@ -21,14 +21,14 @@
 
 import { test, expect } from "@playwright/test";
 
-/* The 2026-11-19 MOCK-pinned run's leg B: created, paid through the gasless
-   payer path by a third party and claimed, settling through the DEFAULT
-   table (claim event usedRuleSplit=false; payee received the full 995,000
-   post-fee, which is what the receipt below shows). Its sibling leg A
-   (pago-261119-115432-a) settled through the RULE table instead - payee
+/* The 2026-11-19 MOCK-pinned frozen build's leg B: created, paid through the
+   gasless payer path by a third party and claimed, settling through the
+   DEFAULT table (claim event usedRuleSplit=false; payee received the full
+   995,000 post-fee, which is what the receipt below shows). Its sibling leg A
+   (pago-261119-124452-a) settled through the RULE table instead - payee
    497,500 plus 497,500 back to the rule seat - and is asserted once the
    page's receipt can show which table applied (RESEARCH.md §17). */
-const CLAIMED_LINK = "pago-261119-115432-b";
+const CLAIMED_LINK = "pago-261119-124452-b";
 
 test.describe("X Layer testnet read-only", () => {
   test("the page's health check answers from the live X Layer RPC", async ({ page }) => {

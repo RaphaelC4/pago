@@ -884,7 +884,7 @@ still speaks the old ABI — updating the frontend is the next phase.
 | 3 | Default split fixed at creation with no setter; processor revert, malformed data, out of gas or failed check → default; a link must never freeze | `createLink` writes both tables once; no setter exists; any `_eval` anomaly returns false; plus a solvency check: a rule table whose shares don't sum to `SPLIT_STEPS` is refused **even if the evaluator said yes**; `claim` reverts only on "link not found" / "link is not paid" | every fallback test above, including `vm.etch(processor, "")` after creation ("the processor vanishes") |
 | 4 | `terms(linkId)` and `termsHash`; `pay` and `payWithAuthorization` take `expectedTermsHash` and revert on mismatch; does **not** prove what the payer saw | `_termsBytes` = `abi.encode` of every immutable field (id, amount, token, description, expiry, **both split tables**, fee bps, fee account, `netlistHash`, `processor`, `circuitId`); guard order: settleable → nonce → terms; the contract's own doc says this binds the payer to the terms *recorded onchain*, nothing more | `PagoRule.t.sol` terms tests (mismatch moves nothing); live `termsHash` read by the exercise script before each payment (below) |
 | 5 | `createLink` reverts if the circuit's netlist identity can't be read; store its hash | `_readNetlist()` staticcalls `netlist(circuitId)` under a 200k gas cap; empty/revert/malformed → `"circuit netlist is unreadable"`; `l.netlistHash = keccak256(nl)` stored per link | `PagoRule.t.sol`: `FaultyProcessor.NoNetlist` reverts creation; honest links store `keccak256(Split3.netlist())` |
-| 6 | `evaluatorPinned` flag; the known-answer check is named `changeDetector`, never "pin"; while unpinned, cap every link at `MAX_LINK_AMOUNT_UNPINNED[token]` in base units | **Full-rule clause, paraphrased: the flag may become true only through a real onchain implementation check, never via the change detector.** Implemented as: the constructor takes `expectedProcessorCodehash` and sets `evaluatorPinned = processor_ != 0 && processor_.code.length > 0 && processor_.codehash == expectedProcessorCodehash` — an exact `extcodehash` match with code present; a zero reference is refused. `changeDetector()` stays a public view over six known-answer vectors (valid sums → 1, invalid → 0) and never writes the flag. `createLink` enforces the cap while unpinned; the constructor refuses a zero cap. Deploy reference defaults to the recorded TapeOut codehash `0x57aa306f…17d5`, overridable via `PAGO_PROCESSOR_CODEHASH` (never a live read — that would be tautological) | `Pago.t.sol`: stand-in with its own codehash pins; zero reference refused. `PagoRule.t.sol`: fault mocks' different code never pins whatever their behaviour; a lying evaluator whose code matches pins while `changeDetector()` reports false; the honest stand-in with a wrong reference stays unpinned while `changeDetector()` reports true — decoupling proven in both directions; cap enforced to the unit; pinned deployment uncapped. Live testnet: `evaluatorPinned: false`, `changeDetector: true` (below) — the honest capped state until tier 2 |
+| 6 | `evaluatorPinned` flag; the known-answer check is named `changeDetector`, never "pin"; while unpinned, cap every link at `MAX_LINK_AMOUNT_UNPINNED[token]` in base units | **Full-rule clause, paraphrased: the flag may become true only through a real onchain implementation check, never via the change detector.** Implemented as a **two-leg constructor check** (§18): leg 1 takes `expectedProcessorCodehash` and requires `processor_ != 0 && processor_.code.length > 0 && processor_.codehash == expectedProcessorCodehash_` (the processor is a beacon-proxy *shell*); leg 2 staticcalls the configured `circuitBeacon_`'s public `implementation()` getter with strict 32-byte decoding and requires the returned address to have code hashing to `expectedImplementationCodehash_` — a reverting beacon, an empty account or dirty return data fails the leg. Both legs must pass; `evaluatorPinned = shellMatches && implMatches`. Zero shell reference, zero beacon and zero implementation reference are each refused. `changeDetector()` stays a public view over six known-answer vectors (valid sums → 1, invalid → 0) and never writes the flag. `createLink` enforces the cap while unpinned; the constructor refuses a zero cap. Deploy references default to the recorded values (shell `0x57aa306f…17d5`, beacon `0xf70d1ed4…bd0991c`, implementation `0x7a15c353…1b30`), overridable via `PAGO_PROCESSOR_CODEHASH` / `PAGO_BEACON` / `PAGO_IMPLEMENTATION_CODEHASH` (never a live read — that would be tautological) | `Pago.t.sol`: stand-in + its mock beacon pins (both legs); zero shell reference, zero beacon, zero implementation reference each refused; shell-matched-but-wrong-beacon answer, a reverting beacon and a beacon reporting the zero address all leave the flag false. `PagoRule.t.sol`: fault mocks' different code never pins whatever their behaviour; a lying evaluator whose code matches pins while `changeDetector()` reports false; the honest stand-in with a wrong reference stays unpinned while `changeDetector()` reports true — decoupling proven in both directions; cap enforced to the unit; pinned deployment uncapped. `ForkPin.t.sol` (mainnet fork): the genuine chain pins, `vm.etch`-swapping the beacon to report a different implementation flips the flag false, a corrupted shell never pins. Live testnet: `evaluatorPinned: false`, `changeDetector: true` (below) — the honest capped state until tier 2 |
 | 7 | Token allowlist fixed at deploy; store expected decimals as written by us; never read `decimals()` at runtime for safety limits; deploy script aborts on mismatch | `TokenConfig{token, decimals_, unpinnedCap}` is constructor-only; `expectedDecimals[token]` stored; `Pago` never calls `decimals()` anywhere; `Deploy.s.sol` reads the onchain value **once** and `require`s it equals `PAGO_EXPECTED_DECIMALS` | constructor tests; deploy log `token decimals (chain == expected): 6` (below) |
 | 8 | No `markPaid`; underpay reverts, overpay credited, double pay reverts, creator can't self-pay, fee leg skipped if it rounds to zero | `_requireSettleable` (allowlist → exists → `Open` → not creator → `amount >= l.amount` → not expired) before any transfer; `paidAmount` stores what arrived; `if (fee > 0)` skips a zero fee | `Pago.t.sol` pay suite + `test_tinyInvoiceChargesNoFeeInsteadOfTransferringZero` |
 | 9 | One failing recipient must not block the others | each seat (and the fee) is an **independent** `_payLeg`: a failed transfer becomes `owed[recipient][token]` + `LegOwed`, the other legs still run; `withdrawOwed(token)` pays the caller their own storage balance only; claim never reverts on transfer failure | `PagoRule.t.sol` with `MockToken.blockedRecipient`: blocked seat owed, others paid in the same tx, then withdrawn to the unit |
@@ -1011,6 +1011,9 @@ both payer paths live on X Layer testnet, every unit accounted for.
 
 ### Live testnet redeploy after the rule-6 fix (chain 1952), 2026-11-18
 
+> **Superseded on 2026-11-19** by the two-leg constructor redeploy below —
+> same script, same evidence structure, new addresses. Kept for the record.
+
 The constructor now takes `expectedProcessorCodehash`, so the bytecode (and
 with it the address) changed again. Read back from chain after deploy:
 
@@ -1063,6 +1066,65 @@ PASS - leg A settled through the rule table, leg B through the fallback default,
 both payer paths live on X Layer testnet, every unit accounted for.
 ```
 
+### Live testnet redeploy for the two-leg rule-6 check (chain 1952), 2026-11-19
+
+The constructor gained `circuitBeacon` and `expectedImplementationCodehash`
+(§18), so the bytecode and addresses changed again. Deployed with
+`forge script script/Deploy.s.sol:Deploy` (stand-in processor, mock beacon
+reporting it, leg 1 reference = the recorded TapeOut shell), then
+`script/testnet-exercise.ps1` settled both payer paths end to end. Read back
+from chain with `cast` afterwards — **oklink was unreachable from this
+machine, so the explorer character-check falls back to direct `cast` reads;
+disclosed here rather than claimed as an explorer confirmation.**
+
+| What | Address | Code size (cast) | Deploy tx |
+|---|---|---|---|
+| **Pago** (rules 1–10 + the two-leg rule-6 check) | `0x773A8dddc01d623a0E19df2E67F8e6FC70523b88` | 14,679 bytes | `0x81b3dc68ad7ec2f7defec126d97308683e4c45134102e0b77ccb967ac781dd40` |
+| pUSD **(MOCK**, 6 decimals, freely mintable, no backing) | `0x5D00e40242B75Fe964F0a1f59D9C8Ee7A04F8e87` | 4,117 bytes | `0xadae6386767649a764e2594f738c94a74e990b0af413fb378c55c21c7e5170be` (mint to deployer: `0xd773a5c83a7414952e8ff4fc9864db3eabddc3c68f81e1d0b609f6f623445c95`) |
+| **ProcessorStandIn** (EVM, **not hardware**) | `0x65Ec22321E3FC3823c5fDF235eEd20f2BcA66D71` | 2,779 bytes | `0xbfab5eb27cbc57d41fdd5a46512d1ec12b45a63face3663ac03c070949be6787` |
+| **MockBeacon** (reports the stand-in; not the TapeOut beacon) | `0x6a8498A5d0a18d5785220152a3dD3020272fdeeB` | 240 bytes | `0x3c1c5d404701ad1e8949aee0b12c857221a1595807d8bf63e8b6a0f5c85090df` |
+
+Constructor state, read back live with `cast call`:
+
+| Read | Value | Meaning |
+|---|---|---|
+| `evaluatorPinned` | `false` | **unpinned, capped** — shown honestly everywhere |
+| `changeDetector` | `true` | behaviour evidence only; never sets the flag |
+| `expectedProcessorCodehash` | `0x57aa306f…17d5` | leg 1: the recorded TapeOut shell (§18) |
+| live `extcodehash(processor)` | `0x250c2eab…8108b` | the stand-in's own code — correctly ≠ the recorded shell, so leg 1 fails |
+| `circuitBeacon` | `0x6a8498A5…fdeeB` | the mock beacon |
+| `expectedImplementationCodehash` | `0x250c2eab…8108b` | leg 2 reference = the stand-in's code, so leg 2 passes against the mock |
+| live `beacon.implementation()` | `0x65Ec2232…66D71` | the stand-in, as the mock reports |
+| `MAX_LINK_AMOUNT_UNPINNED(pUSD)` | `10,000,000,000` | 10,000 pUSD cap while unpinned |
+
+So on testnet **leg 2 passes and leg 1 fails** — exactly the honest shape:
+the machinery runs live on both legs, and the flag stays false because the
+stand-in is not the recorded TapeOut shell. On mainnet tier 2 (recorded
+processor + recorded beacon) both legs pass.
+
+Exercise run — both payer paths, same reconciliation as before
+(link ids `pago-261119-013711-a` / `-b`):
+
+| Step | Tx |
+|---|---|
+| mint 10 pUSD to the payer | `0x1c3ee09ddd4183d8fb50ec486d2e0acecca192115328da921fd75730a5e9bf93` |
+| leg A `createLink` (two split tuples) | `0xb89011848e8c99ba247709416e8e783039b487002a98a0cba3a49a2c00c5e917` |
+| leg A `approve` | `0x8d7645c93f90268046b1aa9d72f2b065a21ae471860790c0dc1ed2f2217f8373` |
+| leg A `pay` (terms hash `0xa55e2ac6…374f1`) | `0xfd7bf3b2f5f5c4aa48ca685345af158f0fc6e1fd8d51882b0a22c15cdf3aa397` |
+| leg B `createLink` (invalid rule table) | `0x94496f931220cbb2f8643063761888853d112f5e902a161841baa42c4c3eb400` |
+| leg B `payWithAuthorization` (terms hash `0x09c8a1d9…44f3a`, digest `0x40a7e205…217c1`) | `0x8f9224bbcf67293104a831e6978c1734cdb41abf12cc2e0e3779229eca49e7a2` |
+| `claim` leg A (rule table) | `0x9d5216e796a6da05aeef6d7ef43f5ca6a5e8cc81f1bfc80b2d173a6cdd94ed4b` |
+| `claim` leg B (fallback) | `0xfde2f091bd7d265be4f8669482be288484e0f663eba212bc8e37bfa14764bc2f` |
+
+```
+payee change        1,492,500   (rule 497,500 + default 995,000)
+deployer change    -1,492,500   (two 1,000,000 payments + rule seat 497,500 + 2 x 5,000 fees)
+held by Pago change        0    (nothing left inside)
+deltas sum to              0    (every unit accounted for)
+PASS - leg A settled through the rule table, leg B through the fallback default,
+both payer paths live on X Layer testnet, every unit accounted for.
+```
+
 ### Function selectors (`cast sig`, 2026-11-18)
 
 | Selector | Signature |
@@ -1086,4 +1148,115 @@ where selectors do not.
   made without first quoting a dollar cost and asking.
 - **Q2 tier 3 scope** remains unrecorded and is deliberately not guessed.
 - The frontend codec (§16) still speaks the superseded ABI — next phase.
+
+---
+
+## 18. The mainnet pin question: what is behind `evaluatorPinned`? (2026-11-18)
+
+Asked before the frontend may show any "pinned" wording: identical codehashes
+across three processors look like proxy shells, so a `true` flag would mean
+"the shell matches", not "the evaluator is unchanged" — unless Pago can reach
+the real implementation onchain. Everything below is a live probe against X
+Layer mainnet (chain 196) taken today; commands are given so any claim can be
+re-run.
+
+### Q1 — disassembly of one real processor
+
+`cast disassemble $(cast code 0x9de448A1CE9537d24199B3b5355239d73aA6F591
+--rpc-url https://rpc.xlayer.tech)` — processor **#340**:
+
+| Fact | Evidence |
+|---|---|
+| 295 bytes, **not** an EIP-1167 minimal proxy | patterns `3d3d3d363d73` and `5af43d82803e903d91` absent from the hex |
+| EIP-1967 implementation slot | reads `0` |
+| EIP-1967 beacon slot `0xa3f0ad74…3d50` | `0xf70d1ed4…bd0991c` — the circuit beacon |
+| codehash | `0x57aa306f…17d5`, identical on #340, #30 and #333 |
+| what the code does | every call first `STATICCALL`s selector `0x5c60da1b`
+(`implementation()`) at the **beacon address hardcoded in the bytecode as a
+`PUSH32` literal** (`0xf70d1ed4…bd0991c`), then `DELEGATECALL`s the original
+calldata to whatever address came back and bubbles the result — or the revert |
+
+So Q1's answer: **a custom ERC-1967-beacon proxy shell**, neither a minimal
+proxy nor UUPS, whose beacon is pinned inside the very code whose hash we
+check. The two other processors share that exact code (same codehash), so the
+answer covers all three.
+
+Direct reads of the other end of the chain (the offchain path):
+
+| Object | Value | Probe |
+|---|---|---|
+| circuit beacon | `0xf70d1ed4f62cf3780157b0b421b7e2f45bd0991c` | #340's beacon slot; 619 bytes, codehash `0xc7cc9854…5362` |
+| beacon `owner()` | `0x0000000000000000000000000000000000000000` (frozen) | read live today |
+| beacon `implementation()` | `0x977f217887E085D298Cb3819cDAD5A0ee35F29B2` | read live today |
+| circuit implementation | 12,562 bytes, codehash `0x7a15c353205e5245f40f5f5524542a982a4bb3b9a28476e4f10845163f941b30` | `cast code` + `cast keccak` |
+| `implementation()` on the processor | **reverts** | probed today, ABI and raw selector `0x5c60da1b` |
+| `beacon()` on the processor | **reverts** | probed today (selector `0x59659e90` not in its code) |
+| circuit implementation's `implementation()` | **reverts** | probed today; selector absent from its 69 PUSH4 constants |
+
+### Q2 — can Pago follow that chain onchain?
+
+**No — not from the processor alone; yes — with the beacon address supplied
+and both codehashes checked.** The reasoning, each step probed:
+
+1. Pago cannot read another account's storage, so the beacon address sitting
+   in #340's beacon slot is unreachable onchain.
+2. No public getter reveals it: `implementation()` and `beacon()` revert on
+   the processor (probes above), and the evaluator's own surface — `eval`,
+   `circuitInfo`, `nextId`, `netlist` — returns circuit data only.
+3. Pago also cannot parse bytecode onchain to find the `PUSH32` literal.
+4. **But the beacon address can be passed in as constructor configuration, and
+   that closes the loop rather than opening a hole:** the first leg checks
+   `extcodehash(processor)` against the recorded shell hash. If that matches,
+   the running code is byte-for-byte the code disassembled above — the code
+   that hardcodes beacon `0xf70d…` and delegates to whatever *that* beacon
+   returns. The second leg then calls `beacon.implementation()` (a public
+   getter — an onchain read of the live state) and checks
+   `extcodehash` of the returned address against the recorded implementation
+   hash. A wrong configured beacon can only make the flag **false** (its
+   answer can never hash to the recorded implementation unless it points at
+   byte-identical genuine code), never make a wrong evaluator pass: with the
+   genuine shell, the actual delegation target is the shell's hardcoded
+   beacon regardless of what the configuration says.
+
+So a genuine processor passing both legs means: *at construction, the shell
+code is the recorded one and the beacon it is hardcode-bound to reported an
+implementation whose code is the recorded one.* That is a real onchain
+implementation check — stronger than the shell-only comparison.
+
+### Q3 / Q4 — consequence
+
+Q2's answer is **yes**, so the conditional rename to `proxyCodeMatches` does
+not apply: `evaluatorPinned` keeps its rule-6 name and gains the second leg.
+Per Q4:
+
+- the constructor now takes `circuitBeacon` and
+  `expectedImplementationCodehash` in addition to the shell reference, sets
+  the flag only when **both** legs pass, and never consults `changeDetector`;
+- `test/ForkPin.t.sol` runs against mainnet fork state: the genuine chain
+  pins (`true`), and `vm.etch`-swapping the beacon for one that reports a
+  different implementation flips the flag to `false`.
+
+### What the flag does and does not prove (disclosed wording for UI/README)
+
+- **Proves, at construction, onchain:** the deployed shell's code hash equals
+  the recorded one, and the beacon's public `implementation()` getter returned
+  an address whose code hash equals the recorded implementation's.
+- **Does not prove:** that the proxy actually delegates where the configuration
+  says (it doesn't need the configuration — it hardcodes its beacon; the
+  binding was verified by the disassembly above, offchain);
+  that the beacon stays unchanged *after* construction (it is frozen —
+  `owner() = 0`, read live — and any later change would be visible to a
+  re-run of `changeDetector`, but the flag itself is not re-checked);
+  what the payer's screen showed (rule 4, unchanged).
+- **Until both legs pass, links stay capped** — which is the state on testnet
+  today (`evaluatorPinned: false`, stand-in shell ≠ recorded shell).
+
+Recorded values, all probed 2026-11-18 on chain 196:
+
+| Reference | Value |
+|---|---|
+| processor shell codehash (`PAGO_PROCESSOR_CODEHASH`) | `0x57aa306fd0be97087da3534e03398f5ff4efd533b5be4e45a405ce86fa6717d5` |
+| circuit beacon (`PAGO_BEACON`) | `0xf70d1ed4f62cf3780157b0b421b7e2f45bd0991c` |
+| circuit implementation codehash (`PAGO_IMPLEMENTATION_CODEHASH`) | `0x7a15c353205e5245f40f5f5524542a982a4bb3b9a28476e4f10845163f941b30` |
+| processor #340 (the example disassembled) | `0x9de448A1CE9537d24199B3b5355239d73aA6F591` |
 

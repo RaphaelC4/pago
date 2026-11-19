@@ -12,8 +12,8 @@
  *     human, in a dedicated testnet wallet (e2e/TESTNET.md);
  *   - NO repository secrets are read; nothing here could print one;
  *   - success is asserted on UI state only, and the link ids below are real
- *     invoices from the Phase 2 run (docs/RESEARCH.md §15) — if one of them
- *     is ever absent the test fails honestly rather than skipping.
+ *     invoices from the 2026-11-19 redeploy run (docs/RESEARCH.md §17) — if
+ *     one of them is ever absent the test fails honestly rather than skipping.
  *
  * pUSD is MOCK. Nothing here presents it as a stablecoin, and every assertion
  * that names it names it as MOCK.
@@ -21,9 +21,9 @@
 
 import { test, expect } from "@playwright/test";
 
-/* Phase 2's final PASS run: created, paid by the deployer and claimed by the
-   payee, with the split verified to the unit. */
-const CLAIMED_LINK = "pago-261118-002651-a";
+/* The 2026-11-19 redeploy's leg A: created, paid through the ordinary payer
+   path and claimed, with the rule table applied (RESEARCH.md §17). */
+const CLAIMED_LINK = "pago-261119-013711-a";
 
 test.describe("X Layer testnet read-only", () => {
   test("the page's health check answers from the live X Layer RPC", async ({ page }) => {
@@ -50,12 +50,12 @@ test.describe("X Layer testnet read-only", () => {
     await expect(page.locator("#ledgerList .row-main").first()).toBeVisible({ timeout: 60_000 });
 
     const rows = await page.locator("#ledgerList .row-main").count();
-    expect(rows, "the payee created links in Phase 2 — an empty ledger means the read failed").toBeGreaterThan(0);
+    expect(rows, "the payee created links in the 2026-11-19 run — an empty ledger means the read failed").toBeGreaterThan(0);
 
     /* Stats must agree with the rows actually on screen. */
     await expect(page.locator("#statCount")).toHaveText(String(rows));
 
-    /* Phase 2 ended with claimed links in this ledger; if none of them show,
+    /* The 2026-11-19 run ended with both links claimed; if none of them show,
        the status mapping or the decoder has drifted from the contract. */
     const pills = await page.locator("#ledgerList .pill").allTextContents();
     expect(pills.some((p) => p === "Claimed"), `expected a Claimed link, saw: ${pills.join(", ")}`).toBe(true);

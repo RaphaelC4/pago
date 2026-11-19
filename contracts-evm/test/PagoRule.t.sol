@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {Test} from "forge-std/Test.sol";
 import {Pago} from "../src/Pago.sol";
 import {Split3} from "../src/circuits/Split3.sol";
+import {MockBeacon} from "./mocks/MockBeacon.sol";
 import {MockToken} from "./mocks/MockToken.sol";
 import {ProcessorStandIn} from "./mocks/ProcessorStandIn.sol";
 import {FaultyProcessor} from "./mocks/FaultyProcessor.sol";
@@ -382,19 +383,29 @@ contract PagoRuleTest is Test {
 
     // ══ internals ═══════════════════════════════════════════════════════
 
-    /// One-argument form: the implementation reference is always this suite's
-    /// recorded one - the stand-in's runtime code. So the stand-in pins and
-    /// every fault mock's different code stays unpinned and capped, whatever
-    /// its behaviour (rule 6). The two-argument form sets the reference
-    /// explicitly, for the tests that probe the check itself.
+    /// One-argument form: both references are this suite's recorded ones - the
+    /// stand-in's runtime code - and a fresh mock beacon reports the processor
+    /// itself, so a stand-in-backed deployment passes BOTH legs of rule 6 while
+    /// every fault mock's different code fails leg 1 and stays unpinned and
+    /// capped, whatever its behaviour. The three-argument form sets the
+    /// references and the beacon explicitly, for the tests that probe the
+    /// check itself.
     function _pagoWith(address processor) internal returns (Pago p) {
         p = _pagoWith(processor, keccak256(type(ProcessorStandIn).runtimeCode));
     }
 
     function _pagoWith(address processor, bytes32 expectedCodehash) internal returns (Pago p) {
+        MockBeacon beacon = new MockBeacon(processor);
+        p = _pagoWith(processor, expectedCodehash, address(beacon), expectedCodehash);
+    }
+
+    function _pagoWith(address processor, bytes32 expectedCodehash, address beacon, bytes32 expectedImplCodehash)
+        internal
+        returns (Pago p)
+    {
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
         configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 10_000_000_000});
-        p = new Pago(configs, feeAccount, processor, 1, expectedCodehash);
+        p = new Pago(configs, feeAccount, processor, 1, expectedCodehash, beacon, expectedImplCodehash);
     }
 
     function _split(address r0, address r1, address r2, uint8 s0, uint8 s1, uint8 s2) internal pure returns (Pago.Split memory s) {

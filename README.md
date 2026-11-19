@@ -366,9 +366,10 @@ invoiced one.
 ## Pago — the same product on X Layer
 
 **Status:** live on **X Layer testnet (chain 1952)** — Pago
-`0xd4337d6f6dba4DCea65Cfc53B457dBb21e7ba3aC`, pUSD **(MOCK)**
-`0x15bc997887385520E3C906533F0d20CB8D6DB7D0`, processor stand-in **(EVM, not
-hardware)** `0x86A30B752d1cf860EC224885793Eb7d33011B1BC` — with both payer
+`0x773A8dddc01d623a0E19df2E67F8e6FC70523b88`, pUSD **(MOCK)**
+`0x5D00e40242B75Fe964F0a1f59D9C8Ee7A04F8e87`, processor stand-in **(EVM, not
+hardware)** `0x65Ec22321E3FC3823c5fDF235eEd20f2BcA66D71`, mock circuit beacon
+`0x6a8498A5d0a18d5785220152a3dD3020272fdeeB` — with both payer
 paths run end to end, the circuit's rule selecting one split table and its
 rejection falling back to the other, reconciled to the unit
 ([`docs/RESEARCH.md` §17](docs/RESEARCH.md)), and its own page at
@@ -455,12 +456,22 @@ stored tables; a rule can never invent a split, a recipient or an amount.
 Whatever the processor does — reverts, returns malformed data, runs out of
 gas, lies about an unsafe split, or vanishes — the default table pays, so a
 link can never freeze. `evaluatorPinned` turns true **only through rule 6's
-onchain implementation check**: the constructor compares `extcodehash` of the
-deployed processor against the recorded TapeOut codehash, and only an exact
-match with code present sets it — never the change detector, which stays a
-public view anyone may run as evidence. Until that check passes, every link
-is capped at `MAX_LINK_AMOUNT_UNPINNED[token]`. Full rule-by-rule audit:
-[`docs/RESEARCH.md` §17](docs/RESEARCH.md).
+two-leg onchain implementation check**: the constructor first compares
+`extcodehash` of the deployed processor against the recorded TapeOut shell
+codehash (the shell is a beacon proxy that hardcodes its beacon — probe and
+disassembly in [`docs/RESEARCH.md` §18](docs/RESEARCH.md)), then calls the
+beacon's public `implementation()` getter and compares `extcodehash` of the
+returned address against the recorded circuit implementation codehash. Both
+legs must pass with code present — never the change detector, which stays a
+public view anyone may run as evidence. **What that proves:** at construction,
+the shell code and the beacon-reported implementation code were the recorded
+byte sequences. **What it does not prove:** the proxy's delegation binding
+(verified offchain by disassembly), that the beacon never changes after
+construction (it is frozen — `owner() = 0`, probed live), or anything about
+what the payer's screen showed. Until both legs pass, every link is capped at
+`MAX_LINK_AMOUNT_UNPINNED[token]`. Full rule-by-rule audit:
+[`docs/RESEARCH.md` §17](docs/RESEARCH.md); the pin investigation itself:
+[§18](docs/RESEARCH.md).
 
 **On testnet that processor is a labelled stand-in, not hardware.** TapeOut
 exists only on X Layer mainnet (the factory has no code on chain 1952 —
@@ -469,9 +480,10 @@ same interface and runs the **real Split3 netlist bytes** through the same
 TAP-02 evaluator that was proven bit-for-bit against a live mainnet
 processor. The verdicts come from the netlist; the deploy log says
 "EVM stand-in, not hardware". Its code is not the recorded TapeOut
-implementation, so on testnet `evaluatorPinned` reads **false** and every
-link stays capped; mainnet tier 2 swaps in the recorded processor and the
-code check passes, flipping the flag true.
+implementation, so on testnet `evaluatorPinned` reads **false** — shown
+honestly as "unpinned, capped" — and every link stays capped; mainnet tier 2
+swaps in the recorded processor and the recorded beacon, both legs of the
+code check pass, and the flag flips true.
 
 The other reason is the hackathon: the X Layer TapeOut Accelerate track
 explicitly asks for TapeOut circuits, contracts or onchain data
@@ -546,8 +558,8 @@ processor fault proven to fall back instead of freezing), `PagoInvariantTest` +
 status never backward — 128,000 interleaved calls in the invariant run),
 `Split3Test` (the exhaustive circuit check) and the TAP-02 reference
 evaluator's own suite — need no network at all. The fork suites prove the
-Phase 0 claims against real X Layer mainnet state. **137 tests, 0 failed**
-(recorded 2026-11-18, [`docs/RESEARCH.md` §17](docs/RESEARCH.md)).
+Phase 0 claims against real X Layer mainnet state. **145 tests, 0 failed**
+(recorded 2026-11-19, [`docs/RESEARCH.md` §17](docs/RESEARCH.md)).
 
 ### The X Layer page
 

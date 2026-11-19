@@ -26,12 +26,18 @@ Contract rules to implement and test (from the master prompt):
 4. terms(linkId) and termsHash. pay and payWithAuthorization take expectedTermsHash and
    revert on mismatch. This does NOT prove what the payer saw; don't claim it does.
 5. createLink reverts if the circuit's netlist identity can't be read. Store its hash.
-6. evaluatorPinned flag. [paraphrase, added 2026-11-18] The flag may become true ONLY
-   through a real onchain implementation check - never via the change detector: the
-   constructor compares extcodehash(processor) against the expected implementation
-   codehash, and only an exact match with code present sets it. Name the known-answer
-   check "changeDetector", never "pin"; it stays a public view and never sets the flag.
+6. evaluatorPinned flag. [paraphrase, added 2026-11-18; updated same day to the
+   two-leg form after the mainnet probe - docs/RESEARCH.md section 18] The flag may
+   become true ONLY through a real onchain implementation check - never via the
+   change detector: the constructor takes the expected processor shell codehash AND
+   the circuit beacon AND the expected implementation codehash, requires code present
+   at the processor whose extcodehash equals the shell reference, then calls the
+   beacon's public implementation() getter and requires that address's extcodehash to
+   equal the implementation reference. Both legs must pass; a reverting or wrong
+   beacon fails the second leg. Name the known-answer check "changeDetector", never
+   "pin"; it stays a public view and never sets the flag.
    If unpinned: cap every link at MAX_LINK_AMOUNT_UNPINNED[token] in base units.
+   [Still a paraphrase: the original verbatim sentence has not been supplied.]
 7. Token allowlist fixed at deploy. Store expected decimals as written by us. Never read
    decimals() at runtime for safety limits. The deploy script aborts on a mismatch.
 8. No markPaid. Underpay reverts, overpay is credited, double pay reverts, the creator

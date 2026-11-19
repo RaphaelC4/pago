@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import {Test} from "forge-std/Test.sol";
 import {Pago} from "../src/Pago.sol";
+import {MockBeacon} from "./mocks/MockBeacon.sol";
 import {MockToken} from "./mocks/MockToken.sol";
 import {ProcessorStandIn} from "./mocks/ProcessorStandIn.sol";
 
@@ -93,10 +94,11 @@ contract PagoHandler is Test {
 
         token = new MockToken("Invariant USD", "iUSD", 6);
         ProcessorStandIn standIn = new ProcessorStandIn();
+        MockBeacon beacon = new MockBeacon(address(standIn));
 
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
         configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 10_000_000_000});
-        pago = new Pago(configs, FEE_ACCOUNT, address(standIn), 1, address(standIn).codehash);
+        pago = new Pago(configs, FEE_ACCOUNT, address(standIn), 1, address(standIn).codehash, address(beacon), address(standIn).codehash);
 
         for (uint256 i; i < 12; ++i) {
             ids.push(string(abi.encodePacked("inv-", vm.toString(i))));
@@ -236,9 +238,10 @@ contract PagoFuzzTest is Test {
     function setUp() public {
         token = new MockToken("Fuzz USD", "fUSD", 6);
         ProcessorStandIn standIn = new ProcessorStandIn();
+        MockBeacon beacon = new MockBeacon(address(standIn));
         Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
         configs[0] = Pago.TokenConfig({token: address(token), decimals_: 6, unpinnedCap: 10_000_000_000});
-        pago = new Pago(configs, feeAccount, address(standIn), 1, address(standIn).codehash);
+        pago = new Pago(configs, feeAccount, address(standIn), 1, address(standIn).codehash, address(beacon), address(standIn).codehash);
     }
 
     function testFuzz_claimConservesEveryUnit(uint96 rawAmount, uint8 a, uint8 b) public {

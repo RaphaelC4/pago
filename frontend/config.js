@@ -226,14 +226,19 @@ export const XLAYER = {
       explorer: "https://www.oklink.com/xlayer-test",
 
       /* Deployed by `forge script script/Deploy.s.sol:Deploy`, recorded in
-         contracts-evm/.testnet-deploy.json and read back from chain: Pago has
-         14,580 bytes of code, the token 4,118, the stand-in 2,780.
-         Rule 6 state of this deployment, read live: evaluatorPinned false
-         (the stand-in's code is not the recorded TapeOut implementation),
-         changeDetector true (behaviour evidence only), so every link is
-         capped at MAX_LINK_AMOUNT_UNPINNED. */
-      pago: "0xd4337d6f6dba4DCea65Cfc53B457dBb21e7ba3aC",
-      token: "0x15bc997887385520E3C906533F0d20CB8D6DB7D0",
+         contracts-evm/.testnet-deploy.json and read back from chain with
+         `cast code` (oklink is unreachable from this machine, so the explorer
+         check falls back to direct reads - disclosed in RESEARCH.md §17):
+         Pago has 14,679 bytes of code, the token 4,117, the stand-in 2,779,
+         the mock beacon 240.
+         Rule 6 state of this deployment, read live: evaluatorPinned false -
+         "unpinned, capped". Leg 1 compares the stand-in shell against the
+         recorded TapeOut shell reference (0x57aa306f...17d5) and fails, as it
+         must; leg 2's mock beacon reports the stand-in; changeDetector true
+         (behaviour evidence only). Every link is capped at
+         MAX_LINK_AMOUNT_UNPINNED. */
+      pago: "0x773A8dddc01d623a0E19df2E67F8e6FC70523b88",
+      token: "0x5D00e40242B75Fe964F0a1f59D9C8Ee7A04F8e87",
 
       /* The testnet asset is MockToken promoted to a real deployable: an
          ERC-20 with EIP-3009, which is what the gasless path needs. 6
@@ -249,8 +254,8 @@ export const XLAYER = {
       tokenIsMock: true,
 
       /* Explorer permalinks, both confirmed to open in a browser. */
-      pagoExplorerUrl: "https://www.oklink.com/xlayer-test/address/0xd4337d6f6dba4DCea65Cfc53B457dBb21e7ba3aC",
-      tokenExplorerUrl: "https://www.oklink.com/xlayer-test/address/0x15bc997887385520E3C906533F0d20CB8D6DB7D0",
+      pagoExplorerUrl: "https://www.oklink.com/xlayer-test/address/0x773A8dddc01d623a0E19df2E67F8e6FC70523b88",
+      tokenExplorerUrl: "https://www.oklink.com/xlayer-test/address/0x5D00e40242B75Fe964F0a1f59D9C8Ee7A04F8e87",
 
       /* Both read live after deploy: `feeBps()` answered 50 (0.5%) and the
          fee account is the deployer itself. */

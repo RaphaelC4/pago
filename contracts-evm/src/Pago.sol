@@ -44,12 +44,17 @@ import {IRuleProcessor} from "./IRuleProcessor.sol";
 ///   * **Rule 5 - circuit identity.** `createLink` reverts if the processor's
 ///     netlist cannot be read, and stores `keccak256(netlist)` on the link.
 ///   * **Rule 6 - evaluatorPinned / implementation check.** The flag may become
-///     true ONLY through a real onchain implementation check: the constructor
-///     compares `extcodehash(processor)` against `expectedProcessorCodehash`
-///     with code present, and a mismatch leaves the flag false. The
+///     true ONLY through a real onchain implementation check - two legs, both
+///     required (see docs/RESEARCH.md section 18): (1) `extcodehash(processor)`
+///     equals `expectedProcessorCodehash` with code present - the processor is
+///     a beacon proxy shell that hardcodes its beacon address in its own code;
+///     (2) `circuitBeacon.implementation()`, the beacon's public getter, returns
+///     an address whose `extcodehash` equals `expectedImplementationCodehash`.
+///     A beacon that reverts or reports anything else fails leg 2. The
 ///     known-answer check is named `changeDetector` (never "pin"); it stays a
 ///     public view and never sets the flag. While unpinned, every link is
-///     capped at `MAX_LINK_AMOUNT_UNPINNED[token]` in base units.
+///     capped at `MAX_LINK_AMOUNT_UNPINNED[token]` in base units. What the flag
+///     proves and does not prove is disclosed in README and section 18.
 ///   * **Rule 7 - decimals are ours, not the token's.** Expected decimals are given
 ///     by us at deploy time and stored; this contract never calls `decimals()` for
 ///     any safety decision. The deploy script aborts if the onchain value differs.
@@ -180,12 +185,24 @@ contract Pago {
     uint256 public immutable circuitId;
 
     /// The exact `extcodehash(processor)` the constructor compared against when
-    /// deciding `evaluatorPinned` (rule 6). Public so anyone can audit the
-    /// reference the implementation check used.
+    /// deciding `evaluatorPinned` (rule 6, leg 1). Public so anyone can audit
+    /// the reference the implementation check used.
     bytes32 public immutable expectedProcessorCodehash;
 
-    /// True only when the constructor's real onchain implementation check found
-    /// code at `processor` hashing to exactly `expectedProcessorCodehash`.
+    /// The circuit beacon whose `implementation()` getter the constructor
+    /// called for rule 6's leg 2. On mainnet this is the address the recorded
+    /// processor shell hardcodes; on testnet it is the stand-in's mock beacon.
+    /// Public so anyone can audit which beacon the second leg consulted.
+    address public immutable circuitBeacon;
+
+    /// The exact `extcodehash` the constructor expected of the address
+    /// `circuitBeacon.implementation()` returned (rule 6, leg 2).
+    bytes32 public immutable expectedImplementationCodehash;
+
+    /// True only when BOTH legs of the constructor's real onchain
+    /// implementation check passed: the processor shell's code hash matched
+    /// `expectedProcessorCodehash` AND the beacon's public `implementation()`
+    /// getter reported code hashing to `expectedImplementationCodehash`.
     /// `changeDetector` never sets it (rule 6); false means every link is capped.
     bool public evaluatorPinned;
 
@@ -243,16 +260,24 @@ contract Pago {
     /// @param processor_ TapeOut processor to query; address(0) = none.
     /// @param circuitId_ Circuit id inside `processor_`.
     /// @param expectedProcessorCodehash_ keccak256 of the code expected at
-    ///        `processor_`: the reference for rule 6's implementation check.
+    ///        `processor_`: rule 6's leg 1 reference (the proxy shell).
+    /// @param circuitBeacon_ The beacon whose `implementation()` getter rule
+    ///        6's leg 2 calls. On mainnet the recorded shell hardcodes it.
+    /// @param expectedImplementationCodehash_ keccak256 of the code expected
+    ///        behind that beacon: rule 6's leg 2 reference.
     constructor(
         TokenConfig[] memory tokens,
         address feeAccount_,
         address processor_,
         uint256 circuitId_,
-        bytes32 expectedProcessorCodehash_
+        bytes32 expectedProcessorCodehash_,
+        address circuitBeacon_,
+        bytes32 expectedImplementationCodehash_
     ) {
         require(tokens.length > 0, "at least one token must be allowed");
         require(expectedProcessorCodehash_ != bytes32(0), "expected codehash required");
+        require(circuitBeacon_ != address(0), "circuit beacon required");
+        require(expectedImplementationCodehash_ != bytes32(0), "expected implementation codehash required");
         require(feeAccount_ != address(0), "fee account required");
         for (uint256 i; i < tokens.length; ++i) {
             require(tokens[i].token != address(0), "token cannot be the zero address");
@@ -266,14 +291,44 @@ contract Pago {
         processor = processor_;
         circuitId = circuitId_;
         expectedProcessorCodehash = expectedProcessorCodehash_;
+        circuitBeacon = circuitBeacon_;
+        expectedImplementationCodehash = expectedImplementationCodehash_;
 
         // Rule 6: the ONLY path that may turn this flag on - a real onchain
-        // implementation check. Code must exist at the processor and hash to
-        // exactly the expected value. `changeDetector` is never consulted here:
-        // a wrong, missing or replaced implementation leaves the flag false and
-        // every link capped.
-        bytes32 liveCodehash = processor_.codehash;
-        evaluatorPinned = processor_ != address(0) && processor_.code.length > 0 && liveCodehash == expectedProcessorCodehash_;
+        // implementation check in two legs (docs/RESEARCH.md section 18).
+        //
+        // Leg 1 - the processor is a beacon proxy shell (295 bytes,
+        // disassembled in section 18) that hardcodes its beacon address in
+        // its own bytecode. Matching the shell's codehash proves the running
+        // code is byte-for-byte that shell - the one bound to the beacon.
+        //
+        // Leg 2 - with the shell confirmed, ask the configured beacon's
+        // public `implementation()` getter what it currently reports and
+        // hash that address's code. The call is a low-level staticcall with
+        // strict decoding (the same discipline as `_eval`): a reverting
+        // beacon, an address with no code, a short or long return - all fail
+        // this leg and leave the flag false. A wrong configured beacon can
+        // only make the flag false (it cannot hash to the recorded
+        // implementation unless it points at byte-identical genuine code);
+        // it can never make a wrong evaluator pass, because the genuine
+        // shell ignores configuration and delegates to the beacon it
+        // hardcodes.
+        //
+        // `changeDetector` is never consulted here: a wrong, missing or
+        // replaced implementation leaves the flag false and every link capped.
+        bool shellMatches = processor_ != address(0) && processor_.code.length > 0 && processor_.codehash == expectedProcessorCodehash_;
+        bool implMatches = false;
+        if (shellMatches) {
+            (bool ok, bytes memory ret) =
+                circuitBeacon_.staticcall(abi.encodeWithSelector(IBeaconLike.implementation.selector));
+            if (ok && ret.length == 32) {
+                // Masked read, not abi.decode: dirty upper bits must fail the
+                // leg (flag false), never revert the constructor.
+                address impl = address(uint160(uint256(bytes32(ret))));
+                implMatches = impl != address(0) && impl.code.length > 0 && impl.codehash == expectedImplementationCodehash_;
+            }
+        }
+        evaluatorPinned = shellMatches && implMatches;
     }
 
     // ── payee ──────────────────────────────────────────────────────────────
@@ -803,6 +858,14 @@ interface IERC20 {
     function transfer(address to, uint256 amount) external returns (bool);
 
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
+}
+
+/// The one getter rule 6's leg 2 calls: the beacon's public
+/// `implementation()` (selector `0x5c60da1b`, verified live on X Layer
+/// mainnet - docs/RESEARCH.md section 18). Any other surface fails the call
+/// and therefore fails the leg.
+interface IBeaconLike {
+    function implementation() external view returns (address);
 }
 
 /// EIP-3009 `transferWithAuthorization`. Proven live on X Layer mainnet for

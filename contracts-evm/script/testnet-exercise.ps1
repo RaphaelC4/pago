@@ -245,21 +245,27 @@ $codeLen = (Call "Pago code" { cast code $Pago --rpc-url $Rpc }).Length
 Write-Host ("  Pago  {0}  ({1} hex chars of code)" -f $Pago, $codeLen) -ForegroundColor Cyan
 if ($codeLen -le 2) { throw "no contract code at $Pago" }
 
-# Rule 6 evidence, read straight from the deployment. The reference is the
-# recorded codehash of the real TapeOut processors; the stand-in's code
-# deliberately differs, so the implementation check cannot pass: on testnet
-# evaluatorPinned must read false and every link stays capped - honestly, and
-# exactly what rule 6 wants until a tape-out exists. Mainnet tier 2 passes the
-# recorded processor and flips it true. The processor is an EVM stand-in,
-# NOT hardware - TapeOut exists only on mainnet.
+# Rule 6 evidence, read straight from the deployment. Two legs: (1) the
+# processor shell's codehash vs the recorded TapeOut shell reference, (2) the
+# circuit beacon's implementation() answer vs the recorded implementation
+# reference. The stand-in's code deliberately differs from the recorded shell,
+# so leg 1 cannot pass: on testnet evaluatorPinned must read false and every
+# link stays capped - honestly, and exactly what rule 6 wants until a tape-out
+# exists. Mainnet tier 2 passes the recorded processor and beacon and flips it
+# true. The processor is an EVM stand-in, NOT hardware - TapeOut exists only
+# on mainnet. Recorded references: docs/RESEARCH.md section 18.
 $processor = Call "processor" { cast call $Pago "processor()(address)" }
 $pinned = Call "evaluatorPinned" { cast call $Pago "evaluatorPinned()(bool)" }
-$expectedCodehash = Call "expected codehash" { cast call $Pago "expectedProcessorCodehash()(bytes32)" }
+$expectedCodehash = Call "leg 1 reference" { cast call $Pago "expectedProcessorCodehash()(bytes32)" }
+$beacon = Call "circuit beacon" { cast call $Pago "circuitBeacon()(address)" }
+$expectedImpl = Call "leg 2 reference" { cast call $Pago "expectedImplementationCodehash()(bytes32)" }
 $changeDetector = Call "changeDetector" { cast call $Pago "changeDetector()(bool)" }
 Write-Host ("  processor {0}  (EVM stand-in for the TapeOut processor - not hardware)" -f $processor) -ForegroundColor DarkYellow
-Write-Host ("  expected codehash {0}  (recorded TapeOut implementation)" -f $expectedCodehash) -ForegroundColor DarkGray
-if ($pinned -ne "false") { throw "evaluatorPinned = $pinned on testnet: the stand-in must never satisfy the recorded TapeOut codehash check. Inspect PAGO_PROCESSOR_CODEHASH before going further." }
-Write-Host ("  evaluatorPinned {0}  (expected on testnet: implementation check vs recorded TapeOut code; links are capped)" -f $pinned) -ForegroundColor Green
+Write-Host ("  leg 1 shell reference {0}  (recorded TapeOut shell codehash)" -f $expectedCodehash) -ForegroundColor DarkGray
+Write-Host ("  circuit beacon {0}  (mock beacon reporting the stand-in)" -f $beacon) -ForegroundColor DarkGray
+Write-Host ("  leg 2 implementation reference {0}" -f $expectedImpl) -ForegroundColor DarkGray
+if ($pinned -ne "false") { throw "evaluatorPinned = $pinned on testnet: the stand-in must never satisfy the recorded TapeOut shell codehash check. Inspect PAGO_PROCESSOR_CODEHASH before going further." }
+Write-Host ("  evaluatorPinned {0}  (expected on testnet: two-leg check vs recorded TapeOut shell fails; links are capped / unpinned, capped)" -f $pinned) -ForegroundColor Green
 Write-Host ("  changeDetector {0}  (behaviour evidence only - never what sets the flag)" -f $changeDetector) -ForegroundColor DarkGray
 
 # ── 3. fund the payer with test tokens ─────────────────────────────────────

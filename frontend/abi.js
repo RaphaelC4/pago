@@ -8,10 +8,11 @@
    is written out here in full instead of pulling in a library.
 
    Every selector below was produced with `cast sig "<signature>"` and then
-   cross-checked against the deployed Pago bytecode's own dispatcher on chain
-   1952 (each 4-byte value appears as `63<selector>` in the runtime code). If
-   Pago is ever redeployed with a changed signature, `cast sig` is the
-   authority and these must be regenerated — the test in
+   cross-checked against the deployed Pago bytecode's own dispatcher on both
+   X Layer chains — 196 (mainnet) and 1952 (testnet), which share one
+   dispatcher (each 4-byte value appears as `63<selector>` in the runtime
+   code). If Pago is ever redeployed with a changed signature, `cast sig` is
+   the authority and these must be regenerated — the test in
    test/abi.test.mjs pins them.
 
    Test vectors for the encoder and decoder come from real `eth_call` return
@@ -24,16 +25,22 @@
 
 export const SEL = {
   // Pago
-  createLink: "0x167f1e66", // createLink(string,uint256,address,string,uint64)
-  pay: "0x901c5953", // pay(string,uint256)
+  createLink: "0x6c5b7a11", // createLink(string,uint256,address,string,uint64,(address[3],uint8[3]),(address[3],uint8[3]))
+  pay: "0x8032337c", // pay(string,uint256,bytes32)
+  termsHash: "0xe93341c4", // termsHash(string)
+  payWithAuthorization: "0x69c1372a", // payWithAuthorization(string,address,uint256,uint64,uint64,bytes32,bytes,bytes32)
   claim: "0xf3fe12c9", // claim(string)
   cancelLink: "0xc49dc85c", // cancelLink(string)
   getLink: "0x7476452a", // getLink(string)
   getLinksByCreator: "0x4afe4a95", // getLinksByCreator(address)
   linkCountByCreator: "0xc0f27021", // linkCountByCreator(address)
   linkExists: "0xa34cc22b", // linkExists(string)
+  linkKeyOf: "0x2867835e", // linkKeyOf(string)
   feeBps: "0x24a9d853", // feeBps()
   isTokenAllowed: "0xf9eaee0d", // isTokenAllowed(address)
+  evaluatorPinned: "0xca24c8f4", // evaluatorPinned()
+  maxLinkAmountUnpinned: "0x7754d140", // MAX_LINK_AMOUNT_UNPINNED(address)
+  authorizationNonce: "0xeeb193af", // authorizationNonce(bytes32,address)
 
   // ERC-20 / EIP-3009 (the test token and any allowlisted stablecoin)
   approve: "0x095ea7b3", // approve(address,uint256)
@@ -69,6 +76,20 @@ export const SEL = {
  * readable where it matters — the Link struct below.
  */
 
+/** Pago's Split struct: three seats, shares in steps where 20 = 100%
+    (`SPLIT_STEPS`, each step 500 bps). A default table must sum to exactly
+    20; a rule table's shares are each 0–31 (5-bit) and its sum is what the
+    circuit judges. Wire format: two static members, six words total. */
+export const SPLIT_TYPES = {
+  struct: [
+    ["recipients", ["address", "address", "address"]],
+    ["shares", ["uint8", "uint8", "uint8"]],
+  ],
+};
+
+/** Shares are counted in these steps; 20 steps = 100% (contract constant). */
+export const SPLIT_STEPS = 20;
+
 /** Pago's Link struct, in declaration order. Mirrors src/Pago.sol. */
 export const LINK_TYPES = {
   struct: [
@@ -84,6 +105,9 @@ export const LINK_TYPES = {
     ["paidAmount", "uint256"],
     ["paidAt", "uint64"],
     ["claimedAt", "uint64"],
+    ["defaultSplit", SPLIT_TYPES],
+    ["ruleSplit", SPLIT_TYPES],
+    ["netlistHash", "bytes32"],
   ],
 };
 

@@ -26,10 +26,11 @@ import {
   SEL,
   GET_LINK_TYPES,
   GET_LINKS_TYPES,
+  SPLIT_TYPES,
   STATUS,
   callData,
   decodeReturn,
-} from "./abi.js?v=20261119a";
+} from "./abi.js?v=20261121a";
 
 /* ── configuration ──────────────────────────────────────────────────────── */
 
@@ -234,6 +235,15 @@ const readBalance = (owner) => readUint(TOKEN, SEL.balanceOf, ["address"], [owne
 const readLinkExists = (id) =>
   ethCall(PAGO, callData(SEL.linkExists, ["string"], [id])).then(
     (r) => decodeReturn(["bool"], r)[0]
+  );
+
+/* The payer's consent hash (contract rule 4): everything the payment is
+   bound to, read from the chain immediately before the pay transaction is
+   signed — never computed in the browser, never carried over from an
+   earlier visit. Both pay paths require it as their last argument. */
+const readTermsHash = (id) =>
+  ethCall(PAGO, callData(SEL.termsHash, ["string"], [id])).then(
+    (r) => decodeReturn(["bytes32"], r)[0]
   );
 
 /* ── wallet (EIP-1193) ──────────────────────────────────────────────────── */
@@ -552,10 +562,19 @@ async function onCreate(e) {
     const linkId = await newLinkId();
 
     txLine(result, "pending", `Creating <code>${esc(linkId)}</code> — confirm in your wallet…`);
+    /* Both split tables, preset exactly as script/testnet-exercise.ps1 proved
+       them live: the default table pays the creator 100% (20 of 20 steps),
+       and the rule table is a three-seat candidate summing to 20 steps — the
+       shape the Split3 circuit accepts — with every seat pointing at the
+       creator, so this preset can never route money away from the invoice's
+       owner. When the form gains rule/default split inputs, read them here. */
+    const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
+    const defaultSplit = [[account, ZERO_ADDR, ZERO_ADDR], [20, 0, 0]];
+    const ruleSplit = [[account, account, account], [10, 6, 4]];
     const data = callData(
       SEL.createLink,
-      ["string", "uint256", "address", "string", "uint64"],
-      [linkId, amount, TOKEN, note, BigInt(expiresAt)]
+      ["string", "uint256", "address", "string", "uint64", SPLIT_TYPES, SPLIT_TYPES],
+      [linkId, amount, TOKEN, note, BigInt(expiresAt), defaultSplit, ruleSplit]
     );
     const { hash } = await sendTx(PAGO, data);
 
@@ -871,7 +890,8 @@ async function runApproveThenPay(id, amount) {
     runTxLine("pending", `Approving <strong>${fmt(amount)}</strong> ${esc(TOKEN_LABEL)} for Pago — confirm in your wallet…`);
     const { hash } = await sendTx(TOKEN, callData(SEL.approve, ["address", "uint256"], [PAGO, amount]));
     runTxLine("pending", `Approved in <a href="${txUrl(hash)}" target="_blank" rel="noopener">${truncate(hash, 10, 6)}</a> — now the payment…`);
-    const payHash = (await sendTx(PAGO, callData(SEL.pay, ["string", "uint256"], [id, amount]))).hash;
+    const terms = await readTermsHash(id);
+    const payHash = (await sendTx(PAGO, callData(SEL.pay, ["string", "uint256", "bytes32"], [id, amount, terms]))).hash;
     runTxLine("ok", `Paid. <a href="${txUrl(payHash)}" target="_blank" rel="noopener">View transaction</a>`);
     toast("Payment sent.");
     renderPay(id);
@@ -886,7 +906,8 @@ async function runPay(id, amount) {
   if (btn) { btn.disabled = true; btn.querySelector("span").textContent = "Paying…"; }
   try {
     runTxLine("pending", `Paying <strong>${fmt(amount)}</strong> ${esc(TOKEN_LABEL)} — confirm in your wallet…`);
-    const { hash } = await sendTx(PAGO, callData(SEL.pay, ["string", "uint256"], [id, amount]));
+    const terms = await readTermsHash(id);
+    const { hash } = await sendTx(PAGO, callData(SEL.pay, ["string", "uint256", "bytes32"], [id, amount, terms]));
     runTxLine("ok", `Paid. <a href="${txUrl(hash)}" target="_blank" rel="noopener">View transaction</a>`);
     toast("Payment sent — the payee can claim now.");
     renderPay(id);

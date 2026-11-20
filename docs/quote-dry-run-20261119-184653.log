@@ -1,0 +1,44 @@
+﻿[2026-11-19 18:46:53Z] ====================================================================================================
+[2026-11-19 18:46:53Z] PAGO TIER 2 TAPE-OUT - QUOTE-ONLY DRY RUN (no transactions, no key, no approvals)
+[2026-11-19 18:46:53Z] RPC: https://rpc.xlayer.tech   chain expected: 196 (X Layer mainnet)
+[2026-11-19 18:46:53Z] Quote started at 2026-11-19 18:46:53Z
+[2026-11-19 18:46:53Z] ====================================================================================================
+[2026-11-19 18:47:08Z] block number                                 76,344,989
+[2026-11-19 18:47:08Z] gas price (wei, live)                        20,000,001
+[2026-11-19 18:47:08Z] gas price (gwei)                             0.020
+[2026-11-19 18:47:08Z] - price sources 
+[2026-11-19 18:47:17Z] OKB/USD (CoinGecko)                          $87.73  (24h change 1.30%)  fetched 2026-11-19 18:47:17Z
+[2026-11-19 18:47:26Z] BEM/USD (CoinGecko global)                   $13.71  (24h change 25.25%)  fetched 2026-11-19 18:47:26Z
+[2026-11-19 18:49:40Z] BEM pool spot (BEM/WOKB 1% pool)             0.155534 WOKB/BEM = $13.65  read 2026-11-19 18:49:40Z
+[2026-11-19 18:49:40Z] BEM cross-check (pool vs CoinGecko)          0.5% apart
+[2026-11-19 18:49:40Z] BEM price used for fee lines                 CoinGecko global
+[2026-11-19 18:49:40Z] - running the local fork simulation 
+[2026-11-19 18:49:40Z]   (test/QuoteDryRun.t.sol: empty wallet -> buy BEM -> createCPU -> mint 104 -> tapeout -> deploy Pago -> sweep)
+[2026-11-19 18:49:40Z]   this takes about a minute...
+[2026-11-19 18:51:00Z] simulation attempt 1 did not complete (exit 0) - retrying once in 5 s...
+[2026-11-19 18:52:35Z] simulation result                            [PASS]
+[2026-11-19 18:52:35Z] forked at block                              76345251
+[2026-11-19 18:52:35Z] 
+[2026-11-19 18:52:35Z] *** QUOTE ABORTED - the simulation did not run to completion. Nothing below is a price. ***
+[2026-11-19 18:52:35Z] failed step(s): buyBem
+[2026-11-19 18:52:35Z]   | No files changed, compilation skipped
+[2026-11-19 18:52:35Z]   | Ran 1 test for test/QuoteDryRun.t.sol:QuoteDryRunTest
+[2026-11-19 18:52:35Z]   | [PASS] test_quoteDryRun() (gas: 377134)
+[2026-11-19 18:52:35Z]   | Logs:
+[2026-11-19 18:52:35Z]   | QUOTE|meta|forkBlock=76345251|chainid=196
+[2026-11-19 18:52:35Z]   | QUOTE|info|freshWallet=0xD0B15dD57218Bf387Abc116ff2491BFFfD7ce34A
+[2026-11-19 18:52:35Z]   | QUOTE|info|factory=0x1f09DAeFA827f02CBb40967cc91b259763760761
+[2026-11-19 18:52:35Z]   | QUOTE|info|bem=0x60e62Efa9405d6873C5deaBD4E6CC91c25363952
+[2026-11-19 18:52:35Z]   | QUOTE|info|pool=0x2CcF8aa17F5DF9Fb5D51C9de12135a913fF29f7A
+[2026-11-19 18:52:35Z]   | QUOTE|info|wokb=0xe538905cf8410324e03A5A23C1c177a474D59b2b
+[2026-11-19 18:52:35Z]   | QUOTE|info|quoteMode=READ-ONLY fork simulation from an empty wallet; nothing broadcast; no key used
+[2026-11-19 18:52:35Z]   | QUOTE|info|fundBudgetWei_simulated=500000000000000000
+[2026-11-19 18:52:35Z]   | QUOTE|info|buyBemUnits_withBuffer=136800000
+[2026-11-19 18:52:35Z]   | QUOTE|info|factoryDeployFee=10000000
+[2026-11-19 18:52:35Z]   | QUOTE|info|factoryProtocolFee=1000000
+[2026-11-19 18:52:35Z]   | QUOTE|wrap|gas=64052|bem=0|okb=-490000000000000000|wokb=490000000000000000
+[2026-11-19 18:52:35Z]   | QUOTE|approvePool|gas=54675|bem=0|okb=0|wokb=0
+[2026-11-19 18:52:35Z]   | QUOTE|FAIL|buyBem=
+[2026-11-19 18:52:35Z]   | 0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000353504c0000000000000000000000000000000000000000000000000000000000
+[2026-11-19 18:52:35Z]   | Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 88.91s (57.43s CPU time)
+[2026-11-19 18:52:35Z]   | Ran 1 test suite in 88.91s (88.91s CPU time): 1 tests passed, 0 failed, 0 skipped (1 total tests)

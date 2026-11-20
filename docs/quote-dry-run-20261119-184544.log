@@ -1,0 +1,29 @@
+﻿[2026-11-19 18:45:44Z] ====================================================================================================
+[2026-11-19 18:45:44Z] PAGO TIER 2 TAPE-OUT - QUOTE-ONLY DRY RUN (no transactions, no key, no approvals)
+[2026-11-19 18:45:44Z] RPC: https://rpc.xlayer.tech   chain expected: 196 (X Layer mainnet)
+[2026-11-19 18:45:44Z] Quote started at 2026-11-19 18:45:44Z
+[2026-11-19 18:45:44Z] ====================================================================================================
+[2026-11-19 18:45:49Z] block number                                 76,344,913
+[2026-11-19 18:45:49Z] gas price (wei, live)                        20,000,001
+[2026-11-19 18:45:49Z] gas price (gwei)                             0.020
+[2026-11-19 18:45:49Z] - price sources 
+[2026-11-19 18:45:53Z] OKB/USD (CoinGecko)                          $87.73  (24h change 1.25%)  fetched 2026-11-19 18:45:53Z
+[2026-11-19 18:45:54Z] BEM/USD (CoinGecko global)                   $13.70  (24h change 24.38%)  fetched 2026-11-19 18:45:54Z
+[2026-11-19 18:46:10Z] BEM pool spot (BEM/WOKB 1% pool)             0.155552 WOKB/BEM = $13.65  read 2026-11-19 18:46:10Z
+[2026-11-19 18:46:10Z] BEM cross-check (pool vs CoinGecko)          0.4% apart
+[2026-11-19 18:46:10Z] BEM price used for fee lines                 CoinGecko global
+[2026-11-19 18:46:10Z] - running the local fork simulation 
+[2026-11-19 18:46:10Z]   (test/QuoteDryRun.t.sol: empty wallet -> buy BEM -> createCPU -> mint 104 -> tapeout -> deploy Pago -> sweep)
+[2026-11-19 18:46:10Z]   this takes about a minute...
+[2026-11-19 18:46:10Z] simulation attempt 1 did not complete (exit 2) - retrying once in 5 s...
+[2026-11-19 18:46:15Z] simulation result                            
+[2026-11-19 18:46:15Z] 
+[2026-11-19 18:46:15Z] *** QUOTE ABORTED - the simulation did not run to completion. Nothing below is a price. ***
+[2026-11-19 18:46:15Z] forge exit code: 2
+[2026-11-19 18:46:15Z]   | error: unexpected argument '--timeout' found
+[2026-11-19 18:46:15Z]   | System.Management.Automation.RemoteException
+[2026-11-19 18:46:15Z]   | tip: a similar argument exists: '--rpc-timeout'
+[2026-11-19 18:46:15Z]   | System.Management.Automation.RemoteException
+[2026-11-19 18:46:15Z]   | Usage: forge.exe test --match-path <GLOB> --verbosity... --rpc-timeout <RPC_TIMEOUT> [PATH]
+[2026-11-19 18:46:15Z]   | System.Management.Automation.RemoteException
+[2026-11-19 18:46:15Z]   | For more information, try '--help'.

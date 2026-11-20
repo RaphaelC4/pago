@@ -1,0 +1,50 @@
+﻿[2026-11-20 00:53:10Z] ====================================================================================================
+[2026-11-20 00:53:10Z] PAGO TIER 2 TAPE-OUT - QUOTE-ONLY DRY RUN (no transactions, no key, no approvals)
+[2026-11-20 00:53:10Z] RPC: https://rpc.xlayer.tech   chain expected: 196 (X Layer mainnet)
+[2026-11-20 00:53:10Z] Quote started at 2026-11-20 00:53:10Z
+[2026-11-20 00:53:10Z] ====================================================================================================
+[2026-11-20 00:53:14Z] block number                                 76,366,958
+[2026-11-20 00:53:14Z] gas price (wei, live)                        20,000,001
+[2026-11-20 00:53:14Z] gas price (gwei)                             0.020
+[2026-11-20 00:53:14Z] - price sources 
+[2026-11-20 00:53:15Z] OKB/USD (CoinGecko)                          $85.11  (24h change -2.69%)  fetched 2026-11-20 00:53:15Z
+[2026-11-20 00:53:15Z] BEM/USD (CoinGecko global)                   $11.97  (24h change 6.25%)  fetched 2026-11-20 00:53:15Z
+[2026-11-20 00:53:18Z] BEM pool spot (BEM/WOKB 1% pool)             0.141957 WOKB/BEM = $12.08  read 2026-11-20 00:53:18Z
+[2026-11-20 00:53:18Z] BEM cross-check (pool vs CoinGecko)          0.9% apart
+[2026-11-20 00:53:18Z] BEM price used for fee lines                 CoinGecko global
+[2026-11-20 00:53:18Z] - running the local fork simulation 
+[2026-11-20 00:53:18Z]   (test/QuoteDryRun.t.sol: empty wallet -> swap buyer -> buy BEM -> createCPU (gate price 0) -> mint 104 -> tapeout -> deploy Pago -> sweep)
+[2026-11-20 00:53:18Z]   this takes about a minute...
+[2026-11-20 00:53:49Z] simulation attempt 1 did not complete (exit 0) - retrying once in 5 s...
+[2026-11-20 00:54:24Z] simulation result                            [PASS]
+[2026-11-20 00:54:24Z] forked at block                              76367004
+[2026-11-20 00:54:24Z] 
+[2026-11-20 00:54:24Z] *** QUOTE ABORTED - the simulation did not run to completion. Nothing below is a price. ***
+[2026-11-20 00:54:24Z] failed step(s): buyBem
+[2026-11-20 00:54:24Z]   | No files changed, compilation skipped
+[2026-11-20 00:54:24Z]   | Ran 1 test for test/QuoteDryRun.t.sol:QuoteDryRunTest
+[2026-11-20 00:54:24Z]   | [PASS] test_quoteDryRun() (gas: 900370)
+[2026-11-20 00:54:24Z]   | Logs:
+[2026-11-20 00:54:24Z]   | QUOTE|meta|forkBlock=76367004|chainid=196
+[2026-11-20 00:54:24Z]   | QUOTE|info|freshWallet=0xD0B15dD57218Bf387Abc116ff2491BFFfD7ce34A
+[2026-11-20 00:54:24Z]   | QUOTE|info|factory=0x1f09DAeFA827f02CBb40967cc91b259763760761
+[2026-11-20 00:54:24Z]   | QUOTE|info|bem=0x60e62Efa9405d6873C5deaBD4E6CC91c25363952
+[2026-11-20 00:54:24Z]   | QUOTE|info|pool=0x2CcF8aa17F5DF9Fb5D51C9de12135a913fF29f7A
+[2026-11-20 00:54:24Z]   | QUOTE|info|wokb=0xe538905cf8410324e03A5A23C1c177a474D59b2b
+[2026-11-20 00:54:24Z]   | QUOTE|info|quoteMode=READ-ONLY fork simulation from an empty wallet; nothing broadcast; no key used
+[2026-11-20 00:54:24Z]   | QUOTE|info|fundBudgetWei_simulated=500000000000000000
+[2026-11-20 00:54:24Z]   | QUOTE|info|buyBemUnits_withBuffer=13200000
+[2026-11-20 00:54:24Z]   | QUOTE|info|factoryDeployFee=10000000
+[2026-11-20 00:54:24Z]   | QUOTE|info|factoryProtocolFee=1000000
+[2026-11-20 00:54:24Z]   | QUOTE|info|gatePrice=0 (chosen like CPU #340; no floor on X Layer, probe-proven)
+[2026-11-20 00:54:24Z]   | QUOTE|wrap|gas=64049|bem=0|okb=-490000000000000000|wokb=490000000000000000
+[2026-11-20 00:54:24Z]   | QUOTE|deployBuyer|gas=318582|bem=0|okb=0|wokb=0
+[2026-11-20 00:54:24Z]   | QUOTE|info|swapBuyer=0x741E65097293276bc23d1Dd7646a95B7148B7Ac8
+[2026-11-20 00:54:24Z]   | QUOTE|approveBuyer|gas=54676|bem=0|okb=0|wokb=0
+[2026-11-20 00:54:24Z]   | QUOTE|buyBem|gas=135276|bem=13200000|okb=0|wokb=-18928749550681233
+[2026-11-20 00:54:24Z]   | QUOTE|info|buyBem_amount0_delta_bem=-13200000
+[2026-11-20 00:54:24Z]   | QUOTE|info|buyBem_amount1_delta_wokb=18928749550681233
+[2026-11-20 00:54:24Z]   | QUOTE|FAIL|buyBem=
+[2026-11-20 00:54:24Z]   | 0x5041525449414c2046494c4c3a20746865207072696365206c696d6974207761732072656163686564206265666f7265207468652065786163742042454d206f7574707574
+[2026-11-20 00:54:24Z]   | Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 28.51s (21.91s CPU time)
+[2026-11-20 00:54:24Z]   | Ran 1 test suite in 28.52s (28.51s CPU time): 1 tests passed, 0 failed, 0 skipped (1 total tests)

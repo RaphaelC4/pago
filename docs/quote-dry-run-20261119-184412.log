@@ -1,0 +1,7 @@
+﻿[2026-11-19 18:44:12Z] ====================================================================================================
+[2026-11-19 18:44:12Z] PAGO TIER 2 TAPE-OUT - QUOTE-ONLY DRY RUN (no transactions, no key, no approvals)
+[2026-11-19 18:44:12Z] RPC: https://rpc.xlayer.tech   chain expected: 196 (X Layer mainnet)
+[2026-11-19 18:44:12Z] Quote started at 2026-11-19 18:44:12Z
+[2026-11-19 18:44:12Z] ====================================================================================================
+[2026-11-19 18:44:15Z] FATAL: cannot read block number: Error: MPP HTTP request to https://rpc.xlayer.tech/ failed: HTTP request failed: error sending request: error sending request: client error (Connect): dns error: error resolving DNS: No such host is known. (os error 11001)
+[2026-11-19 18:44:15Z] FATAL: cannot read gas price: Error: MPP HTTP request to https://rpc.xlayer.tech/ failed: HTTP request failed: error sending request: error sending request: client error (Connect): dns error: error resolving DNS: No such host is known. (os error 11001)

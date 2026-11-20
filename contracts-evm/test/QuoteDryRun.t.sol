@@ -5,6 +5,10 @@ import {Test, console} from "forge-std/Test.sol";
 import {IRuleProcessor} from "../src/IRuleProcessor.sol";
 import {Pago} from "../src/Pago.sol";
 import {Split3} from "../src/circuits/Split3.sol";
+// The swap buyer lives in script/, not src/ (src/ is frozen), and the test
+// imports it rather than re-declaring it: the artifact under test here is the
+// exact artifact the tape-out will deploy.
+import {BemBuyer} from "../script/BemBuyer.sol";
 
 interface IERC20Like {
     function approve(address spender, uint256 amount) external;
@@ -47,50 +51,6 @@ interface IPoolQ {
         bytes calldata data
     ) external returns (int256 amount0Delta, int256 amount1Delta);
     function slot0() external view returns (uint160 sqrtPriceX96, int24, uint16, uint16, uint16, uint8, bool);
-}
-
-/// Uniswap V3 swaps must be SENT BY A CONTRACT: the pool transfers the bought
-/// tokens first, then calls `uniswapV3SwapCallback` on `msg.sender` - and a
-/// call to an address with no code reverts with empty data (forge reports it
-/// as "call to non-contract address"). This test proved it directly: the EOA
-/// swap moved the BEM and then died on the callback.
-///
-/// Minimal stand-in for a swap router: holds no funds of its own, pulls the
-/// owed WOKB from the wallet that approved it straight to the pool inside the
-/// callback, and lets the bought BEM land on the recipient. The real
-/// execution needs this helper (or a router) for the same reason.
-contract BemBuyer {
-    error NotThePool();
-    error UnexpectedSwapShape();
-
-    address immutable pool;
-    address immutable wokb;
-    address immutable payer;
-
-    constructor(address pool_, address wokb_, address payer_) {
-        pool = pool_;
-        wokb = wokb_;
-        payer = payer_;
-    }
-
-    /// Exact-output buy of `amountOut` BEM (token0) paid in WOKB (token1).
-    function buy(address recipient, int256 amountOut, uint160 sqrtPriceLimitX96)
-        external
-        returns (int256 amount0Delta, int256 amount1Delta)
-    {
-        return IPoolQ(pool).swap(recipient, false, amountOut, sqrtPriceLimitX96, "");
-    }
-
-    function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata) external {
-        if (msg.sender != pool) revert NotThePool();
-        // This buyer only ever buys BEM with WOKB: the pool pays BEM out
-        // (amount0Delta < 0) and is owed WOKB (amount1Delta > 0). Any other
-        // shape is a swap this flow never approved - fail loud.
-        if (amount0Delta > 0 || amount1Delta < 0) revert UnexpectedSwapShape();
-        if (amount1Delta > 0) {
-            IERC20Like(wokb).transferFrom(payer, pool, uint256(amount1Delta));
-        }
-    }
 }
 
 /// Quote-only dry run for the Tier 2 tape-out, against a FORK of X Layer
@@ -202,6 +162,22 @@ contract QuoteDryRunTest is Test {
         return (true, abi.decode(ret, (uint256)));
     }
 
+    /// Input-side WOKB cap for the BEM buy, quoted ONCE from the pool's spot
+    /// price and stored: the approval and the swap then use the same number.
+    /// Two separate reads could straddle a price move and disagree, which
+    /// would either over-approve or trip the cap mid-swap.
+    uint256 internal maxInQuoted;
+
+    /// spot input = output x price, where price = (sqrtPriceX96/2^96)^2 in
+    /// raw token units (WOKB wei per BEM unit); +15% covers the 1% LP fee,
+    /// price impact and any adverse move between quoting and execution.
+    function _quoteMaxIn() internal {
+        (uint160 sqrtNow,,,,,,) = IPoolQ(POOL).slot0();
+        uint256 priceX96sq = (uint256(sqrtNow) * uint256(sqrtNow)) / (uint256(1) << 192);
+        maxInQuoted = (uint256(BUY_BEM_UNITS) * priceX96sq * 115) / 100;
+        _info("buyBem_maxIn_wokb", vm.toString(maxInQuoted));
+    }
+
     /// createCPU's two addresses assigned BY CAPABILITY, never by position:
     /// shape 2 = circuits (TAPEOUT_FEE answers), shape 1 = transistors
     /// (mintPrice answers).
@@ -268,14 +244,26 @@ contract QuoteDryRunTest is Test {
     }
 
     /// Tx 2/5/7: an ERC-20 approve on the fresh wallet (token picked per step).
-    function _stepApprove(string memory id, address token, address spender) internal returns (bool) {
+    ///
+    /// The amount is EXACT and passed in, never `type(uint256).max`: an
+    /// unlimited allowance sitting on a wallet that holds real funds is the
+    /// drain vector this whole flow has to avoid. Each caller approves only
+    /// what its own step will spend.
+    function _stepApprove(string memory id, address token, address spender, uint256 amount) internal returns (bool) {
         uint256[3] memory b = _bal();
         uint256 g0 = gasleft();
         vm.startPrank(fresh);
-        IERC20Like(token).approve(spender, type(uint256).max);
+        IERC20Like(token).approve(spender, amount);
         vm.stopPrank();
         _q(id, g0 - gasleft(), b);
+        _info(string.concat(id, "_approved"), vm.toString(amount));
         return true;
+    }
+
+    /// Tx 8: revoke an allowance back to zero once its step is done, so no
+    /// spender keeps a live claim on the wallet after the money has moved.
+    function _stepRevoke(string memory id, address token, address spender) internal returns (bool) {
+        return _stepApprove(id, token, spender, 0);
     }
 
     /// Tx 2: deploy the swap buyer helper - a real transaction in the real
@@ -295,20 +283,28 @@ contract QuoteDryRunTest is Test {
     /// buyer helper against the live 1% pool - so the measured WOKB delta is
     /// the real fill (pool price impact + 1% LP fee included), not an estimate.
     ///
-    /// Two guards the hard way: Uniswap V3 rejects `type(uint160).max` with
-    /// revert string "SPL" (the limit must sit strictly between the current
-    /// sqrt price and MAX_SQRT_RATIO), and the callback needs a contract on
-    /// this side (BemBuyer). Reading slot0 and allowing ~4% of price headroom
-    /// never bites for a trade this size, and the amount check below turns any
-    /// partial fill into a loud failure instead of a quietly smaller purchase.
-    /// A real execution should tighten this limit to its own slippage tolerance.
+    /// Three guards, each catching a different way this could go wrong:
+    ///   * Uniswap V3 rejects `type(uint160).max` with revert string "SPL",
+    ///     so the limit is read from slot0 and given ~4% of price headroom;
+    ///   * the callback needs a contract on this side (BemBuyer);
+    ///   * `maxIn` is the INPUT-side cap quoted from the spot price before the
+    ///     call (spot + 15% for fee, impact and price movement). The output
+    ///     limit bounds how bad the price may get; maxIn bounds how much WOKB
+    ///     may leave the wallet at all. Exceeding it reverts inside the
+    ///     callback and the whole swap fails.
+    ///
+    /// A partial fill turns into a loud failure instead of a quietly smaller
+    /// purchase, and the buyer is asserted empty afterwards.
     function _stepBuyBem() internal returns (bool) {
         (uint160 sqrtNow,,,,,,) = IPoolQ(POOL).slot0();
         uint160 limit = sqrtNow + (sqrtNow / 50);
+        // maxInQuoted was priced from the same slot0 reading and is exactly
+        // what the approval granted - no second quote, no disagreement.
+        uint256 maxIn = maxInQuoted;
         uint256[3] memory b = _bal();
         uint256 g0 = gasleft();
         vm.startPrank(fresh);
-        try BemBuyer(buyer).buy(fresh, -int256(BUY_BEM_UNITS), limit)
+        try BemBuyer(buyer).buy(fresh, -int256(BUY_BEM_UNITS), limit, maxIn)
         returns (int256 amount0Delta, int256 amount1Delta) {
             vm.stopPrank();
             _q("buyBem", g0 - gasleft(), b);
@@ -320,6 +316,20 @@ contract QuoteDryRunTest is Test {
                 _fail("buyBem", bytes("PARTIAL FILL: the price limit was reached before the exact BEM output"));
                 return false;
             }
+            // The buyer must hold nothing: bought BEM went to the wallet,
+            // owed WOKB went to the pool. Anything left would mean value
+            // parked where it does not belong.
+            if (!BemBuyer(buyer).isEmpty(BEM) || !BemBuyer(buyer).isEmpty(WOKB)) {
+                _fail("buyBem", bytes("SWAP BUYER NOT EMPTY after the swap - funds are sitting in the helper"));
+                return false;
+            }
+            _info("swapBuyerEmptyAfterSwap", "true");
+            // The allowance has served its purpose: revoke it so the helper
+            // keeps no live claim on the wallet.
+            vm.startPrank(fresh);
+            IERC20Like(WOKB).approve(buyer, 0);
+            vm.stopPrank();
+            _info("swapBuyerAllowanceRevoked", "true");
             return true;
         } catch (bytes memory reason) {
             vm.stopPrank();
@@ -349,7 +359,15 @@ contract QuoteDryRunTest is Test {
     /// the proven Tier 2 test uses (mintPrice 1e6 = 0.01 BEM per transistor).
     /// The measured BEM delta says what the factory actually pulls.
     function _stepCreateCpu() internal returns (bool, address, address) {
-        if (!_stepApprove("approveFactory", BEM, FACTORY)) return (false, address(0), address(0));
+        // Exact approval: the factory pulls `deployFee()` in BEM, so that
+        // value is what gets approved - read onchain, never assumed.
+        (bool okFee, uint256 deployFee) = _answerUint(FACTORY, "deployFee()");
+        if (!okFee) {
+            _fail("createCpu", bytes("deployFee() did not answer - refusing to guess an approval amount"));
+            return (false, address(0), address(0));
+        }
+        _info("factoryDeployFee_wei", vm.toString(deployFee));
+        if (!_stepApprove("approveFactory", BEM, FACTORY, deployFee)) return (false, address(0), address(0));
         uint256[3] memory b = _bal();
         uint256 g0 = gasleft();
         vm.startPrank(fresh);
@@ -376,11 +394,20 @@ contract QuoteDryRunTest is Test {
     /// native protocol fee would need the value route, which is the fallback
     /// below - whichever succeeds is the one whose gas gets quoted.
     function _stepMint(address transistors) internal returns (bool) {
-        if (!_stepApprove("approveTransistors", BEM, transistors)) return false;
+        // The fees are read BEFORE the approval, so the approved amount is
+        // the amount this mint will actually pull: flat protocol fee plus
+        // gate price x gates (gate price is 0 here, so it is the flat fee).
         (bool okMp, uint256 mintPrice) = _answerUint(transistors, "mintPrice()");
         (bool okPf, uint256 protocolFee) = _answerUint(transistors, "protocolFee()");
         _info("mintPrice_bemUnits", okMp ? vm.toString(mintPrice) : "did not answer");
         _info("transistorsProtocolFee_wei", okPf ? vm.toString(protocolFee) : "did not answer");
+        if (!okMp || !okPf) {
+            _fail("mint", bytes("mintPrice()/protocolFee() did not answer - refusing to guess an approval amount"));
+            return false;
+        }
+        uint256 mintAllowance = protocolFee + mintPrice * Split3.NAND_COUNT;
+        _info("mintApprovedAmount", vm.toString(mintAllowance));
+        if (!_stepApprove("approveTransistors", BEM, transistors, mintAllowance)) return false;
 
         {
             uint256[3] memory b = _bal();
@@ -559,7 +586,8 @@ contract QuoteDryRunTest is Test {
 
         if (!_stepWrap()) return;
         if (!_stepDeployBuyer()) return;
-        if (!_stepApprove("approveBuyer", WOKB, buyer)) return;
+        _quoteMaxIn();
+        if (!_stepApprove("approveBuyer", WOKB, buyer, maxInQuoted)) return;
         if (!_stepBuyBem()) return;
         if (!_stepUnwrap()) return;
 

@@ -1,0 +1,104 @@
+﻿[2026-11-20 02:28:33Z] ====================================================================================================
+[2026-11-20 02:28:33Z] PAGO TIER 2 TAPE-OUT - QUOTE-ONLY DRY RUN (no transactions, no key, no approvals)
+[2026-11-20 02:28:33Z] RPC: https://rpc.xlayer.tech   chain expected: 196 (X Layer mainnet)
+[2026-11-20 02:28:33Z] Quote started at 2026-11-20 02:28:33Z
+[2026-11-20 02:28:33Z] ====================================================================================================
+[2026-11-20 02:28:38Z] block number                                 76,372,681
+[2026-11-20 02:28:38Z] gas price (wei, live)                        20,000,001
+[2026-11-20 02:28:38Z] gas price (gwei)                             0.020
+[2026-11-20 02:28:38Z] - price sources 
+[2026-11-20 02:28:39Z] OKB/USD (CoinGecko)                          $84.02  (24h change -3.86%)  fetched 2026-11-20 02:28:39Z
+[2026-11-20 02:28:39Z] BEM/USD (CoinGecko global)                   $11.55  (24h change 0.89%)  fetched 2026-11-20 02:28:39Z
+[2026-11-20 02:28:43Z] BEM pool spot (BEM/WOKB 1% pool)             0.136724 WOKB/BEM = $11.49  read 2026-11-20 02:28:43Z
+[2026-11-20 02:28:43Z] BEM cross-check (pool vs CoinGecko)          0.5% apart
+[2026-11-20 02:28:43Z] BEM price used for fee lines                 CoinGecko global
+[2026-11-20 02:28:43Z] - running the local fork simulation 
+[2026-11-20 02:28:43Z]   (test/QuoteDryRun.t.sol: empty wallet -> swap buyer -> buy BEM -> createCPU (gate price 0) -> mint 104 -> tapeout -> deploy Pago -> sweep)
+[2026-11-20 02:28:43Z]   this takes about a minute...
+[2026-11-20 02:29:41Z] simulation result                            [PASS]
+[2026-11-20 02:29:41Z] forked at block                              76372695
+[2026-11-20 02:29:41Z] - simulation facts (measured on the fork) 
+[2026-11-20 02:29:41Z] freshWallet                                  0xD0B15dD57218Bf387Abc116ff2491BFFfD7ce34A
+[2026-11-20 02:29:41Z] factory                                      0x1f09DAeFA827f02CBb40967cc91b259763760761
+[2026-11-20 02:29:41Z] bem                                          0x60e62Efa9405d6873C5deaBD4E6CC91c25363952
+[2026-11-20 02:29:41Z] pool                                         0x2CcF8aa17F5DF9Fb5D51C9de12135a913fF29f7A
+[2026-11-20 02:29:41Z] wokb                                         0xe538905cf8410324e03A5A23C1c177a474D59b2b
+[2026-11-20 02:29:41Z] swapBuyer                                    0x741E65097293276bc23d1Dd7646a95B7148B7Ac8
+[2026-11-20 02:29:41Z] quoteMode                                    READ-ONLY fork simulation from an empty wallet; nothing broadcast; no key used
+[2026-11-20 02:29:41Z] factoryDeployFee                             10000000
+[2026-11-20 02:29:41Z] factoryProtocolFee                           1000000
+[2026-11-20 02:29:41Z] gatePrice                                    0 (chosen like CPU #340; no floor on X Layer, probe-proven)
+[2026-11-20 02:29:41Z] buyBem_amount0_delta_bem                     -13200000
+[2026-11-20 02:29:41Z] buyBem_amount1_delta_wokb                    18231054630802872
+[2026-11-20 02:29:41Z] mintPrice_bemUnits                           0
+[2026-11-20 02:29:41Z] transistorsProtocolFee_wei                   1000000
+[2026-11-20 02:29:41Z] mintRoute                                    noValue (BEM allowance only)
+[2026-11-20 02:29:41Z] tapeoutFee_wei                               1300000000000000
+[2026-11-20 02:29:41Z] netlistBytes                                 728
+[2026-11-20 02:29:41Z] circuitId                                    1
+[2026-11-20 02:29:41Z] netlistServedBack                            true
+[2026-11-20 02:29:41Z] recordedShellCodehash                        0x8c799a18cd8e0d5f5f3c0cec4fbc145e2daf79f70c2b131c09d0f380921db545
+[2026-11-20 02:29:41Z] recordedBeacon                               0xf70d1ed4f62CF3780157B0b421b7E2F45bD0991C
+[2026-11-20 02:29:41Z] beaconReportsImpl                            0x977f217887E085D298Cb3819cDAD5A0ee35F29B2
+[2026-11-20 02:29:41Z] recordedImplCodehash                         0x7a15c353205e5245f40f5f5524542a982a4bb3b9a28476e4f10845163f941b30
+[2026-11-20 02:29:41Z] beaconMatchesRecorded18                      true
+[2026-11-20 02:29:41Z] implMatchesRecorded18                        true
+[2026-11-20 02:29:41Z] implHashMatchesRecorded18                    true
+[2026-11-20 02:29:41Z] pagoAddress                                  0x025145dDb1e814B29834E1Ae44087CD078Ff3D13
+[2026-11-20 02:29:41Z] evaluatorPinned                              true
+[2026-11-20 02:29:41Z] deployConfigNote                             BEM-shaped config (8 decimals); final token/cap/feeAccount are Deploy.s.sol env knobs (gas-insensitive)
+[2026-11-20 02:29:41Z] leftoverBemToSweep_bemUnits                  2200000
+[2026-11-20 02:29:41Z] leftoverOkbToSweep_wei                       480468945369197128
+[2026-11-20 02:29:41Z] sweepRecipient                               0x4bA5C4978ce19d239B237750e5939bf8F9D443b7
+[2026-11-20 02:29:41Z] freshBemAfterSweep_units                     0
+[2026-11-20 02:29:41Z] freshOkbAfterSweep_wei                       0
+[2026-11-20 02:29:52Z] - execution wallet (keystore pago-deployer, read-only) 
+[2026-11-20 02:29:52Z] native balance (OKB)                         29608427727769318
+[2026-11-20 02:29:52Z] nonce                                        0
+[2026-11-20 02:29:52Z] BEM balance                                  0
+[2026-11-20 02:29:52Z]   note: this wallet already holds funds; the quote below is still start-from-zero (conservative).
+[2026-11-20 02:29:52Z] 
+[2026-11-20 02:29:52Z] - per-step quote (USD at the prices and gas price above) 
+[2026-11-20 02:29:52Z]   STEP                          GAS    GAS USD  TOKEN MOVE                            TOKEN USD
+[2026-11-20 02:29:52Z]   ---------------------------------------------------------------------------------------------
+[2026-11-20 02:29:53Z]   wrap                       64,049      $0.00  -0.490000 OKB +0.490000 WOKB                  -
+[2026-11-20 02:29:53Z]   deployBuyer               415,276      $0.00  -                                             -
+[2026-11-20 02:29:53Z]   approveBuyer               54,365      $0.00  -                                             -
+[2026-11-20 02:29:53Z]   buyBem                    160,457      $0.00  +0.132000 BEM -0.018231 WOKB              $1.53
+[2026-11-20 02:29:53Z]   unwrap                     47,572      $0.00  +0.471769 OKB -0.471769 WOKB                  -
+[2026-11-20 02:29:53Z]   approveFactory             54,675      $0.00  -                                             -
+[2026-11-20 02:29:53Z]   createCpu                 744,827      $0.00  -0.100000 BEM                             $1.16
+[2026-11-20 02:29:53Z]   approveTransistors         54,676      $0.00  -                                             -
+[2026-11-20 02:29:53Z]   mint                      184,542      $0.00  -0.010000 BEM                             $0.12
+[2026-11-20 02:29:53Z]   tapeout                   550,953      $0.00  -0.001300 OKB                             $0.11
+[2026-11-20 02:29:53Z]   deployPago              3,526,258      $0.01  -                                             -
+[2026-11-20 02:29:53Z]   sweepBem                   62,156      $0.00  -0.022000 BEM                                 -
+[2026-11-20 02:29:53Z]   sweepOkb                   63,010      $0.00  -0.480469 OKB                                 -
+[2026-11-20 02:29:53Z] 
+[2026-11-20 02:29:53Z] - totals 
+[2026-11-20 02:29:53Z] transactions priced                          13
+[2026-11-20 02:29:53Z] raw execution gas                            5,982,816 units
+[2026-11-20 02:29:53Z] buffered gas (+21k/tx, +20%)                 7,506,979 units
+[2026-11-20 02:29:53Z] BEM bought incl. 20% buffer                  0.132000 BEM
+[2026-11-20 02:29:53Z] BEM spent (createCPU + transistor mint)      0.110000 BEM
+[2026-11-20 02:29:53Z] BEM leftover (swept back to owner)           0.022000 BEM
+[2026-11-20 02:29:53Z] 
+[2026-11-20 02:29:53Z] BEM fill cost (OKB -> BEM swap)              0.018231 OKB = $1.53
+[2026-11-20 02:29:53Z] effective BEM price paid (incl. 1% fee+impact) $11.60
+[2026-11-20 02:29:53Z] BEM market price used for fee lines          $11.55 (CoinGecko global)
+[2026-11-20 02:29:53Z] tape-out protocol fee                        0.001300 OKB = $0.11
+[2026-11-20 02:29:53Z] gas total (buffered)                         0.000150 OKB = $0.01
+[2026-11-20 02:29:53Z] 
+[2026-11-20 02:29:53Z] >>> TIER 2 QUOTED TOTAL (USD)                $1.65
+[2026-11-20 02:29:53Z] >>> FUND THE FRESH WALLET WITH               0.020364 OKB = $1.71   (incl. 1% price-move allowance + 20% gas buffer + 0.0005 dust)
+[2026-11-20 02:29:53Z]     the fee to ACQUIRE that OKB (exchange withdrawal / P2P) is NOT part of these figures.
+[2026-11-20 02:29:53Z] 
+[2026-11-20 02:29:53Z] - UNPRICEABLE (no price source; disclosed, not silently omitted) 
+[2026-11-20 02:29:53Z]   1. OKB acquisition: the fee/venue to turn fiat or exchange balance into OKB on X Layer (chain 196) - only the PRINCIPAL is priced above.
+[2026-11-20 02:29:53Z]   2. Price movement between this quote and execution: BEM 24h change 0.9%; thin 1% pool - re-run this script immediately before buying.
+[2026-11-20 02:29:53Z]   3. Swap fill at execution time: the fill above is exact as of the forked block (76372695); pool state will differ when the real swap runs.
+[2026-11-20 02:29:53Z]   4. Any chain fee component beyond gas x gas price: X Layer receipts expose no separate fee field, so none was priced - verify on the first real transaction.
+[2026-11-20 02:29:53Z] 
+[2026-11-20 02:29:53Z] Quote completed at 2026-11-20 02:29:53Z
+[2026-11-20 02:29:53Z] Every figure above carries that timestamp: prices, gas and fills are point-in-time and must be re-quoted before execution.
+[2026-11-20 02:29:53Z] ====================================================================================================

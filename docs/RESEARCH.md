@@ -503,8 +503,13 @@ why this section used to say "one transistor").
 So there are two routes to a Pago circuit on mainnet, both in BEM:
 
 1. **Our own processor**: `approve` 0.1 BEM → `createCPU` → mint `gates`
-   transistors (104 × 0.01 = **1.04 BEM** for Split3) → `tapeout`
-   (0.0013 native). One-time ≈ **1.14 BEM** + 0.0013 native + gas.
+   transistors in ONE call → `tapeout` (0.0013 native). The mint charges a
+   flat **0.01 BEM protocol fee per call** plus `gates × mintPrice`, and
+   `mintPrice` is the creator's argument at `createCPU` (§19 ran it at
+   0.01/gate = 1.05 BEM; **execution decision 2026-11-20: `mintPrice = 0`**,
+   the same as official CPU #340 — floor-free on X Layer, probe-proven in
+   `test/MintPriceProbe.t.sol`) → one-time ≈ **0.11 BEM** + 0.0013 native
+   + gas (0.1 createCPU + 0.01 flat mint fee).
 2. **Someone else's processor**: hold `gates` of its transistors → `tapeout`
    (0.0013 native). Cheaper when its transistors are cheap, but we do not
    control the processor.
@@ -580,10 +585,10 @@ Taped out as a *new* processor (route 1 in §13):
 
 | Item | Cost | Notes |
 |---|---|---|
-| Create processor | **0.1 BEM** | `approve` first, then `createCPU` with no value |
-| Mint transistors | **0.01 BEM each** | `tapeout` requires one HELD PER GATE → **104 for Split3 = 1.04 BEM** (§19) |
+| Create processor | **0.1 BEM** | `approve` first, then `createCPU` with no value; the `mintPrice` argument is set to **0** (creator's choice, same as CPU #340) |
+| Mint transistors | **0.01 BEM flat** | ONE `mint(0,104)` call: flat protocol fee per call + `gates × mintPrice` (= 0 here); `tapeout` requires one HELD PER GATE (§19). At 0.01/gate this line would instead be 104 × 0.01 + 0.01 = 1.05 BEM |
 | Tape out Split3 | **0.0013 native coin** (`TAPEOUT_FEE` = 1.3e15 wei) | 15 inputs, 1 output, 104 NANDs, 728-byte netlist |
-| **Total** | **≈ 1.14 BEM + 0.0013 native + gas** | BEM is buyable with OKB on Uniswap V3 X Layer |
+| **Total** | **≈ 0.11 BEM + 0.0013 native + gas** | Measured on a mainnet fork 2026-11-20: **$1.74** total (fund 0.0211 OKB ≈ $1.79) — transcript `docs/quote-dry-run-20261120-005520.log`; BEM is buyable with OKB on Uniswap V3 X Layer |
 
 **Units, corrected 2026-11-18:** everything above is on **X Layer mainnet,
 chain 196** — there is no second network involved. X Layer's native gas
@@ -723,7 +728,7 @@ payer.
 
 ### Not done
 
-Taping out Split3 still needs mainnet and ≈1.14 BEM + 0.0013 native OKB (§14), and
+Taping out Split3 still needs mainnet and ≈0.11 BEM + 0.0013 native OKB (§14), and
 mainnet remains read-only until the exact approval phrase is given.
 
 ---
@@ -853,7 +858,7 @@ with its 0.995 receipt, and an unknown id.
   out onto someone else's existing processor is cheaper (0.0013 native plus
   `gates` of its transistors) but **the processor owner controls it** — mint
   pricing, admission and that processor's rules are theirs; only route 1 in
-  §13 (our own processor, ≈1.14 BEM for Split3) keeps control with the
+  §13 (our own processor, ≈0.11 BEM for Split3) keeps control with the
   deployer. The README says the same. **Per-link cap:** not implemented.
 - **The contract-rule audit was made against the code alone**, because the
   master prompt's rule list was not in this repository. It has since been
@@ -1609,9 +1614,15 @@ First tapeout attempt failed with error `0x03dee4c5`, arguments
 Phase 0's 1-gate probe saw `required = 1`, which is why the docs used to say
 "one transistor". The mint: **no value + BEM allowance** (the native-value
 mint reverts empty — old processors charge native, new ones take BEM, §13);
-`mintPrice` = 1e6 = 0.01 BEM at 8 decimals. So the tape-out gate costs
-**104 × 0.01 = 1.04 BEM** — the route-1 total is **≈1.14 BEM + 0.0013
-native + gas** (§14, README and `config.js` corrected).
+`mintPrice` = 1e6 = 0.01 BEM at 8 decimals. The mint therefore cost
+104 × 0.01 + the flat 0.01 BEM per-call protocol fee = **1.05 BEM** (the old
+"1.04 / 1.14" figures missed that flat fee) — the route-1 total at that price
+is **≈1.15 BEM + 0.0013 native + gas**. **Execution decision 2026-11-20:** run
+with `mintPrice = 0` — the caller sets it, official CPU #340 runs at 0, and
+`test/MintPriceProbe.t.sol` proves the factory has no floor on X Layer — which
+brings the mints down to the flat 0.01 BEM alone and the route-1 total to
+**≈0.11 BEM + 0.0013 native + gas** (§14, README and `config.js` corrected;
+measured quote `docs/quote-dry-run-20261120-005520.log`, $1.74).
 
 ### Proves / does not prove
 

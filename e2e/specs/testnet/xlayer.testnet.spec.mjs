@@ -25,9 +25,11 @@ import { test, expect } from "@playwright/test";
    gasless payer path by a third party and claimed, settling through the
    DEFAULT table (claim event usedRuleSplit=false; payee received the full
    995,000 post-fee, which is what the receipt below shows). Its sibling leg A
-   (pago-261119-124452-a) settled through the RULE table instead - payee
-   497,500 plus 497,500 back to the rule seat - and is asserted once the
-   page's receipt can show which table applied (RESEARCH.md §17). */
+   (pago-261119-124452-a) settled through the RULE table instead — payee
+   497,500 plus the remaining seats to the rule table's other recipients —
+   and is asserted in its own test further down, because the page's receipt
+   now reads which table the circuit selected out of the claim event
+   (docs/RESEARCH.md §17). */
 const CLAIMED_LINK = "pago-261119-124452-b";
 
 test.describe("X Layer testnet read-only", () => {
@@ -76,18 +78,34 @@ test.describe("X Layer testnet read-only", () => {
     await expect(page.locator("#payCard .pay-token")).toContainText("X Layer testnet");
     await expect(page.locator("#payCard .pay-desc")).toContainText("live test: gasless payer path");
 
-    /* 1.000000 credited, 0.5% fee → 0.995000, which is exactly what this
-       link's default-table claim paid (its rule table 10/8/5 = 23 steps was
-       rejected, claim event usedRuleSplit=false). The same split formula the
-       contract uses, checked against a link that really paid. */
-    await expect(page.locator("#payCard .pay-receipt")).toBeVisible();
-    await expect(page.locator("#payCard .pay-receipt")).toContainText("Paid out to the payee");
-    await expect(page.locator("#payCard .pay-receipt")).toContainText("0.995");
+    /* 1.000000 credited, 0.5% fee → 0.995000 — but the receipt does not
+       compute that: it locates the claim block (the RPC caps eth_getLogs at
+       100 blocks), reads the LinkClaimed and LegPaid events of that exact
+       transaction and prints what they say. The generous timeout is the
+       locate-then-read trip, not a slow assertion. */
+    await expect(page.locator("#payCard .pay-receipt")).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator("#payCard .pay-receipt")).toContainText("Paid out to the payee", { timeout: 60_000 });
+    await expect(page.locator("#payCard .pay-receipt")).toContainText("0.995", { timeout: 60_000 });
+    await expect(page.locator("#payCard .pay-receipt")).toContainText("default split", { timeout: 60_000 });
 
     /* Nothing payable on a settled invoice: no approve, no pay, no claim. */
     await expect(page.locator("#payBtn")).toHaveCount(0);
     await expect(page.locator("#approveBtn")).toHaveCount(0);
     await expect(page.locator("#claimBtn")).toHaveCount(0);
+  });
+
+  test("a rule-table claim shows which table the circuit selected", async ({ page }) => {
+    /* Leg A of the same run: its rule table summed to exactly 20 steps, so
+       the circuit accepted it and the claim paid the rule seats — 497,500
+       to the payee, not the whole pool. The receipt must say "rule table"
+       and print the seat the chain actually paid. */
+    await page.goto(`/xlayer.html#pay/pago-261119-124452-a`);
+
+    await expect(page.locator("#payCard .pill")).toHaveText("Claimed", { timeout: 60_000 });
+    await expect(page.locator("#payCard .pay-receipt")).toContainText("Paid out to the payee", { timeout: 60_000 });
+    await expect(page.locator("#payCard .pay-receipt")).toContainText("rule table", { timeout: 60_000 });
+    await expect(page.locator("#payCard .pay-receipt")).toContainText("0.4975", { timeout: 60_000 });
+    await expect(page.locator("#payCard .pay-receipt")).toContainText("0.005", { timeout: 60_000 });
   });
 
   test("an unknown id says so instead of inventing an invoice", async ({ page }) => {

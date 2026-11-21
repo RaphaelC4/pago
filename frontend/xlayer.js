@@ -31,6 +31,17 @@ import {
   callData,
   decodeReturn,
 } from "./abi.js?v=20261121a";
+import {
+  EVT,
+  XLAYER_RECEIPT_SENTENCE,
+  formatUnits,
+  decodeLinkClaimed,
+  decodeLegs,
+  splitClaimLegs,
+  claimReceiptLines,
+  ledgerCsv,
+} from "./payout.js?v=20261121a";
+import { buildReceiptPdf, receiptFilename } from "./receipt.js?v=20261121a";
 
 /* ── configuration ──────────────────────────────────────────────────────── */
 
@@ -52,6 +63,9 @@ const MOCK = NET.tokenIsMock === true;
 /* The one label every surface must use. `pUSD` alone would read as a real
    stablecoin, which this is not. */
 const TOKEN_LABEL = MOCK ? `${NET.tokenSymbol} (MOCK)` : NET.tokenSymbol;
+/* The label every new surface prints: the chain id decides, never a
+   hard-coded string, so pointing this page at mainnet relabels it honestly. */
+const NETWORK_LABEL = CHAIN_ID === 196 ? "X Layer mainnet" : "X Layer testnet";
 const ENC = new TextEncoder();
 
 /* ── tiny helpers ───────────────────────────────────────────────────────── */
@@ -206,6 +220,205 @@ async function rpc(method, params) {
 }
 
 const ethCall = (to, data) => rpc("eth_call", [{ to, data }, "latest"]);
+
+/* One JSON-RPC *batch* request: an array of calls in a single POST. The X
+   Layer testnet endpoint accepts batches (verified live), and its
+   eth_getLogs caps a block range at 100 — so locating a claim needs many
+   cheap probes, and batching keeps that to a handful of round trips.
+   Responses come back matched by id, not by position. */
+async function rpcBatchOnceAt(url, calls) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 20_000);
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(calls.map(([method, params], i) => ({ jsonrpc: "2.0", id: i + 1, method, params }))),
+      signal: ctl.signal,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const body = await res.json();
+    if (!Array.isArray(body)) throw new Error("rpc: endpoint does not accept batch arrays");
+    const byId = new Map(body.map((r) => [r.id, r]));
+    return calls.map((_, i) => {
+      const r = byId.get(i + 1);
+      if (!r) throw new Error("rpc: batch response missing an id");
+      if (r.error) {
+        const e = new Error(r.error.message || "rpc error");
+        e.rpc = true;
+        e.code = r.error.code;
+        throw e;
+      }
+      return r.result;
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/* Same endpoint failover as `rpc()`, for batches. If no endpoint takes the
+   batch shape, fall back to one request per call — slower, never wrong. */
+async function rpcBatch(calls) {
+  let lastErr;
+  for (let round = 0; round < 3; round++) {
+    for (const url of RPC_URLS) {
+      try {
+        return await rpcBatchOnceAt(url, calls);
+      } catch (err) {
+        lastErr = err;
+        if (err && err.rpc) throw err;
+      }
+    }
+    if (round < 2) await new Promise((r) => setTimeout(r, 400 * (round + 1)));
+  }
+  /* No endpoint took the batch shape (unsupported, too large, or a
+     transport failure) — every call is a read, so running them one by one
+     through the normal failover path is slower but never wrong. A chain
+     answer (`err.rpc`) already threw above: the batch was understood. */
+  if (lastErr && !lastErr.rpc) {
+    return Promise.all(calls.map(([method, params]) => rpc(method, params)));
+  }
+  throw lastErr || new Error("no RPC endpoint answered");
+}
+
+const blockTimestampMs = async (n) => {
+  const b = await rpc("eth_getBlockByNumber", ["0x" + n.toString(16), false]);
+  return Number(BigInt(b.timestamp)) * 1000;
+};
+
+/* First block whose timestamp is >= `targetMs` — the claim's own block,
+   since `claimedAt` IS `block.timestamp * 1000` (Pago.nowMs). A linear scan
+   over 46M blocks is impossible and eth_getLogs only allows 100-block
+   windows, so: binary search with 10 probes per round in one batch (the
+   endpoint rejects batches over 10 calls with -32014), ~8 rounds, then the
+   caller queries a 100-block window around it. Returns { block, latest } —
+   the head is fetched once and reused. */
+async function findBlockAtOrAfter(targetMs) {
+  const latest = Number(BigInt(await rpc("eth_blockNumber", [])));
+  let lo = 0;
+  let hi = latest; // invariant: ts(hi) >= target (the chain's head is "now")
+  if ((await blockTimestampMs(hi)) < targetMs) return { block: null, latest }; // claim is in the future? no block
+  while (hi - lo > 1) {
+    const span = hi - lo;
+    const n = Math.min(10, span);
+    const probes = [];
+    for (let i = 1; i <= n; i++) probes.push(lo + Math.floor((span * i) / (n + 1)));
+    let stamps = await rpcBatch(probes.map((b) => ["eth_getBlockByNumber", ["0x" + b.toString(16), false]]));
+    /* The endpoint answers `null` for some block numbers (flaky, seen live
+       on old heights). A null must NOT read as "infinitely far in the
+       future" — that drags `hi` onto an ancient wrong block and the caller
+       then queries a window where the claim's events cannot be. Re-read the
+       probe alone; if it still comes back empty, skip it: only a block we
+       actually read may move `hi`. */
+    stamps = await Promise.all(stamps.map((s, i) =>
+      s && s.timestamp ? Promise.resolve(s)
+        : rpc("eth_getBlockByNumber", ["0x" + probes[i].toString(16), false]).catch(() => null)));
+    let hit = -1;
+    for (let i = 0; i < probes.length; i++) {
+      if (!stamps[i] || !stamps[i].timestamp) continue; // unknown: leave both bounds alone
+      const ts = Number(BigInt(stamps[i].timestamp)) * 1000;
+      if (ts >= targetMs) { hit = i; break; }
+    }
+    if (hit === -1) lo = probes[probes.length - 1];
+    else hi = probes[hit];
+  }
+  return { block: hi, latest };
+}
+
+/* ── claim evidence: the LinkClaimed / LegPaid / LegOwed events ──────────
+   Everything the claimed receipt and the CSV print comes from here — the
+   events of the claim transaction itself, never a recomputation. The RPC's
+   100-block log cap means: locate the claim block by claimedAt, then read
+   a window around it. One result per link, cached for the session. */
+const evidenceCache = new Map();
+
+async function readClaimEvidence(link) {
+  if (evidenceCache.has(link.linkId)) return evidenceCache.get(link.linkId);
+
+  const key = decodeReturn(["bytes32"], await ethCall(PAGO, callData(SEL.linkKeyOf, ["string"], [link.linkId])))[0];
+  const claimedAt = Number(link.claimedAt);
+  if (!claimedAt) throw new Error("this link was never claimed");
+
+  const { block, latest } = await findBlockAtOrAfter(claimedAt);
+  if (block === null) throw new Error("could not locate the claim block on the chain");
+
+  const from = Math.max(0, block - 5);
+  const to = Math.min(latest, block + 94); // <= 100 blocks: the endpoint's cap
+  const range = { fromBlock: "0x" + from.toString(16), toBlock: "0x" + to.toString(16) };
+  const topicFor = (t) => ({ address: PAGO, topics: [t, key], ...range });
+
+  const [claimedLogs, paidLogs, owedLogs] = await rpcBatch([
+    ["eth_getLogs", [topicFor(EVT.linkClaimed)]],
+    ["eth_getLogs", [topicFor(EVT.legPaid)]],
+    ["eth_getLogs", [topicFor(EVT.legOwed)]],
+  ]);
+  if (!claimedLogs.length) throw new Error("the claim event was not found in its block window");
+
+  const evidence = {
+    claim: decodeLinkClaimed(claimedLogs[0]),
+    legs: decodeLegs(paidLogs, owedLogs),
+    block,
+  };
+  evidenceCache.set(link.linkId, evidence);
+  return evidence;
+}
+
+/* Render the claimed receipt from the claim's own events: the pool, the
+   fee, which table the circuit selected, one row per leg as the transaction
+   emitted them, and the claim hash. Called by renderPay for Claimed links;
+   the shell is already on screen, so a slow RPC only delays these rows. */
+async function fillClaimReceipt(link) {
+  const { claim, legs } = await readClaimEvidence(link);
+  const summary = $("#claimSummary");
+  const rows = $("#claimRows");
+  const foot = $("#claimFoot");
+  if (!summary || !rows || !foot) return; // navigated away mid-read
+
+  summary.textContent = `${formatUnits(claim.payout, DECIMALS)} ${TOKEN_LABEL} released, ${formatUnits(claim.fee, DECIMALS)} ${TOKEN_LABEL} fee`;
+
+  const { feeLeg, seatLegs } = splitClaimLegs(legs, claim.fee, NET.feeAccount);
+  const seatRow = (label, leg) => `
+    <span class="rcpt-k">${label}</span><span class="rcpt-v" title="${esc(leg.recipient)}">${formatUnits(leg.amount, DECIMALS)} ${esc(TOKEN_LABEL)} &rarr; ${leg.kind === "owed" ? "owed in the contract &rarr; " : ""}${truncate(leg.recipient, 8, 6)}</span>`;
+
+  rows.innerHTML = `
+    <span class="rcpt-k">split applied</span><span class="rcpt-v">${claim.usedRuleSplit ? "rule table (the circuit accepted it)" : "default split"}</span>
+    <span class="rcpt-k">payout pool</span><span class="rcpt-v">${formatUnits(claim.payout, DECIMALS)} ${esc(TOKEN_LABEL)}</span>
+    <span class="rcpt-k">fee</span><span class="rcpt-v">${formatUnits(claim.fee, DECIMALS)} ${esc(TOKEN_LABEL)}${feeLeg ? ` &rarr; ${truncate(feeLeg.recipient, 8, 6)}` : ""}</span>
+    ${seatLegs.map((leg, i) => seatRow(`seat ${i + 1}${leg.kind === "owed" ? " (owed)" : ""}`, leg)).join("")}
+    <span class="rcpt-k">payee</span><span class="rcpt-v mono">${esc(link.creator)}</span>
+    <span class="rcpt-k">payer</span><span class="rcpt-v mono">${esc(link.paidBy)}</span>
+    <span class="rcpt-k">claimed</span><span class="rcpt-v">${esc(fmtDate(link.claimedAt))}</span>
+    <span class="rcpt-k">claim tx</span><span class="rcpt-v mono"><a href="${esc(txUrl(claim.txHash))}" target="_blank" rel="noopener">${truncate(claim.txHash, 10, 6)}</a></span>`;
+
+  foot.innerHTML = `<span class="tiny">${esc(XLAYER_RECEIPT_SENTENCE)}. Amounts are the claim transaction's events, not recomputed.</span>
+    <button class="btn btn-sm rcpt-pdf" type="button" id="claimPdf"><span>Download PDF receipt</span></button>`;
+  $("#claimPdf")?.addEventListener("click", () => {
+    const lines = claimReceiptLines({
+      linkId: link.linkId,
+      description: link.description,
+      credited: link.paidAmount > 0n ? link.paidAmount : link.amount,
+      payer: link.paidBy,
+      claimedAtMs: Number(link.claimedAt),
+      decimals: DECIMALS,
+      tokenLabel: TOKEN_LABEL,
+      networkLabel: NETWORK_LABEL,
+      claim,
+      legs,
+      feeAccount: NET.feeAccount,
+      claimTxUrl: txUrl(claim.txHash),
+    });
+    const blob = new Blob([buildReceiptPdf(lines)], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = receiptFilename(link.linkId);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast("Receipt downloaded");
+  });
+}
 
 /* ── contract reads ─────────────────────────────────────────────────────── */
 
@@ -724,11 +937,16 @@ async function renderPay(id) {
   const isCreator = sameAddr(account, link.creator);
 
   /* ── facts every state shares ── */
+  /* On a claimed link "payee receives" would contradict the receipt below
+     it (the rule table may have paid the payee a seat, not the pool), so
+     the row is labelled for what it is: the post-fee pool — which is
+     exactly what the claim event's `payout` field carries. */
+  const isClaimed = statusNameNow === "Claimed";
   const facts = `
     <div class="pay-items">
       <span class="pi-h">invoice</span>
       <div class="pi-row"><span class="pi-l">amount</span><span class="pi-p">${fmt(link.amount)} ${esc(TOKEN_LABEL)}</span></div>
-      <div class="pi-row"><span class="pi-l">payee receives</span><span class="pi-p">${fmt(payout)} ${esc(TOKEN_LABEL)}</span></div>
+      <div class="pi-row"><span class="pi-l">${isClaimed ? "payout pool" : "payee receives"}</span><span class="pi-p">${fmt(payout)} ${esc(TOKEN_LABEL)}</span></div>
       <div class="pi-row"><span class="pi-l">fee (${NET.feeBps / 100}%)</span><span class="pi-p">${fmt(fee)} ${esc(TOKEN_LABEL)}</span></div>
       <div class="pi-row"><span class="pi-l">link id</span><span class="pi-p mono">${esc(link.linkId)}</span></div>
       <div class="pi-row"><span class="pi-l">created</span><span class="pi-p">${esc(fmtDate(link.createdAt))}</span></div>
@@ -772,23 +990,41 @@ async function renderPay(id) {
 
   /* ── terminal states: nothing to do, say so plainly ── */
   if (statusNameNow === "Claimed") {
-    setActions(`<div class="pay-receipt">
+    /* The strong sentence and the stored facts render immediately; the
+       payout event itself is a separate live read (the RPC caps eth_getLogs
+       at 100 blocks, so the claim has to be located first), so its rows and
+       the PDF button appear when it answers. Nothing here is recomputed —
+       every amount below comes out of the claim's own events. */
+    setActions(`<div class="pay-receipt" id="claimReceipt">
       <div class="rcpt-head">
         <span class="chk" aria-hidden="true">
           <svg viewBox="0 0 16 16" width="13" height="13"><path d="M3.5 8.4 6.6 11.5 12.5 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </span>
         <div class="rcpt-head-txt">
           <strong>Paid out to the payee</strong>
-          <span>${fmt(payout)} ${esc(TOKEN_LABEL)} released, ${fmt(fee)} ${esc(TOKEN_LABEL)} fee</span>
+          <span id="claimSummary">Reading the payout event from the chain&hellip;</span>
         </div>
       </div>
-      <div class="rcpt-rows">
+      <div class="rcpt-rows" id="claimRows">
         <span class="rcpt-k">payee</span><span class="rcpt-v mono">${esc(link.creator)}</span>
         <span class="rcpt-k">payer</span><span class="rcpt-v mono">${esc(link.paidBy)}</span>
         <span class="rcpt-k">claimed</span><span class="rcpt-v">${esc(fmtDate(link.claimedAt))}</span>
       </div>
+      <div class="rcpt-foot" id="claimFoot"></div>
     </div>`);
     setNote("A link can only be claimed once, and only ever by its payee.");
+    fillClaimReceipt(link).catch((err) => {
+      /* The stored rows above are contract state and stay; only the event
+         read failed, and the page says exactly that instead of guessing. */
+      const el = $("#claimReceipt");
+      if (!el) return; // the user navigated away mid-read
+      const summary = $("#claimSummary");
+      if (summary) summary.textContent = "The payout event could not be read from the chain just now.";
+      const foot = $("#claimFoot");
+      if (foot) foot.innerHTML = `<span class="tiny">${esc(friendly(err))}</span>
+        <button class="btn btn-sm ghost" type="button" id="claimRetry"><span>Try again</span></button>`;
+      $("#claimRetry")?.addEventListener("click", () => fillClaimReceipt(link).catch(() => {}));
+    });
     return;
   }
 
@@ -1041,6 +1277,7 @@ async function loadLedger() {
     list.innerHTML = `<div class="empty-line">That is not an address. Pago ledgers are keyed by a 0x… address, not a NEAR account name.</div>`;
     $("#ledgerStats").hidden = true;
     $("#ledgerFilters").hidden = true;
+    $("#ledgerCsv").hidden = true;
     return;
   }
   input.value = creator;
@@ -1048,6 +1285,7 @@ async function loadLedger() {
   list.innerHTML = `<div class="empty-line">Reading ${truncate(creator, 10, 6)} from the chain…</div>`;
   $("#ledgerStats").hidden = true;
   $("#ledgerFilters").hidden = true;
+  $("#ledgerCsv").hidden = true;
 
   try {
     ledgerLinks = await readLedger(creator);
@@ -1065,10 +1303,12 @@ async function loadLedger() {
     $("#tableCreator").textContent = truncate(creator, 10, 6);
     $("#tableCreator").title = creator;
     $("#tableCount").textContent = `${ledgerLinks.length} link${ledgerLinks.length === 1 ? "" : "s"} · read from getLinksByCreator`;
+    $("#ledgerCsv").hidden = ledgerLinks.length === 0;
 
     renderLedger();
   } catch (err) {
     ledgerLinks = [];
+    $("#ledgerCsv").hidden = true;
     list.innerHTML = `<div class="empty-line">Could not read the chain: ${esc(friendly(err))}
       <div class="cancel-row"><button class="btn ghost" type="button" id="ledgerRetry"><span>Try again</span></button></div></div>`;
     $("#ledgerRetry")?.addEventListener("click", loadLedger);
@@ -1181,6 +1421,47 @@ function boot() {
   $("#createForm")?.addEventListener("submit", onCreate);
 
   $("#ledgerLoad")?.addEventListener("click", loadLedger);
+
+  /* CSV export: one row per link, with the claim's event facts for claimed
+     links (read live, sequentially — the RPC's log cap makes each one a
+     locate-then-read) and empty claim columns for anything else. */
+  $("#ledgerCsv")?.addEventListener("click", async () => {
+    const btn = $("#ledgerCsv");
+    if (!ledgerLinks.length) return;
+    btn.disabled = true;
+    const label = btn.querySelector("span");
+    const wasLabel = label.textContent;
+    label.textContent = "Collecting claim events…";
+    try {
+      const rows = [];
+      let eventMisses = 0;
+      for (const link of ledgerLinks) {
+        let claim = null;
+        if (statusName(link) === "Claimed") {
+          try { claim = (await readClaimEvidence(link)).claim; } catch { eventMisses++; }
+        }
+        rows.push({ link, claim });
+      }
+      const csv = ledgerCsv(rows, { tokenSymbol: TOKEN_LABEL, decimals: DECIMALS });
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `pago-ledger-${($("#creatorInput").value || "links").trim().slice(0, 42)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      toast(eventMisses
+        ? `CSV downloaded — ${eventMisses} claim event${eventMisses === 1 ? "" : "s"} could not be read; those claim columns are empty.`
+        : "CSV downloaded");
+    } catch (err) {
+      toast(friendly(err));
+    } finally {
+      btn.disabled = false;
+      label.textContent = wasLabel;
+    }
+  });
   $("#creatorInput")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); loadLedger(); }
   });

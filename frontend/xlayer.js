@@ -21,7 +21,7 @@
    two transactions. A rejection the chain makes is surfaced, never papered
    over. */
 
-import { XLAYER } from "./config.js?v=20261119a";
+import { XLAYER } from "./config.js?v=20261121b";
 import {
   SEL,
   GET_LINK_TYPES,
@@ -45,28 +45,46 @@ import { buildReceiptPdf, receiptFilename } from "./receipt.js?v=20261121a";
 
 /* ── configuration ──────────────────────────────────────────────────────── */
 
-/* This page is deliberately testnet-only: `pago.mainnet` is `null` until a
-   mainnet deploy is explicitly approved, and there is nothing to point at
-   until then. Chain 1952, one endpoint list, one token. */
-const NET = XLAYER.pago.testnet;
+/* `chainId` in the URL selects the configured network; the public default is
+   testnet. Network labels and wallet requests always come from this id. */
+const NETWORKS = [XLAYER.pago.testnet, XLAYER.pago.mainnet].filter(Boolean);
+const requestedChainId = Number(new URLSearchParams(location.search).get("chainId"));
+const NET = NETWORKS.find((entry) => entry.chainId === requestedChainId) || XLAYER.pago.testnet;
 const CHAIN_ID = NET.chainId;
 const CHAIN_HEX = "0x" + CHAIN_ID.toString(16);
 const PAGO = NET.pago;
-const TOKEN = NET.token;
+const NETWORK_CONFIG = CHAIN_ID === 196 ? XLAYER.mainnet : XLAYER.testnet;
+const TOKEN_OPTIONS = NET.tokens || [{
+  address: NET.token,
+  symbol: NET.tokenSymbol,
+  decimals: NET.tokenDecimals,
+  isMock: NET.tokenIsMock === true,
+}];
+const requestedToken = new URLSearchParams(location.search).get("token");
+let activeToken = TOKEN_OPTIONS.find((entry) => entry.address.toLowerCase() === String(requestedToken || "").toLowerCase()) || TOKEN_OPTIONS[0];
+let TOKEN = activeToken.address;
 
 /* Deduped: config carries the endpoint on both the pago block and the
    testnet block, and they are the same URL today. */
-const RPC_URLS = [...new Set([NET.rpc, ...XLAYER.testnet.rpcUrls].filter(Boolean))];
+const RPC_URLS = [...new Set([NET.rpc, ...NETWORK_CONFIG.rpcUrls].filter(Boolean))];
 
-const DECIMALS = NET.tokenDecimals;
-const MOCK = NET.tokenIsMock === true;
+let DECIMALS = activeToken.decimals ?? NET.tokenDecimals;
+let MOCK = activeToken.isMock === true || (activeToken.isMock !== false && NET.tokenIsMock === true);
 /* The one label every surface must use. `pUSD` alone would read as a real
    stablecoin, which this is not. */
-const TOKEN_LABEL = MOCK ? `${NET.tokenSymbol} (MOCK)` : NET.tokenSymbol;
+let TOKEN_LABEL = MOCK ? `${activeToken.symbol} (MOCK)` : activeToken.symbol;
 /* The label every new surface prints: the chain id decides, never a
    hard-coded string, so pointing this page at mainnet relabels it honestly. */
 const NETWORK_LABEL = CHAIN_ID === 196 ? "X Layer mainnet" : "X Layer testnet";
 const ENC = new TextEncoder();
+
+function selectToken(address) {
+  activeToken = TOKEN_OPTIONS.find((entry) => entry.address.toLowerCase() === String(address).toLowerCase()) || TOKEN_OPTIONS[0];
+  TOKEN = activeToken.address;
+  DECIMALS = activeToken.decimals ?? NET.tokenDecimals;
+  MOCK = activeToken.isMock === true || (activeToken.isMock !== false && NET.tokenIsMock === true);
+  TOKEN_LABEL = MOCK ? `${activeToken.symbol} (MOCK)` : activeToken.symbol;
+}
 
 /* ── tiny helpers ───────────────────────────────────────────────────────── */
 
@@ -95,6 +113,10 @@ const sameAddr = (a, b) =>
   typeof a === "string" && typeof b === "string" && a.toLowerCase() === b.toLowerCase();
 
 const isAddress = (a) => /^0x[0-9a-fA-F]{40}$/.test(String(a || ""));
+
+/* The zero address marks an unused split seat on the wire (abi.js
+   SPLIT_TYPES: three recipients, three shares). */
+const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
 
 /* base units -> human string, grouped, no float anywhere */
 function fmt(raw, decimals = DECIMALS) {
@@ -369,26 +391,35 @@ async function readClaimEvidence(link) {
    the shell is already on screen, so a slow RPC only delays these rows. */
 async function fillClaimReceipt(link) {
   const { claim, legs } = await readClaimEvidence(link);
+  const amount = $("#claimAmount");
   const summary = $("#claimSummary");
   const rows = $("#claimRows");
   const foot = $("#claimFoot");
   if (!summary || !rows || !foot) return; // navigated away mid-read
 
-  summary.textContent = `${formatUnits(claim.payout, DECIMALS)} ${TOKEN_LABEL} released, ${formatUnits(claim.fee, DECIMALS)} ${TOKEN_LABEL} fee`;
+  if (amount) amount.textContent = `${formatUnits(claim.payout, DECIMALS)} ${TOKEN_LABEL}`;
+  summary.textContent = `${formatUnits(claim.fee, DECIMALS)} ${TOKEN_LABEL} fee · amounts read from payout events`;
 
   const { feeLeg, seatLegs } = splitClaimLegs(legs, claim.fee, NET.feeAccount);
-  const seatRow = (label, leg) => `
-    <span class="rcpt-k">${label}</span><span class="rcpt-v" title="${esc(leg.recipient)}">${formatUnits(leg.amount, DECIMALS)} ${esc(TOKEN_LABEL)} &rarr; ${leg.kind === "owed" ? "owed in the contract &rarr; " : ""}${truncate(leg.recipient, 8, 6)}</span>`;
+  const seatRow = (leg, index) => `
+    <div class="rcpt-event-row"><span>Seat ${index + 1}${leg.kind === "owed" ? " · owed" : ""}</span><strong title="${esc(leg.recipient)}">${formatUnits(leg.amount, DECIMALS)} ${esc(TOKEN_LABEL)} <i>→ ${truncate(leg.recipient, 8, 6)}</i></strong></div>`;
 
-  rows.innerHTML = `
-    <span class="rcpt-k">split applied</span><span class="rcpt-v">${claim.usedRuleSplit ? "rule table (the circuit accepted it)" : "default split"}</span>
-    <span class="rcpt-k">payout pool</span><span class="rcpt-v">${formatUnits(claim.payout, DECIMALS)} ${esc(TOKEN_LABEL)}</span>
-    <span class="rcpt-k">fee</span><span class="rcpt-v">${formatUnits(claim.fee, DECIMALS)} ${esc(TOKEN_LABEL)}${feeLeg ? ` &rarr; ${truncate(feeLeg.recipient, 8, 6)}` : ""}</span>
-    ${seatLegs.map((leg, i) => seatRow(`seat ${i + 1}${leg.kind === "owed" ? " (owed)" : ""}`, leg)).join("")}
-    <span class="rcpt-k">payee</span><span class="rcpt-v mono">${esc(link.creator)}</span>
-    <span class="rcpt-k">payer</span><span class="rcpt-v mono">${esc(link.paidBy)}</span>
-    <span class="rcpt-k">claimed</span><span class="rcpt-v">${esc(fmtDate(link.claimedAt))}</span>
-    <span class="rcpt-k">claim tx</span><span class="rcpt-v mono"><a href="${esc(txUrl(claim.txHash))}" target="_blank" rel="noopener">${truncate(claim.txHash, 10, 6)}</a></span>`;
+  rows.innerHTML = `<div class="rcpt-pairs">
+      <div class="rcpt-pair"><span>Date</span><strong>${esc(fmtDate(link.claimedAt))}</strong></div>
+      <div class="rcpt-pair"><span>Status</span><strong class="rcpt-complete">Completed</strong></div>
+      <div class="rcpt-pair"><span>Recipient</span><strong class="mono" title="${esc(link.creator)}">${truncate(link.creator, 8, 6)}</strong></div>
+      <div class="rcpt-pair"><span>Split applied</span><strong>${claim.usedRuleSplit ? "Rule table" : "Default split"}</strong></div>
+      <div class="rcpt-pair"><span>Pago fee</span><strong>${formatUnits(claim.fee, DECIMALS)} ${esc(TOKEN_LABEL)}${feeLeg ? ` · ${truncate(feeLeg.recipient, 7, 5)}` : ""}</strong></div>
+    </div>
+    <details class="rcpt-more">
+      <summary>More details <span aria-hidden="true">›</span></summary>
+      <div class="rcpt-event-rows">
+        <div class="rcpt-event-row"><span>Payout pool</span><strong>${formatUnits(claim.payout, DECIMALS)} ${esc(TOKEN_LABEL)}</strong></div>
+        ${seatLegs.map(seatRow).join("")}
+        <div class="rcpt-event-row"><span>Payer</span><strong class="mono" title="${esc(link.paidBy)}">${truncate(link.paidBy, 8, 6)}</strong></div>
+        <div class="rcpt-event-row"><span>Claim transaction</span><strong class="mono"><a href="${esc(txUrl(claim.txHash))}" target="_blank" rel="noopener">${truncate(claim.txHash, 10, 6)}</a></strong></div>
+      </div>
+    </details>`;
 
   foot.innerHTML = `<span class="tiny">${esc(XLAYER_RECEIPT_SENTENCE)}. Amounts are the claim transaction's events, not recomputed.</span>
     <button class="btn btn-sm rcpt-pdf" type="button" id="claimPdf"><span>Download PDF receipt</span></button>`;
@@ -427,6 +458,46 @@ async function readLink(id) {
   const ret = await ethCall(PAGO, data);
   const [found, link] = decodeReturn(GET_LINK_TYPES, ret);
   return { found, link };
+}
+
+async function readPaymentPolicy(token) {
+  const [ruleCheckData, capData] = await Promise.all([
+    ethCall(PAGO, callData(SEL.evaluatorPinned, [], [])),
+    ethCall(PAGO, callData(SEL.maxLinkAmountUnpinned, ["address"], [token])),
+  ]);
+  return {
+    ruleCheckPasses: decodeReturn(["bool"], ruleCheckData)[0],
+    cap: decodeReturn(["uint256"], capData)[0],
+  };
+}
+
+function splitRowsMarkup(split, payee) {
+  return split.shares.map((rawShare, index) => {
+    const share = Number(rawShare);
+    const recipient = split.recipients[index];
+    const destination = share === 0 ? "Unused seat" : sameAddr(recipient, payee) ? "Payee wallet" : truncate(recipient, 8, 6);
+    return `<span>${share === 0 ? "Seat " + (index + 1) : `${share * 5}% · ${destination}`}</span>`;
+  }).join("");
+}
+
+function paymentRulesMarkup(link, policy) {
+  const cap = policy?.cap ?? BigInt(NET.unpinnedCap);
+  const enforcement = policy
+    ? policy.ruleCheckPasses ? "Stored · not enforced while the live rule check passes" : "Enforced now · the live rule check did not pass"
+    : "Live enforcement state unavailable; payment is paused until it can be read";
+  const processor = CHAIN_ID === 196 ? NET.processor : NET.processorStandIn;
+  const processorLabel = CHAIN_ID === 196 ? "Processor" : "Processor (EVM stand-in, not hardware)";
+  const circuitId = CHAIN_ID === 196 ? ` · circuit ${NET.circuitId}` : " · Split3 circuit";
+  const testnetReferences = CHAIN_ID === 1952
+    ? `<p class="rule-note">Circuit beacon (MOCK): <span class="mono">${esc(NET.circuitBeaconMock)}</span>. testnet pin reference is the MOCK stand-in; mainnet uses the recorded TapeOut references.</p>`
+    : "";
+  return `<section class="pay-rule-card" aria-label="Payment rule and fallback details">
+    <div class="pay-rule-title"><span>Before you pay</span><span class="rule-tag">Split3 rule</span></div>
+    <div class="pay-rule-row"><b>Rule</b><div>Checks whether the three rule shares total 100% (${esc(NETWORK_LABEL)}${circuitId}).<div class="rule-share-list">${splitRowsMarkup(link.ruleSplit, link.creator)}</div><span class="rule-note">Netlist hash · <span class="mono">${esc(link.netlistHash)}</span></span><span class="rule-note">${processorLabel} · <span class="mono">${esc(processor || "Address unavailable")}</span></span>${testnetReferences}</div></div>
+    <div class="pay-rule-row"><b>Default split</b><div><div class="rule-share-list">${splitRowsMarkup(link.defaultSplit, link.creator)}</div></div></div>
+    <div class="pay-rule-row"><b>Cap</b><div><strong>${fmt(cap)} ${esc(TOKEN_LABEL)}</strong><span class="rule-note">${esc(enforcement)}</span></div></div>
+    <p class="rule-fallback">If the rule check fails at payout time, this default split applies instead</p>
+  </section>`;
 }
 
 async function readLedger(creator) {
@@ -473,8 +544,11 @@ function paintWallet() {
   const badge = $("#payToBadge");
   const heroBtn = $("#heroConnect");
 
-  if (label) label.textContent = account ? truncate(account, 6, 4) : hasWallet() ? "Connect" : "No wallet";
-  if (heroBtn) heroBtn.querySelector("span").textContent = account ? truncate(account, 6, 4) : "Connect wallet";
+  /* The header button never prints the address — only the state: "Connect"
+     when a wallet is installed, "No wallet" when there is none, and
+     "Connected" once an account is in. Same for the hero button. */
+  if (label) label.textContent = account ? "Connected" : hasWallet() ? "Connect" : "No wallet";
+  if (heroBtn) heroBtn.querySelector("span").textContent = account ? "Connected" : "Connect wallet";
 
   if (field && addr) {
     if (account) {
@@ -498,7 +572,7 @@ function paintNet(state, note) {
     dot.classList.toggle("ok", state === "ok");
     dot.classList.toggle("err", state === "err");
   }
-  if (label) label.textContent = note || "X Layer testnet";
+  if (label) label.textContent = note || NETWORK_LABEL;
 }
 
 /* Ask the wallet to be on chain 1952, adding the network if it has never
@@ -526,8 +600,8 @@ async function ensureChain() {
           method: "wallet_addEthereumChain",
           params: [{
             chainId: CHAIN_HEX,
-            chainName: "X Layer Testnet",
-            nativeCurrency: XLAYER.testnet.nativeCurrency,
+            chainName: NETWORK_LABEL,
+            nativeCurrency: NETWORK_CONFIG.nativeCurrency,
             rpcUrls: RPC_URLS,
             blockExplorerUrls: [NET.explorer],
           }],
@@ -587,7 +661,7 @@ function wireWalletEvents() {
   window.ethereum.on?.("chainChanged", (id) => {
     walletChain = parseInt(id, 16);
     if (walletChain !== CHAIN_ID) {
-      toast(`Wallet is on chain ${walletChain}, not X Layer testnet (${CHAIN_ID}).`);
+      toast(`Wallet is on chain ${walletChain}, not ${NETWORK_LABEL} (${CHAIN_ID}).`);
     }
   });
 }
@@ -616,7 +690,7 @@ async function waitReceipt(hash) {
    this path is non-payable — Pago takes no native coin, ever. */
 async function sendTx(to, data) {
   if (!account) throw new Error("Connect a wallet first.");
-  if (!(await ensureChain())) throw new Error("Switch the wallet to X Layer testnet and try again.");
+  if (!(await ensureChain())) throw new Error(`Switch the wallet to ${NETWORK_LABEL} and try again.`);
   const from = account;
   const hash = await window.ethereum.request({
     method: "eth_sendTransaction",
@@ -633,24 +707,43 @@ let ledgerLoaded = false;
 let pendingLinkId = null; // the invoice currently rendered in #panel-ready
 let pendingTxHash = null; // the create transaction for that invoice
 
+/* One module serves both documents: the site (pago-onboarding.html) carries
+   home/create/ledger/ready, this page carries only the payment card.
+   `hasPanel` tells the two apart; `siteUrl` builds the way across. */
+const hasPanel = (name) => !!document.querySelector(`[data-panel="${name}"]`);
+const siteUrl = (hash = "") => {
+  const u = new URL("pago-onboarding.html", location.href);
+  if (hash) u.hash = hash;
+  return u.href;
+};
+
 function showPanel(name) {
   currentPanel = name;
   $$("[data-panel]").forEach((p) => { p.hidden = p.dataset.panel !== name; });
+  /* The site's header actions are links, not tabs: they take the current
+     marker instead of aria-selected, which belongs to a real tablist. */
   $$("[data-tab]").forEach((b) => {
     const on = b.dataset.tab === name;
-    b.setAttribute("aria-selected", on ? "true" : "false");
-    b.tabIndex = on ? 0 : -1;
+    b.classList.toggle("on", on);
+    if (on) b.setAttribute("aria-current", "page");
+    else b.removeAttribute("aria-current");
   });
   if (name === "ledger" && !ledgerLoaded) loadLedger();
 }
 
 function go(name, { push = true } = {}) {
+  /* A view this document does not own — "Back home" from the payment card —
+     leaves for the site instead of blanking every panel here. */
+  if (!hasPanel(name)) { location.href = siteUrl(name); return; }
   if (push && location.hash.slice(1) !== name) location.hash = name;
   showPanel(name);
   window.scrollTo({ top: 0, behavior: "auto" });
 }
 
 function openPay(id) {
+  /* "Open pay page" is pressed on the site's share card, where no payment
+     panel exists — cross straight over instead of rewriting the hash. */
+  if (!hasPanel("pay")) { location.href = payUrlFor(id); return; }
   if (location.hash.slice(1) !== `pay/${id}`) location.hash = `pay/${id}`;
   else {
     showPanel("pay");
@@ -673,7 +766,13 @@ function openReady(id, txHash) {
 
 function route() {
   const h = decodeURIComponent(location.hash.slice(1));
+
   if (h.startsWith("pay/")) {
+    /* The share card lives on the site; the payment card lives here. A share
+       link opened on the site has no pay panel, so it crosses to the app —
+       siteUrl() would only rewrite the hash onto this same document, where
+       nothing owns it. */
+    if (!hasPanel("pay")) { location.replace(payUrlFor(h.slice(4))); return; }
     const id = h.slice(4);
     showPanel("pay");
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -681,13 +780,26 @@ function route() {
     return;
   }
   if (h.startsWith("ready/")) {
+    if (!hasPanel("ready")) { location.replace(siteUrl(h)); return; }
     const id = h.slice(6);
     showPanel("ready");
     window.scrollTo({ top: 0, behavior: "auto" });
     renderReady(id, id === pendingLinkId ? pendingTxHash : null);
     return;
   }
-  showPanel(TABS.includes(h) ? h : "home");
+  if (TABS.includes(h)) {
+    /* #create and #ledger used to be tabs here; they are pages on the site
+       now, so a hash left over from the old layout follows them there. */
+    if (!hasPanel(h)) { location.replace(siteUrl(h)); return; }
+    showPanel(h);
+    window.scrollTo({ top: 0, behavior: "auto" });
+    return;
+  }
+  /* #why, #proof and the bare hash belong to the site: show the landing and
+     leave the scrolling to the browser. This page has no landing panel, so
+     anything else falls through to the site — a bare visit lands there. */
+  if (hasPanel("home")) { showPanel("home"); return; }
+  location.replace(siteUrl(h));
 }
 
 /* ── shared markup bits ─────────────────────────────────────────────────── */
@@ -695,8 +807,13 @@ function route() {
 const pillClass = (status) => `pill ${String(status).toLowerCase()}`;
 const statusName = (link) => STATUS[Number(link.status)] || "Open";
 
-const payUrlFor = (id) =>
-  `${location.origin}${location.pathname}#pay/${encodeURIComponent(id)}`;
+/* Payment links always open on this page's payment card, whichever document
+   they were created or copied from — the site links back here. */
+const payUrlFor = (id) => {
+  const u = new URL("xlayer.html", location.href);
+  u.hash = `pay/${encodeURIComponent(id)}`;
+  return u.href;
+};
 
 const txUrl = (hash) => (hash ? `${NET.explorer}/tx/${hash}` : "");
 
@@ -739,26 +856,150 @@ async function newLinkId() {
   throw new Error("Could not get a free link id — try again in a second.");
 }
 
+/* Percentages from the one visible table, converted to the contract's
+   units — the same math this form always used: 5% per step, 20 steps =
+   100% (SPLIT_STEPS in abi.js). A blank recipient is the connected
+   wallet; a 0% seat must be empty. The total has to be exactly 100% —
+   the live total on the form gates the Create button, and this is the
+   same check again at submit time. */
+function readSplitInputs(tableName, creator) {
+  const seats = $$(`[data-split-table="${tableName}"] .split-seat`);
+  const recipients = [];
+  const shares = [];
+  for (const [index, seat] of seats.entries()) {
+    const addressInput = $(".split-address", seat);
+    const shareInput = $(".split-share", seat);
+    const address = addressInput.value.trim();
+    const percent = Number(shareInput.value);
+    if (!Number.isInteger(percent) || percent < 0 || percent > Number(shareInput.max) || percent % 5 !== 0) {
+      throw new Error(`Seat ${index + 1}: shares move in 5% steps, up to 100%.`);
+    }
+    const step = percent / 5;
+    if (step === 0) {
+      if (address) throw new Error(`Seat ${index + 1} has an address but 0% — add a share or clear the address.`);
+      recipients.push(ZERO_ADDR);
+    } else {
+      const recipient = address || creator;
+      if (!isAddress(recipient)) throw new Error(`Seat ${index + 1}: enter a valid wallet address, or leave it blank for your own.`);
+      recipients.push(recipient);
+    }
+    shares.push(step);
+  }
+  if (shares.reduce((sum, share) => sum + share, 0) !== 20) {
+    throw new Error("Shares must add up to exactly 100%.");
+  }
+  return [recipients, shares];
+}
+
+/* The note's friendly error lives under the field, not in the status
+   line: exact copy for the empty case, and the field takes focus so a
+   keyboard user lands on what needs fixing. */
+function setNoteError(message) {
+  const input = $("#description");
+  const errorEl = $("#noteError");
+  if (errorEl) {
+    errorEl.textContent = message;
+    errorEl.hidden = false;
+  }
+  if (input) {
+    input.setAttribute("aria-invalid", "true");
+    input.focus();
+  }
+}
+
+/* The split is optional and off by default. While it is on, the live
+   total has to read exactly 100% before Create link is enabled — the
+   same 5%-per-step, 20-steps-to-100% unit readSplitInputs submits. */
+function updateCreateGate() {
+  const btn = $("#createBtn");
+  const toggle = $("#splitToggle");
+  const editor = $("#splitEditor");
+  if (!toggle || !editor) {
+    if (btn) btn.disabled = false;
+    return;
+  }
+  const on = toggle.checked;
+  editor.hidden = !on;
+  let total = 0;
+  if (on) {
+    for (const input of $$("#splitEditor .split-share")) total += Number(input.value) || 0;
+  }
+  const totalEl = $("#splitTotal");
+  if (totalEl) {
+    totalEl.textContent = `${total}%`;
+    totalEl.classList.toggle("ok", on && total === 100);
+  }
+  const err = $("#splitTotalErr");
+  if (err) err.hidden = !on || total === 100;
+  if (btn) btn.disabled = on && total !== 100;
+}
+
+function wireCreateForm() {
+  const toggle = $("#splitToggle");
+  if (!toggle) return;
+  toggle.addEventListener("change", updateCreateGate);
+  $$("#splitEditor .split-share, #splitEditor .split-address").forEach((input) =>
+    input.addEventListener("input", updateCreateGate)
+  );
+  const noteEl = $("#description");
+  const noteError = $("#noteError");
+  noteEl?.addEventListener("input", () => {
+    if (noteError) noteError.hidden = true;
+    noteEl.removeAttribute("aria-invalid");
+  });
+  updateCreateGate();
+}
+
 async function onCreate(e) {
   e.preventDefault();
   const btn = $("#createBtn");
   const result = $("#createResult");
 
   let amount;
-  const note = $("#description").value.trim();
+  const noteEl = $("#description");
+  const note = noteEl.value.trim();
   try {
     amount = parseAmount($("#amount").value);
-    if (!note) throw new Error("Add a note — the contract refuses a blank one.");
-    const bytes = ENC.encode(note).length;
-    if (bytes > 280) throw new Error(`That note is ${bytes} bytes; the limit is 280 UTF-8 bytes.`);
   } catch (err) {
     txLine(result, "err", esc(err.message));
     return;
   }
+  /* The note is the one field with an inline friendly error. Blank gets
+     the exact words a first-time user needs; the byte ceiling (the
+     contract counts UTF-8 bytes, 1–280) gets a plain version of it —
+     maxlength already stops most notes before they reach either. */
+  if (!note) {
+    setNoteError("Add a short note, for example Brand identity.");
+    return;
+  }
+  if (ENC.encode(note).length > 280) {
+    setNoteError("Keep the note to 280 characters or fewer.");
+    return;
+  }
+  $("#noteError")?.setAttribute("hidden", "");
+  noteEl.removeAttribute("aria-invalid");
 
   if (!account && !(await connect())) {
     txLine(result, "err", "Connect a wallet to create a link — it has to be signed by someone.");
     return;
+  }
+
+  /* Where the money goes. Toggle off (the default): both tables send
+     everything to the creator — seat 1 is the creator at 100%, seats 2
+     and 3 are zero. Toggle on: the rule table is what the user just
+     entered (it must total 100%), and the fallback table still sends
+     everything to the creator, so a failed check never loses the money.
+     Nothing is ever pre-filled in the rows. */
+  const creatorSplit = [[account, ZERO_ADDR, ZERO_ADDR], [20, 0, 0]];
+  const defaultSplit = creatorSplit;
+  let ruleSplit = creatorSplit;
+  if ($("#splitToggle")?.checked) {
+    try {
+      ruleSplit = readSplitInputs("rule", account);
+    } catch (err) {
+      txLine(result, "err", esc(err.message));
+      return;
+    }
   }
 
   btn.disabled = true;
@@ -775,15 +1016,6 @@ async function onCreate(e) {
     const linkId = await newLinkId();
 
     txLine(result, "pending", `Creating <code>${esc(linkId)}</code> — confirm in your wallet…`);
-    /* Both split tables, preset exactly as script/testnet-exercise.ps1 proved
-       them live: the default table pays the creator 100% (20 of 20 steps),
-       and the rule table is a three-seat candidate summing to 20 steps — the
-       shape the Split3 circuit accepts — with every seat pointing at the
-       creator, so this preset can never route money away from the invoice's
-       owner. When the form gains rule/default split inputs, read them here. */
-    const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
-    const defaultSplit = [[account, ZERO_ADDR, ZERO_ADDR], [20, 0, 0]];
-    const ruleSplit = [[account, account, account], [10, 6, 4]];
     const data = callData(
       SEL.createLink,
       ["string", "uint256", "address", "string", "uint64", SPLIT_TYPES, SPLIT_TYPES],
@@ -794,12 +1026,14 @@ async function onCreate(e) {
     txLine(result, "ok",
       `Link created. <a href="${txUrl(hash)}" target="_blank" rel="noopener">View transaction</a>`);
     $("#createForm").reset();
+    $("#noteError")?.setAttribute("hidden", "");
+    updateCreateGate();
     openReady(linkId, hash);
   } catch (err) {
     txLine(result, "err", esc(friendly(err)));
   } finally {
-    btn.disabled = false;
     label.textContent = labelWas;
+    updateCreateGate();
   }
 }
 
@@ -853,10 +1087,10 @@ async function renderReady(id, txHash) {
         <div class="detail-grid">
           <div><span class="net-k">amount</span><span class="net-v">${fmt(link.amount)} ${esc(TOKEN_LABEL)}</span></div>
           <div><span class="net-k">you receive</span><span class="net-v">${fmt(payout)} ${esc(TOKEN_LABEL)}</span></div>
-          <div><span class="net-k">fee at claim</span><span class="net-v">${NET.feeBps / 100}%</span></div>
+          <div><span class="net-k">fee</span><span class="net-v">${NET.feeBps / 100}%</span></div>
           <div><span class="net-k">link id</span><span class="net-v mono">${esc(link.linkId)}</span></div>
           <div><span class="net-k">expires</span><span class="net-v">${esc(fmtDate(link.expiresAt))}</span></div>
-          <div><span class="net-k">network</span><span class="net-v">X Layer testnet (${CHAIN_ID})</span></div>
+          <div><span class="net-k">network</span><span class="net-v">${NETWORK_LABEL} (${CHAIN_ID})</span></div>
         </div>
 
         ${txHash ? `<p class="tiny" style="margin-top:1rem">Created in
@@ -908,6 +1142,9 @@ async function renderPay(id) {
   const card = $("#payCard");
   const status = $("#payStatus");
   status.hidden = true;
+  /* Every early return below (chain error, unknown id) renders the plain
+     app state, so the #proof claim layout is cleared before any of them. */
+  card.classList.remove("claim-view");
 
   let res;
   try {
@@ -925,16 +1162,27 @@ async function renderPay(id) {
   if (!res.found) {
     card.innerHTML =
       `<span class="eyebrow">payment request</span>
-       <div class="empty-line">No link with the id <code>${esc(id)}</code> on X Layer testnet.
+       <div class="empty-line">No link with the id <code>${esc(id)}</code> on ${esc(NETWORK_LABEL)}.
          <div class="cancel-row"><button class="btn ghost" type="button" data-go="home"><span>Back home</span></button></div>
        </div>`;
     return;
   }
 
   const link = res.link;
+  const linkToken = TOKEN_OPTIONS.find((entry) => entry.address.toLowerCase() === link.token.toLowerCase());
+  if (linkToken) {
+    selectToken(linkToken.address);
+    paintStatic();
+  }
   const statusNameNow = statusName(link);
   const { payout, fee } = splitFee(link.paidAmount > 0n ? link.paidAmount : link.amount);
   const isCreator = sameAddr(account, link.creator);
+  let paymentPolicy = null;
+  if (statusNameNow === "Open") {
+    try { paymentPolicy = await readPaymentPolicy(link.token); }
+    catch { /* keep the configured cap visible; paying stays paused until live state reads */ }
+  }
+  const paymentRules = statusNameNow === "Open" ? paymentRulesMarkup(link, paymentPolicy) : "";
 
   /* ── facts every state shares ── */
   /* On a claimed link "payee receives" would contradict the receipt below
@@ -942,7 +1190,13 @@ async function renderPay(id) {
      the row is labelled for what it is: the post-fee pool — which is
      exactly what the claim event's `payout` field carries. */
   const isClaimed = statusNameNow === "Claimed";
-  const facts = `
+  /* A settled link has nothing left to pay, so the payment card — the big
+     amount and the invoice table — is not what the page shows. The receipt
+     is, laid out the way the site's #proof section lays it out: the
+     claim-view class on the card (xlayer.html) centers it at the proof
+     width and drops the glass blur, the status row and the "for" line stay
+     above it, the invoice id moves into the note below. */
+  const facts = isClaimed ? "" : `
     <div class="pay-items">
       <span class="pi-h">invoice</span>
       <div class="pi-row"><span class="pi-l">amount</span><span class="pi-p">${fmt(link.amount)} ${esc(TOKEN_LABEL)}</span></div>
@@ -955,7 +1209,11 @@ async function renderPay(id) {
       ${Number(link.claimedAt) > 0 ? `<div class="pi-row"><span class="pi-l">claimed</span><span class="pi-p">${esc(fmtDate(link.claimedAt))}</span></div>` : ""}
     </div>`;
 
-  const head = `
+  /* Claimed: the receipt replaces all of it — the status row and the "for"
+     line too, the way #proof shows the proof — receipt first, invoice note
+     under it. The note carries the id and the description, so nothing that
+     sat above the receipt is lost. */
+  const head = isClaimed ? "" : `
     <div class="pay-top">
       <div class="pay-who">
         <span class="pay-avatar" aria-hidden="true">P</span>
@@ -970,15 +1228,16 @@ async function renderPay(id) {
     <div class="pay-amount">
       <div class="pay-usd">${fmt(link.amount)}<span class="approx">${esc(TOKEN_LABEL)}</span></div>
       <div class="pay-token">
-        <svg class="coin" aria-hidden="true"><use href="#coin-pusd"/></svg>
+        <svg class="coin" aria-hidden="true"><use href="#coin-stable"/></svg>
         <span>${esc(TOKEN_LABEL)}</span>
-        <span class="pay-net">X Layer testnet</span>
+        <span class="pay-net">${NETWORK_LABEL}</span>
       </div>
     </div>
 
     <div class="pay-desc"><b>for</b>${esc(link.description)}</div>`;
 
-  card.innerHTML = `${head}${facts}
+  card.classList.toggle("claim-view", isClaimed);
+  card.innerHTML = `${head}${facts}${paymentRules}
     <div class="pay-actions" id="payActions"></div>
     <p class="wallet-note" id="payNote"></p>`;
 
@@ -995,24 +1254,27 @@ async function renderPay(id) {
        at 100 blocks, so the claim has to be located first), so its rows and
        the PDF button appear when it answers. Nothing here is recomputed —
        every amount below comes out of the claim's own events. */
-    setActions(`<div class="pay-receipt" id="claimReceipt">
+    setActions(`<article class="pay-receipt" id="claimReceipt" role="status" aria-label="Payment receipt">
+      <div class="rcpt-topbar"><span class="rcpt-brand"><i aria-hidden="true"></i>Pago <span>· ${esc(NETWORK_LABEL)}</span></span><span class="rcpt-state"><i aria-hidden="true"></i>Complete</span></div>
       <div class="rcpt-head">
         <span class="chk" aria-hidden="true">
           <svg viewBox="0 0 16 16" width="13" height="13"><path d="M3.5 8.4 6.6 11.5 12.5 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </span>
         <div class="rcpt-head-txt">
           <strong>Paid out to the payee</strong>
-          <span id="claimSummary">Reading the payout event from the chain&hellip;</span>
+          <span>Transfer receipt</span>
         </div>
       </div>
+      <div class="rcpt-amount" id="claimAmount" aria-live="polite">Reading payout&hellip;</div>
+      <p class="rcpt-summary" id="claimSummary">Reading the payout event from the chain&hellip;</p>
       <div class="rcpt-rows" id="claimRows">
         <span class="rcpt-k">payee</span><span class="rcpt-v mono">${esc(link.creator)}</span>
         <span class="rcpt-k">payer</span><span class="rcpt-v mono">${esc(link.paidBy)}</span>
         <span class="rcpt-k">claimed</span><span class="rcpt-v">${esc(fmtDate(link.claimedAt))}</span>
       </div>
       <div class="rcpt-foot" id="claimFoot"></div>
-    </div>`);
-    setNote("A link can only be claimed once, and only ever by its payee.");
+    </article>`);
+    setNote(`Invoice <code>${esc(link.linkId)}</code>${link.description ? ` &middot; ${esc(link.description)}` : ""} &middot; A link can only be claimed once, and only ever by its payee.`);
     fillClaimReceipt(link).catch((err) => {
       /* The stored rows above are contract state and stay; only the event
          read failed, and the page says exactly that instead of guessing. */
@@ -1020,6 +1282,8 @@ async function renderPay(id) {
       if (!el) return; // the user navigated away mid-read
       const summary = $("#claimSummary");
       if (summary) summary.textContent = "The payout event could not be read from the chain just now.";
+      const amount = $("#claimAmount");
+      if (amount) amount.textContent = "Payout details unavailable";
       const foot = $("#claimFoot");
       if (foot) foot.innerHTML = `<span class="tiny">${esc(friendly(err))}</span>
         <button class="btn btn-sm ghost" type="button" id="claimRetry"><span>Try again</span></button>`;
@@ -1067,6 +1331,14 @@ async function renderPay(id) {
     return;
   }
 
+  if (!paymentPolicy) {
+    setActions(`<div class="empty-line">Live rule and cap details could not be read. Payment is paused until the network answers.
+      <div class="cancel-row"><button class="btn ghost" type="button" id="policyRetry"><span>Try again</span></button></div></div>`);
+    setNote("Review the rule, default split and current cap above before paying.");
+    $("#policyRetry")?.addEventListener("click", () => renderPay(id));
+    return;
+  }
+
   /* Balance, allowance and chain state are all live: the two buttons below
      are rendered from what the chain says, not from what the form said. */
   setActions(`<div class="empty-line">Reading your balance and allowance…</div>`);
@@ -1103,7 +1375,9 @@ async function renderPay(id) {
     }
 
     setActions(html);
-    setNote(`Gas is paid in OKB on chain ${CHAIN_ID}. pUSD (MOCK) is test scaffolding — do not send real funds.`);
+    setNote(MOCK
+      ? `Gas is paid in OKB on chain ${CHAIN_ID}. ${TOKEN_LABEL} is test scaffolding — do not send real funds.`
+      : `Gas is paid in OKB on chain ${CHAIN_ID}. Token and payout details are read from this network.`);
 
     $("#mintBtn")?.addEventListener("click", () => runMint(id, account));
     $("#approveBtn")?.addEventListener("click", () => runApproveThenPay(id, need));
@@ -1315,6 +1589,110 @@ async function loadLedger() {
   }
 }
 
+/* ── activity bell ────────────────────────────────────────────────────────
+   The header bell opens a popover over the same chain read the ledger
+   makes — getLinksByCreator for the address My links would load — so every
+   row is a field that came back from the contract: newest payments first,
+   a link with paidAt = 0 shown as awaiting and never as paid. The first
+   open performs the read and caches it with the ledger; later opens paint
+   that cache instead of spending another call. */
+let activityLoading = false;
+
+function renderActivity() {
+  const list = $("#actList");
+  const note = $("#actNote");
+  if (!list) return;
+
+  if (!ledgerLinks.length) {
+    list.innerHTML = `<div class="lp-act-empty">${
+      ledgerLoaded
+        ? "No links for this address yet — create one and it appears here."
+        : "Could not read the chain. Open My links to try again."
+    }</div>`;
+    if (note) note.textContent = "";
+    return;
+  }
+
+  const recent = ledgerLinks
+    .slice()
+    .sort((a, b) => Number(b.paidAt || 0) - Number(a.paidAt || 0))
+    .slice(0, 6);
+
+  list.innerHTML = recent
+    .map((l) => {
+      const paid = Number(l.paidAt) > 0;
+      const payer =
+        paid && l.paidBy && l.paidBy !== "0x0000000000000000000000000000000000000000"
+          ? truncate(l.paidBy, 6, 4)
+          : "";
+      const meta = [esc(l.linkId), payer].filter(Boolean).join(" · ");
+      return `<div class="lp-act-row">
+        <span class="lp-act-dot${paid ? " paid" : ""}" aria-hidden="true"></span>
+        <span class="lp-act-main">
+          <span class="lp-act-desc">${esc(l.description || "Payment link")}</span>
+          <span class="lp-act-meta">${esc(meta)}</span>
+        </span>
+        <span class="lp-act-right">
+          <span class="lp-act-amt">${fmt(l.amount)}${paid ? ` · ${esc(statusName(l))}` : ""}</span>
+          <span class="lp-act-time">${paid ? esc(fmtDate(l.paidAt)) : "awaiting payment"}</span>
+        </span>
+      </div>`;
+    })
+    .join("");
+
+  if (note) note.textContent = `${ledgerLinks.length} link${ledgerLinks.length === 1 ? "" : "s"} · getLinksByCreator`;
+}
+
+function wireActivity() {
+  const bell = $("#bellBtn");
+  const panel = $("#activityPanel");
+  if (!bell || !panel) return;
+
+  const close = () => {
+    panel.hidden = true;
+    bell.setAttribute("aria-expanded", "false");
+    bell.classList.remove("on");
+  };
+
+  bell.addEventListener("click", () => {
+    if (!panel.hidden) return close();
+    panel.hidden = false;
+    bell.setAttribute("aria-expanded", "true");
+    bell.classList.add("on");
+
+    /* A read already in flight keeps its "Reading…" line — repainting from
+       the empty cache here would claim a failure while the chain is still
+       answering. */
+    if (activityLoading) return;
+    renderActivity();
+    if (ledgerLoaded) return;
+
+    activityLoading = true;
+    const list = $("#actList");
+    if (list) list.innerHTML = `<div class="lp-act-empty">Reading ${esc(NETWORK_LABEL)}…</div>`;
+    loadLedger()
+      .catch(() => {})
+      .finally(() => {
+        activityLoading = false;
+        renderActivity();
+      });
+  });
+
+  /* Outside click and Escape both put the popover away; the footer link
+     navigates to My links, so it must not stay open over that panel. */
+  document.addEventListener("click", (e) => {
+    if (panel.hidden || panel.contains(e.target) || bell.contains(e.target)) return;
+    close();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !panel.hidden) {
+      close();
+      bell.focus();
+    }
+  });
+  $(".lp-act-foot")?.addEventListener("click", close);
+}
+
 /* ── boot ───────────────────────────────────────────────────────────────── */
 
 function paintStatic() {
@@ -1323,12 +1701,48 @@ function paintStatic() {
   const tokenBadge = $("#tokenBadge");
   const amountSymbol = $("#amountSymbol");
   if (tokenLabel) tokenLabel.textContent = TOKEN_LABEL;
-  if (amountSymbol) amountSymbol.textContent = NET.tokenSymbol;
+  if (amountSymbol) amountSymbol.textContent = activeToken.symbol;
   if (tokenAddr) {
     tokenAddr.textContent = TOKEN;
-    tokenAddr.title = NET.tokenExplorerUrl;
+    tokenAddr.title = TOKEN_OPTIONS.find((token) => token.address === TOKEN)?.explorerUrl || NET.tokenExplorerUrl || TOKEN;
   }
   if (tokenBadge) tokenBadge.textContent = MOCK ? "MOCK" : "allowlisted";
+
+  const networkSelect = $("#networkSelect");
+  if (networkSelect && !networkSelect.options.length) {
+    NETWORKS.forEach((network) => {
+      const option = document.createElement("option");
+      option.value = String(network.chainId);
+      option.textContent = network.chainId === 196 ? "X Layer mainnet" : "X Layer testnet";
+      networkSelect.appendChild(option);
+    });
+    networkSelect.addEventListener("change", () => {
+      const url = new URL(location.href);
+      url.searchParams.set("chainId", networkSelect.value);
+      url.searchParams.delete("token");
+      location.assign(url);
+    });
+  }
+  if (networkSelect) networkSelect.value = String(CHAIN_ID);
+
+  const tokenSelect = $("#tokenSelect");
+  const tokenSelectLabel = $(".token-select-label");
+  if (tokenSelect) {
+    tokenSelect.replaceChildren(...TOKEN_OPTIONS.map((token) => {
+      const option = document.createElement("option");
+      option.value = token.address;
+      option.textContent = token.isMock ? `${token.symbol} (MOCK)` : token.symbol;
+      return option;
+    }));
+    tokenSelect.value = TOKEN;
+    tokenSelect.hidden = TOKEN_OPTIONS.length < 2;
+    if (tokenSelectLabel) tokenSelectLabel.hidden = TOKEN_OPTIONS.length < 2;
+    tokenSelect.onchange = () => {
+      const url = new URL(location.href);
+      url.searchParams.set("token", tokenSelect.value);
+      location.assign(url);
+    };
+  }
 
   const note = $("#tokenNote");
   if (note) {
@@ -1344,6 +1758,12 @@ function paintStatic() {
   if (hero) {
     hero.innerHTML = `Chain ${CHAIN_ID} &middot; token <strong>${esc(TOKEN_LABEL)}</strong> &middot; fixed ${NET.feeBps / 100}% fee &middot; no relayer, no custody.`;
   }
+  const networkCopy = $("#heroNetworkLabel");
+  if (networkCopy) networkCopy.textContent = `${NETWORK_LABEL} · payment links`;
+  const networkChip = $("#netLabel");
+  if (networkChip) networkChip.textContent = NETWORK_LABEL;
+  const footer = $("#footerNetworkLabel");
+  if (footer) footer.textContent = `${NETWORK_LABEL} (${CHAIN_ID}) · ${MOCK ? `${TOKEN_LABEL} test token only · do not send real funds` : `${TOKEN_LABEL} · allowlisted stablecoin`}`;
 }
 
 /* One boot read: fee, allowlist, clock. It also drives the connection dot,
@@ -1376,32 +1796,12 @@ function wireTabs() {
   $$("[data-go]").forEach((b) => b.addEventListener("click", () => go(b.dataset.go)));
 }
 
-function initTheme() {
-  let theme = document.documentElement.dataset.theme || "light";
-  const apply = (t) => {
-    document.documentElement.dataset.theme = t;
-    const meta = document.getElementById("themeColor");
-    if (meta) meta.content = t === "dark" ? "#0A0A0A" : "#99f7d5";
-    const btn = document.getElementById("themeBtn");
-    if (btn) {
-      const next = t === "dark" ? "light" : "dark";
-      btn.setAttribute("aria-label", `Switch to ${next} mode`);
-      btn.title = `Switch to ${next} mode`;
-    }
-  };
-  apply(theme);
-  document.getElementById("themeBtn")?.addEventListener("click", () => {
-    theme = theme === "dark" ? "light" : "dark";
-    apply(theme);
-    try { localStorage.setItem("paylink:theme", theme); } catch { /* private mode */ }
-  });
-}
-
 function boot() {
-  initTheme();
   paintStatic();
   paintWallet();
   wireTabs();
+  wireCreateForm();
+  wireActivity();
   wireWalletEvents();
 
   $("#walletBtn")?.addEventListener("click", async () => {

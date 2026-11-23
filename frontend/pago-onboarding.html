@@ -1,0 +1,978 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pago — Send a link. Get paid on X Layer.</title>
+<meta name="description" content="Pago turns a payment request into a link, paid in stablecoins on X Layer.">
+<meta name="theme-color" content="#0A0A0A">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23010100'/%3E%3Cpath d='M16 8v16M8 16h16' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+<!-- The homepage's own stylesheet: an independent copy of the app's
+     visual base (tokens, buttons, header, receipt) that this page owns
+     and evolves on its own — the app's styles.css stays Codex's and
+     untouched. -->
+<link rel="stylesheet" href="pago-home.css?v=20261123a">
+<!-- Reads go out to this endpoint before the script can even run; saying so
+     here saves a DNS round trip on the first eth_call. -->
+<link rel="preconnect" href="https://rpc.xlayer.tech">
+<link rel="preload" href="fonts/satoshi-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/satoshi-500.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/satoshi-700.woff2" as="font" type="font/woff2" crossorigin>
+
+<style>
+/* ═══════════════════════════════════════════════════════════════════
+   Landing-only rules. Base tokens, buttons, header, hero and receipt
+   styles come from this page's own pago-home.css; this block holds
+   only what the homepage adds on top of it.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* This page carries the illustration, not the app's finance doodle — the
+   doodle layer lives in pago-home.css; it's switched off here only. */
+body::before{content:none}
+
+/* Scroll is locked while the splash is up; the homepage fades in when it
+   leaves. The class is added by script, so a script-less visit shows the
+   page immediately (noscript hides the splash). */
+html.splash-on{overflow:hidden}
+html.splash-on .site-header,
+html.splash-on main,
+html.splash-on .lp-footer{opacity:0}
+.site-header,main,.lp-footer{transition:opacity .55s var(--ease)}
+
+/* Without a tablist in the header, the right group needs to self-align. */
+.header-inner .header-right{margin-left:auto;position:relative}
+
+/* ── splash: the bull, an animated load bar, then the homepage opens ── */
+.splash{
+  position:fixed;inset:0;z-index:200;background:#000;overflow:hidden;
+  transition:opacity .55s var(--ease),visibility .55s var(--ease);
+}
+.splash.gone{opacity:0;visibility:hidden;pointer-events:none}
+.splash-art{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:center}
+.splash-ui{
+  position:relative;z-index:1;height:100%;
+  display:flex;flex-direction:column;justify-content:flex-end;align-items:center;
+  padding:max(1.4rem,env(safe-area-inset-top)) 1.5rem max(1.8rem,env(safe-area-inset-bottom));
+  pointer-events:none;
+}
+.splash-foot{display:grid;gap:.7rem;justify-items:center;width:min(300px,74vw)}
+.splash-bar{width:100%;height:4px;border-radius:999px;background:rgba(255,255,255,.14);overflow:hidden}
+.splash-bar i{
+  display:block;height:100%;width:0;border-radius:999px;
+  background:#bcff2f;box-shadow:0 0 14px rgba(188,255,47,.75);
+  transition:width .25s linear;
+}
+.splash-status{
+  margin:0;font-size:11px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--muted);font-variant-numeric:tabular-nums;
+}
+
+/* ── hero: pure type, OKX-style — a giant statement over the grid and
+      aura, with a mono stat strip pinned to the section's foot ── */
+/* One column; the ambience pseudo-elements may reach past the edges, so
+   the hero clips them — keeps narrow phones free of horizontal scroll. */
+.lp-hero{
+  grid-template-columns:minmax(0,1fr);overflow:hidden;position:relative;
+  display:flex;flex-direction:column;justify-content:center;align-items:stretch;
+  min-height:clamp(560px,86vh,900px);
+  padding-top:clamp(1.5rem,5vh,3.5rem);
+}
+.lp-hero .hero-copy{max-width:62rem;text-shadow:none}
+/* live chip above the headline */
+.lp-chip{
+  display:inline-flex;align-items:center;gap:.55rem;align-self:flex-start;
+  font-family:var(--mono);font-size:11px;font-weight:700;
+  letter-spacing:.16em;text-transform:uppercase;
+  color:#e2ffab;border:1px solid rgba(188,255,47,.35);background:rgba(188,255,47,.07);
+  padding:.45rem .85rem;border-radius:999px;
+  margin-bottom:clamp(1.2rem,3vh,1.9rem);
+}
+.lp-chip i{
+  width:6px;height:6px;border-radius:50%;background:#bcff2f;
+  box-shadow:0 0 9px rgba(188,255,47,.95),0 0 20px rgba(188,255,47,.5);
+  animation:lp-dot 2.4s ease-in-out infinite;
+}
+/* the statement — tight, heavy, lime second line */
+.lp-hero .lp-title{
+  font-size:clamp(3rem,9.2vw,7.4rem);
+  font-weight:800;letter-spacing:-.05em;line-height:.94;
+  margin:0 0 clamp(1rem,2.6vh,1.7rem);
+}
+.lp-hero .lp-title .accent{
+  color:#bcff2f;
+  text-shadow:0 0 44px rgba(188,255,47,.35),0 0 110px rgba(188,255,47,.18);
+}
+.lp-hero .lp-lede{
+  font-size:clamp(15.5px,1.5vw,18px);line-height:1.6;color:var(--body);
+  max-width:54ch;margin:0 0 clamp(1.5rem,3.4vh,2.2rem);
+}
+/* mono stat strip at the hero's foot — real numbers only */
+.lp-stats{
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+  border-top:1px solid var(--line);
+  margin-top:clamp(2.2rem,6vh,4rem);padding-top:clamp(1.2rem,3vh,1.8rem);
+  position:relative;z-index:1;
+}
+.lp-stat{display:grid;gap:.35rem;align-content:start;padding-inline:1.4rem;border-right:1px solid var(--line)}
+.lp-stat:first-child{padding-left:0}
+.lp-stat:last-child{border-right:none}
+.lp-stat strong{
+  font-family:var(--mono);font-size:clamp(1.6rem,3.2vw,2.5rem);
+  font-weight:700;letter-spacing:-.04em;line-height:1;color:#fff;
+}
+.lp-stat span{font-size:12.5px;line-height:1.45;color:var(--muted)}
+@media (max-width:760px){
+  .lp-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:1.5rem 1rem}
+  .lp-stat{padding-inline:0;border-right:none}
+}
+/* ── OKX-style ambience: a soft lime aura and a faint grid behind the art ── */
+.lp-hero::before{
+  content:"";position:absolute;left:50%;top:46%;translate:-50% -50%;
+  width:min(1200px,150%);aspect-ratio:1.7;z-index:0;pointer-events:none;
+  background:radial-gradient(closest-side,rgba(188,255,47,.13),transparent 72%);
+}
+.lp-hero::after{
+  content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+  background-image:
+    linear-gradient(rgba(188,255,47,.055) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(188,255,47,.055) 1px,transparent 1px);
+  background-size:72px 72px;
+  -webkit-mask-image:radial-gradient(75% 75% at 50% 45%,#000 25%,transparent 100%);
+  mask-image:radial-gradient(75% 75% at 50% 45%,#000 25%,transparent 100%);
+}
+/* The receipt lives in its own proof section below. The PDF button only
+   works inside the app (it reads the claim events to build the file), so
+   the static copy omits it and points at the real invoice instead. */
+.lp-receipt{max-width:40rem;margin-inline:auto}
+/* The card sits on a flat section here, so the glass blur only buys a GPU
+   seam at the corner — disabled on the landing, look kept via border+shadow. */
+.lp-receipt .pay-card{backdrop-filter:none;-webkit-backdrop-filter:none}
+.lp-receipt .rcpt-pdf{display:none}
+.lp-art-note{margin:.9rem 0 0;text-align:center;font-size:12px;color:var(--muted)}
+.lp-art-note a{color:var(--accent-ink);text-decoration:underline;text-underline-offset:3px}
+/* ── OKX-flavoured buttons: lime primary, green-tinted ghost ── */
+.hero-actions .btn{
+  background:#bcff2f;border-color:#bcff2f;color:#0d1204;font-weight:600;
+  box-shadow:0 14px 34px -16px rgba(188,255,47,.65);
+}
+.hero-actions .btn.ghost{
+  background:rgba(188,255,47,.06);border-color:rgba(188,255,47,.4);
+  color:#e2ffab;box-shadow:none;
+}
+.hero-actions .btn.ghost:hover{border-color:rgba(188,255,47,.85);background:rgba(188,255,47,.12);opacity:1}
+.header-right .btn{background:#bcff2f;border-color:#bcff2f;color:#0d1204;font-weight:600}
+/* Header actions are links into this site's own pages (My links, Create),
+   not app tabs: both wear the same button as the rest of the bar, and the
+   current page takes the lighter lime marker instead of aria-selected. */
+.header-right .btn.on{background:#d0ff72;border-color:#d0ff72}
+/* The wallet and network group sits in the header bar now, so it carries no
+   margin of its own. One pill carries the whole network readout — dot, label
+   and the selector laid transparently over it — and the pill steps out below
+   560px, where only the two links, the bell and the wallet circle fit. */
+.lp-appbar{
+  display:flex;align-items:center;gap:.5rem;
+  margin:0;flex:none;
+}
+@media (max-width:560px){ .lp-appbar .net-pill{display:none} }
+
+/* One pill, one style: status dot + the label xlayer.js paints (it also
+   carries "chain unreachable" when the RPC dies) + the select sitting on top
+   at opacity 0, so tapping the label opens the real network menu. */
+.net-pill{
+  position:relative;display:inline-flex;align-items:center;gap:.45rem;
+  border:1px solid var(--line);border-radius:999px;
+  padding:.34rem .7rem .34rem .62rem;
+  font-size:12px;color:var(--muted);flex:none;white-space:nowrap;
+}
+.net-pill::after{
+  content:"";flex:none;width:7px;height:7px;margin-left:.15rem;opacity:.65;
+  border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;
+  translate:0 -2px;rotate:45deg;
+}
+.net-pill:focus-within{border-color:var(--faint)}
+.net-pill .network-select{
+  position:absolute;inset:0;width:100%;height:100%;min-height:0;max-width:none;
+  padding:0;margin:0;border:0;background:transparent;opacity:0;cursor:pointer;
+}
+
+/* ── activity bell: a popover over the ledger's own chain read ──
+   The button is the app's bell; the panel hangs off the header's right
+   group so its edge lines up with the actions above it. Narrow phones lose
+   the wordmark (the coin mark stays) — the bell, both links and the wallet
+   still have to fit one row without overflowing the bar. */
+.bell-btn.on{background:rgba(188,255,47,.12);border-color:rgba(188,255,47,.55);color:#bcff2f}
+.lp-activity{
+  position:absolute;top:calc(100% + 10px);right:0;z-index:60;
+  width:min(23rem,calc(100vw - 2rem));
+  background:#080a07;border:1px solid rgba(188,255,47,.3);border-radius:14px;
+  box-shadow:0 26px 60px -26px rgba(0,0,0,.95),0 0 44px -24px rgba(188,255,47,.55);
+  padding:.8rem .85rem .3rem;
+  animation:lp-act-in .16s var(--ease);
+}
+@keyframes lp-act-in{from{opacity:0;translate:0 -6px}to{opacity:1;translate:0 0}}
+@media (prefers-reduced-motion:reduce){.lp-activity{animation:none}}
+.lp-act-head{display:flex;align-items:baseline;justify-content:space-between;gap:.6rem}
+.lp-act-head .eyebrow{margin:0}
+.lp-act-list{display:grid;max-height:min(56vh,19rem);overflow:auto;margin-top:.4rem}
+.lp-act-row{
+  display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:.6rem;align-items:center;
+  padding:.55rem .2rem;
+}
+.lp-act-row + .lp-act-row{border-top:1px solid rgba(255,255,255,.07)}
+.lp-act-dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.22)}
+.lp-act-dot.paid{background:#bcff2f;box-shadow:0 0 9px rgba(188,255,47,.95),0 0 18px rgba(188,255,47,.5)}
+.lp-act-main{display:grid;gap:.1rem;min-width:0}
+.lp-act-desc{font-size:13.5px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lp-act-meta{font-family:var(--mono);font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lp-act-right{display:grid;gap:.1rem;justify-items:end}
+.lp-act-amt{font-family:var(--mono);font-size:12px;color:#e2ffab;white-space:nowrap}
+.lp-act-time{font-size:10.5px;color:var(--muted);white-space:nowrap}
+.lp-act-empty{font-size:12.5px;line-height:1.5;color:var(--muted);padding:.7rem .2rem .8rem}
+.lp-act-foot{
+  display:flex;justify-content:space-between;gap:.5rem;
+  margin-top:.3rem;padding:.55rem .2rem .5rem;
+  border-top:1px solid rgba(255,255,255,.08);
+  font-size:12.5px;font-weight:600;color:#bcff2f;text-decoration:none;
+}
+.lp-act-foot:hover{text-decoration:underline;text-underline-offset:3px}
+@media (max-width:440px){ .brand-name{display:none} }
+/* hero art — a cut-out, not a card: the concrete was matted out of the shot,
+   so there is no rectangle left to frame. Depth comes from a shadow that
+   follows the alpha, with a lime aura held behind the figure (the figure is
+   isolated so the glow paints above the hero's own layers, never under them).
+   Hidden below 760px: at 345px the figure measures 305x542 and pushes the
+   hero from 900px to 1398px tall — too much bulk, and a photo of a phone on
+   a phone reads as redundant. Desktop only. */
+.lp-hero-img{display:none;margin:0;position:relative;isolation:isolate}
+.lp-hero-img::before{
+  content:"";position:absolute;inset:6% 2% 4%;z-index:0;
+  background:radial-gradient(closest-side,rgba(188,255,47,.2),transparent 72%);
+}
+.lp-hero-img img{
+  position:relative;z-index:1;
+  display:block;width:100%;height:auto;
+  filter:drop-shadow(0 30px 55px rgba(0,0,0,.88));
+}
+@media (min-width:760px){
+  /* copy left, photo right, stat strip full width underneath. The photo
+     column is fluid so the headline never gets squeezed at 800px windows. */
+  .lp-hero{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) clamp(15rem,26vw,22rem);
+    align-items:center;column-gap:clamp(1.5rem,3vw,3rem);
+  }
+  .lp-hero .hero-copy{grid-column:1;grid-row:1}
+  .lp-hero .lp-hero-img{display:block;grid-column:2;grid-row:1}
+  .lp-hero .lp-stats{grid-column:1/-1;grid-row:2}
+}
+
+/* ── base polish: lime selection, quiet scrollbar ── */
+::selection{background:#bcff2f;color:#0d1204}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:#050505}
+::-webkit-scrollbar-thumb{background:#232320;border-radius:6px;border:2px solid #050505}
+::-webkit-scrollbar-thumb:hover{background:#333330}
+
+/* ── ticker: the tags glow and keep sliding; a wave of light travels
+      down the line and a soft sheen sweeps the band ── */
+.lp-ticker{
+  border-bottom:1px solid var(--line);
+  background:
+    radial-gradient(130% 190% at 50% 130%,rgba(188,255,47,.10),transparent 62%),
+    rgba(255,255,255,.014);
+  overflow:hidden;padding:1rem 0;position:relative;z-index:1;
+}
+.lp-ticker-track{display:flex;width:max-content;animation:lp-slide 32s linear infinite}
+.lp-ticker-group{display:flex;flex-shrink:0}
+.lp-ticker span{
+  --d:0s;
+  display:inline-flex;align-items:center;gap:1.5rem;padding:0 1.5rem;
+  font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  color:#e2ffab;white-space:nowrap;
+  text-shadow:0 0 8px rgba(188,255,47,.55),0 0 20px rgba(188,255,47,.28);
+  animation:lp-glow 2.4s ease-in-out infinite;
+  animation-delay:var(--d);
+}
+.lp-ticker span::after{
+  content:"";width:6px;height:6px;border-radius:50%;background:#bcff2f;
+  box-shadow:0 0 9px rgba(188,255,47,.9),0 0 20px rgba(188,255,47,.45);
+  animation:lp-dot 2.4s ease-in-out infinite;
+  animation-delay:var(--d);
+}
+/* The pulse offsets run tag by tag so the glow rides along with the slide. */
+.lp-ticker-group span:nth-child(1){--d:0s}
+.lp-ticker-group span:nth-child(2){--d:.4s}
+.lp-ticker-group span:nth-child(3){--d:.8s}
+.lp-ticker-group span:nth-child(4){--d:1.2s}
+.lp-ticker-group span:nth-child(5){--d:1.6s}
+.lp-ticker-group span:nth-child(6){--d:2s}
+.lp-ticker:hover .lp-ticker-track{animation-play-state:paused}
+/* Sheen sweeping across the band. */
+.lp-ticker::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(100deg,transparent 38%,rgba(188,255,47,.15) 50%,transparent 62%);
+  background-size:260% 100%;
+  animation:lp-sweep 6s linear infinite;
+}
+@keyframes lp-slide{to{transform:translateX(-50%)}}
+@keyframes lp-glow{
+  0%,100%{text-shadow:0 0 8px rgba(188,255,47,.5),0 0 20px rgba(188,255,47,.25);opacity:.86}
+  50%{text-shadow:0 0 14px rgba(188,255,47,.95),0 0 36px rgba(188,255,47,.6);opacity:1}
+}
+@keyframes lp-dot{
+  0%,100%{box-shadow:0 0 9px rgba(188,255,47,.9),0 0 20px rgba(188,255,47,.45);transform:scale(1);opacity:.85}
+  50%{box-shadow:0 0 15px rgba(188,255,47,1),0 0 34px rgba(188,255,47,.75);transform:scale(1.4);opacity:1}
+}
+@keyframes lp-sweep{from{background-position:210% 0}to{background-position:-110% 0}}
+
+/* ── OKX-style section framing: hairline divider, tight heavy headline,
+      lime mono micro-label ── */
+#why,#proof{scroll-margin-top:calc(var(--header) + 1.2rem);border-top:1px solid var(--line)}
+.block-head h2{font-size:clamp(2rem,4.4vw,3.4rem);font-weight:800;letter-spacing:-.04em;line-height:1.05}
+.block-head .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.2em;color:#bcff2f}
+
+/* ── why-pago bento ── */
+/* every row is the same height, so all four cards land at one uniform
+   size no matter which copy wraps longer */
+.lp-bento{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:1fr;gap:1.25rem}
+.lp-cell{
+  display:flex;flex-direction:column;gap:.7rem;
+  background:var(--soft);border:1px solid var(--line);border-radius:var(--r-lg);
+  --cell-pad:1.75rem;
+  padding:var(--cell-pad);
+  transition:border-color .2s var(--ease),transform .2s var(--ease);
+  overflow:hidden; /* guards the rounded corners against the hover lift */
+  /* every cell centres its copy; an art cell's picture is parked in a
+     slot on the right and sized to the copy, so the words alone set the
+     height — an art card lands at the same compact size as the text-only
+     one instead of ballooning to the picture's own height */
+  justify-content:center;
+}
+.lp-cell:hover{border-color:rgba(188,255,47,.45);transform:translateY(-3px);box-shadow:0 24px 48px -30px rgba(188,255,47,.5)}
+/* ── the art cells wear the "total paid out" stat plate: black gradient
+   with a lime glow pool, a sheen that sweeps across, and a scrim that
+   fades the picture into the plate under the copy (the stat-hero stack:
+   z0 art · z1 scrim + top light line · z2 sheen · z3 copy) ── */
+.lp-cell-plate{
+  position:relative;
+  background:
+    radial-gradient(ellipse 120% 95% at 84% 80%, rgba(188,255,47,.17), transparent 60%),
+    linear-gradient(158deg,#161916 0%,#0b0c0b 62%,#080908 100%);
+  border-color:rgba(188,255,47,.24);
+  box-shadow:0 16px 34px -20px rgba(188,255,47,.4), inset 0 1px 0 rgba(255,255,255,.05);
+  /* the lane the copy sits in — kept at 30% so the text column (and
+     therefore the card heights) stay exactly where they are; the art
+     now bleeds past it under the scrim instead of being boxed by it */
+  padding-right:calc(var(--cell-pad) + 30%);
+}
+/* the scrim: near-solid where the words are, clearing to nothing over
+   the right-hand art — the copy never fights the picture, and the
+   picture still reads full-strength where it isn't covered */
+.lp-cell-plate::before{
+  content:"";position:absolute;inset:0;z-index:1;pointer-events:none;
+  background:
+    linear-gradient(95deg,rgba(5,6,5,.97) 0%,rgba(5,6,5,.93) 40%,rgba(5,6,5,.78) 62%,rgba(5,6,5,.42) 79%,rgba(5,6,5,0) 93%),
+    linear-gradient(90deg,transparent 4%,rgba(188,255,47,.55),transparent 96%) 50% 0/84% 1px no-repeat;
+}
+.lp-cell-plate::after{
+  content:"";position:absolute;top:-30%;bottom:-30%;left:0;width:34%;z-index:2;
+  background:linear-gradient(100deg,transparent,rgba(255,255,255,.09) 46%,rgba(188,255,47,.2) 56%,transparent);
+  transform:skewX(-18deg) translateX(-160%);
+  animation:lp-stat-sheen 5.6s ease-in-out infinite;
+  pointer-events:none;
+}
+/* the copy rides above the sheen; the art stays under it, so the sweep
+   passes over the picture the way it does on the stat plate */
+.lp-cell-plate > :not(.lp-cell-art){position:relative;z-index:3}
+/* the picture sits big in the glow pool, anchored bottom-right and
+   bleeding off the card edges the way .stat-art does — the scrim above
+   fades it into the plate under the words. absolute (and cropped by the
+   cell's overflow), so it can never add height: the words alone set the
+   card's height, the same compact size as the text-only cell */
+.lp-cell-art{
+  position:absolute;z-index:0;
+  right:-4%;bottom:-10%;
+  width:auto;height:auto;
+  max-width:60%;max-height:none;
+  filter:drop-shadow(0 0 22px rgba(188,255,47,.4));
+  animation:lp-vault-glow 4.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion:reduce){
+  .lp-cell-plate::after,.lp-cell-art{animation:none}
+}
+.lp-tag{
+  align-self:flex-start;
+  font-size:10.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+  color:#bcff2f;border:1px solid rgba(188,255,47,.3);background:rgba(188,255,47,.06);
+  padding:.3rem .68rem;border-radius:999px;
+}
+.lp-cell h3{font-size:18px;font-weight:700;letter-spacing:-.02em;line-height:1.3}
+.lp-cell p{font-size:14.5px;line-height:1.62;color:var(--body);margin:0}
+.lp-fee{font-family:var(--mono);font-size:clamp(2.8rem,5vw,4rem);font-weight:700;letter-spacing:-.05em;line-height:1;color:#bcff2f}
+
+/* ── footer: the app's footer surface, without its phone-only hide
+      (this page has no tabbar, so the footer must survive on phones) ── */
+.lp-footer{border-top:1px solid var(--line);background:#010100;position:relative;overflow:hidden;padding-top:clamp(3.5rem,8vw,6rem)}
+/* OKX-style giant wordmark, lime-tinted and cropped by the footer edge */
+.lp-foot-mark{
+  position:absolute;left:50%;bottom:-.15em;translate:-50% 0;z-index:0;
+  font-size:clamp(5.5rem,17vw,13rem);font-weight:800;letter-spacing:-.06em;line-height:1;
+  color:transparent;
+  background:linear-gradient(180deg,rgba(188,255,47,.26),rgba(188,255,47,.05));
+  -webkit-background-clip:text;background-clip:text;
+  pointer-events:none;user-select:none;
+}
+.lp-footer .footer-bar{padding-block:1.6rem;position:relative;z-index:1}
+
+/* ── phones ── */
+@media (max-width:900px){
+  .lp-bento{grid-template-columns:1fr}
+}
+@media (max-width:560px){
+  /* phones: the rows floor at the verified 396px card height. The art
+     trim shortened the pictures a few pixels, so the tallest cell's
+     natural content (389) no longer reaches it — the floor keeps the
+     card exactly where it was without moving any desktop measurement. */
+  .lp-bento{grid-auto-rows:minmax(396px,1fr)}
+  .lp-cell{--cell-pad:1.35rem}
+  /* phones: no side lane — the copy takes the full width and the art
+     drops back underneath it at full size (the lane would shrink the
+     picture to a thumbnail and squeeze the words into a narrow column) */
+  .lp-cell-plate{padding-right:var(--cell-pad)}
+  .lp-cell-art{
+    position:relative;z-index:2;
+    right:auto;bottom:auto;
+    width:100%;height:auto;
+    max-width:100%;max-height:none;
+    margin:auto 0 calc(-1 * var(--cell-pad));
+  }
+}
+
+@media (prefers-reduced-motion:reduce){
+  .splash{transition:none}
+  /* The blanket reset in pago-home.css flattens everything to .01ms — the
+     landing's marquee and glow are the page's pulse, so they get the same
+     targeted re-enable the base sheet gives the home hero's art. */
+  .lp-ticker-track{animation:lp-slide 32s linear infinite !important}
+  .lp-ticker span{animation:lp-glow 2.4s ease-in-out infinite !important;animation-delay:var(--d) !important}
+  .lp-ticker span::after{animation:lp-dot 2.4s ease-in-out infinite !important;animation-delay:var(--d) !important}
+  .lp-ticker::after{animation:lp-sweep 6s linear infinite !important}
+  .site-header,main,.lp-footer{transition:none}
+}
+</style>
+<noscript><style>#splash{display:none}</style></noscript>
+</head>
+
+<body>
+
+<!-- Pago coin mark, same sprite the app carries. Kept inline so it stays
+     crisp at every size. -->
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="coin-core" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#D9FF72"/>
+      <stop offset="1" stop-color="#A9E91A"/>
+    </linearGradient>
+    <symbol id="coin-stable" viewBox="0 0 32 32">
+      <circle cx="16" cy="16" r="15.25" fill="#111610" stroke="#D2FF57" stroke-width="1.5"/>
+      <circle cx="16" cy="16" r="11.75" fill="url(#coin-core)"/>
+      <path d="M21.1 11.4c-.8-1.5-2.5-2.3-5-2.3-3 0-5 1.3-5 3.3 0 4.6 9.1 2.1 9.1 5.8 0 1.8-1.8 3.1-4.9 3.1-2.3 0-4.1-.8-5.1-2.2M16 6.7v18.6" fill="none" stroke="#13180D" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M7.8 12.2a8.8 8.8 0 0 1 12.1-4.7" fill="none" stroke="#FFFFFF" stroke-opacity=".38" stroke-width=".8" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="coin-share" viewBox="0 0 16 16">
+      <path d="M11.5 5.2A2.1 2.1 0 1 0 11.5 1a2.1 2.1 0 0 0 0 4.2zM4.5 8.1a2.1 2.1 0 1 0 0-4.2 2.1 2.1 0 0 0 0 4.2zM11.5 15a2.1 2.1 0 1 0 0-4.2 2.1 2.1 0 0 0 0 4.2zM6.4 9.1l3.2 1.8M9.6 5.1 6.4 6.9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+    </symbol>
+  </defs>
+</svg>
+
+<!-- ═══════════ SPLASH — the landing screen: the bull + loading ═══════════ -->
+<div class="splash" id="splash">
+  <img class="splash-art" src="img/okx-bull-hero.jpg"
+       alt="Pago mascot holding a glowing payment tile"
+       fetchpriority="high" decoding="async">
+  <div class="splash-ui">
+    <div class="splash-foot">
+      <div class="splash-bar" id="splashBar" role="progressbar"
+           aria-label="Loading Pago" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <i id="splashFill"></i>
+      </div>
+      <p class="splash-status" id="splashStatus" role="status">Loading · 0%</p>
+    </div>
+  </div>
+</div>
+
+<!-- The whole nav sits in the bar: Create a link first, then My links, then
+     the activity bell, and the wallet + X Layer network readout — the last
+     two moved up from the create panel, so the ids xlayer.js binds to are
+     unchanged, only their position. The links take class + aria-current, not
+     aria-selected: they are links, not tabs. -->
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="#home" aria-label="Pago home">
+      <span class="brand-mark" aria-hidden="true">
+        <svg width="26" height="26" viewBox="0 0 32 32"><use href="#coin-stable"/></svg>
+      </span>
+      <span class="brand-name">Pago</span>
+    </a>
+    <div class="header-right">
+      <a class="btn btn-sm" data-tab="create" href="#create"><span>Create a link</span></a>
+      <a class="btn btn-sm" data-tab="ledger" href="#ledger"><span>My links</span></a>
+      <button class="icon-btn bell-btn" id="bellBtn" type="button" title="Activity"
+              aria-label="Recent payment activity" aria-expanded="false" aria-controls="activityPanel">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M8 1.9a4.1 4.1 0 0 0-4.1 4.1c0 3.9-1.7 5.1-1.7 5.1h11.6s-1.7-1.2-1.7-5.1A4.1 4.1 0 0 0 8 1.9Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6.6 13.1a1.6 1.6 0 0 0 2.8 0" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      </button>
+      <div class="lp-appbar">
+        <span class="net-pill">
+          <span class="dot js-netdot" id="netDot" aria-hidden="true"></span>
+          <span id="netLabel">X Layer</span>
+          <select class="network-select" id="networkSelect" aria-label="X Layer network"></select>
+        </span>
+        <button class="btn btn-sm" id="walletBtn" type="button">
+          <svg class="wallet-ico" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M2.5 5A1.5 1.5 0 0 1 4 3.5h8A1.5 1.5 0 0 1 13.5 5v6A1.5 1.5 0 0 1 12 12.5H4A1.5 1.5 0 0 1 2.5 11Z"/><path d="M13.5 6.6H10.8a1.6 1.6 0 0 0 0 3.2h2.7"/></svg>
+          <span id="walletLabel">Connect</span>
+        </button>
+      </div>
+
+      <!-- Activity popover: hangs off the header's right group, and reads
+           the same getLinksByCreator call the ledger makes (xlayer.js). -->
+      <div class="lp-activity" id="activityPanel" hidden>
+        <div class="lp-act-head">
+          <span class="eyebrow">recent activity</span>
+          <span class="tiny" id="actNote"></span>
+        </div>
+        <div class="lp-act-list" id="actList" aria-live="polite"></div>
+        <a class="lp-act-foot" data-tab="ledger" href="#ledger">
+          <span>Open My links</span><span aria-hidden="true">&rarr;</span>
+        </a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- The landing is the home view of a three-page site (home / create /
+       my links); xlayer.js switches between the [data-panel] sections and
+       keeps the header links marked. -->
+  <div class="panel" id="panel-home" data-panel="home">
+
+  <!-- ═══════════════ HERO — type-first, no illustration ═══════════════ -->
+  <div class="wrap">
+    <section class="hero lp-hero">
+      <div class="hero-copy">
+        <span class="lp-chip"><i aria-hidden="true"></i>Live on X Layer testnet/TapeOut</span>
+        <h1 class="lp-title">Send a link.<br><span class="accent">Get paid.</span></h1>
+        <p class="lede lp-lede">Ask for money like you'd send a message. Share the link, they pay with the stablecoins already in their wallet, and the money lands on X Layer — with a receipt you can check on chain.</p>
+        <div class="hero-actions">
+          <a class="btn" href="#create"><span>Create a link</span></a>
+          <a class="btn ghost" href="#why"><span>See how it works</span></a>
+        </div>
+      </div>
+      <figure class="lp-hero-img" aria-hidden="true">
+        <img src="img/hero-phone.png?v=2" alt="" width="576" height="1024">
+      </figure>
+      <div class="lp-stats">
+        <div class="lp-stat"><strong>0.5%</strong><span>flat fee, taken on the payout</span></div>
+        <div class="lp-stat"><strong>99.5%</strong><span>released to you on claim</span></div>
+        <div class="lp-stat"><strong>0</strong><span>accounts needed to pay</span></div>
+        <div class="lp-stat"><strong>1</strong><span>signed transaction to create</span></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ═══════════════ TICKER ═══════════════ -->
+  <div class="lp-ticker" aria-hidden="true">
+    <div class="lp-ticker-track">
+      <div class="lp-ticker-group">
+        <span>0.5% flat fee</span>
+        <span>No account needed to pay</span>
+        <span>Amounts read from payout events</span>
+        <span>Rule table checked at payout time</span>
+        <span>Gasless payer path</span>
+        <span>Stablecoins on X Layer</span>
+      </div>
+      <div class="lp-ticker-group">
+        <span>0.5% flat fee</span>
+        <span>No account needed to pay</span>
+        <span>Amounts read from payout events</span>
+        <span>Rule table checked at payout time</span>
+        <span>Gasless payer path</span>
+        <span>Stablecoins on X Layer</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ WHY PAGO ═══════════════ -->
+  <section class="block" id="why">
+    <div class="wrap">
+      <div class="block-head">
+        <span class="eyebrow">01 — Why Pago</span>
+        <h2>Splits you can check. Receipts you can trust.</h2>
+      </div>
+
+      <div class="lp-bento">
+
+        <div class="lp-cell lp-cell-plate">
+          <span class="lp-tag">The fee</span>
+          <div class="lp-fee">0.5%</div>
+          <h3>Flat, on the payout</h3>
+          <p>No subscription, no listing fee. The fee moves with the payment itself — 99.5% of every claim lands with you.</p>
+          <!-- Decorative: coins through the fee machine into the wallet —
+               the fee moving with the payment. Transparent PNG, trimmed,
+               fitted whole inside the plate. -->
+          <img class="lp-cell-art" src="img/fee-flow.png?v=2" alt="" aria-hidden="true"
+               width="1256" height="711" loading="lazy" decoding="async">
+        </div>
+
+        <div class="lp-cell lp-cell-plate">
+          <span class="lp-tag">Receipts</span>
+          <h3>Read from the events, not recomputed</h3>
+          <p>Every amount on a receipt comes out of the claim transaction's own payout events — fee, each seat, the claim hash. What the chain said is what you see.</p>
+          <!-- Decorative flow: chain events streaming into a checked receipt.
+               Transparent PNG, trimmed to its content, cropped by the plate. -->
+          <img class="lp-cell-art" src="img/receipt-flow.png?v=3" alt="" aria-hidden="true"
+               width="1130" height="714" loading="lazy" decoding="async">
+        </div>
+
+        <div class="lp-cell lp-cell-plate">
+          <span class="lp-tag">To pay</span>
+          <h3>Their wallet is the account.</h3>
+          <p>No sign-up, no Pago app. Open the link, approve in your wallet. You need USDT0 or USDG on X Layer.</p>
+          <!-- Decorative: phone + wallet → coins → a checked receipt.
+               Cut out of its background, absolute in the plate like the
+               other pictures — it can never add height. -->
+          <img class="lp-cell-art" src="img/topay-flow.png?v=1" alt="" aria-hidden="true"
+               width="957" height="591" loading="lazy" decoding="async">
+        </div>
+
+        <div class="lp-cell lp-cell-plate">
+          <span class="lp-tag">Network</span>
+          <h3>Built on X Layer/TapeOut</h3>
+          <p>Stablecoin payments settle on X Layer, with the contract addresses published for anyone to read back before they trust a thing.</p>
+          <!-- Decorative: the contract read — chip circuits into a document
+               under the glass. Transparent PNG, trimmed, cropped by the plate. -->
+          <img class="lp-cell-art" src="img/network-verify.png?v=2" alt="" aria-hidden="true"
+               width="1525" height="882" loading="lazy" decoding="async">
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ PROOF — the receipt, in its own section ═══════════════ -->
+  <section class="block" id="proof" hidden>
+    <div class="wrap">
+      <div class="block-head">
+        <span class="eyebrow">02 — Proof</span>
+        <h2>One real payout, read from the chain.</h2>
+        <p class="sub">This is the receipt the app rendered for a claimed invoice on X Layer testnet — every amount comes from that claim transaction's payout events.</p>
+      </div>
+
+      <div class="lp-receipt">
+        <div class="pay-card">
+          <article class="pay-receipt" id="claimReceipt" role="status" aria-label="Payment receipt">
+            <div class="rcpt-topbar"><span class="rcpt-brand"><i aria-hidden="true"></i>Pago <span>· X Layer testnet</span></span><span class="rcpt-state"><i aria-hidden="true"></i>Complete</span></div>
+            <div class="rcpt-head">
+              <span class="chk" aria-hidden="true">
+                <svg viewBox="0 0 16 16" width="13" height="13"><path d="M3.5 8.4 6.6 11.5 12.5 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+              <div class="rcpt-head-txt">
+                <strong>Paid out to the payee</strong>
+                <span>Transfer receipt</span>
+              </div>
+            </div>
+            <div class="rcpt-amount" id="claimAmount" aria-live="polite">0.995000 pUSD (MOCK)</div>
+            <p class="rcpt-summary" id="claimSummary">0.005000 pUSD (MOCK) fee · amounts read from payout events</p>
+            <div class="rcpt-rows" id="claimRows">
+              <div class="rcpt-pairs">
+                <div class="rcpt-pair"><span>Date</span><strong>Nov 19, 2026, 12:46 PM</strong></div>
+                <div class="rcpt-pair"><span>Status</span><strong class="rcpt-complete">Completed</strong></div>
+                <div class="rcpt-pair"><span>Recipient</span><strong class="mono" title="0x7fce520d881454ea234d371e1256b75843609b62">0x7fce52…609b62</strong></div>
+                <div class="rcpt-pair"><span>Split applied</span><strong>Rule table</strong></div>
+                <div class="rcpt-pair"><span>Pago fee</span><strong>0.005000 pUSD (MOCK) · 0x3f100…a2fc4</strong></div>
+              </div>
+              <details class="rcpt-more">
+                <summary>More details <span aria-hidden="true">›</span></summary>
+                <div class="rcpt-event-rows">
+                  <div class="rcpt-event-row"><span>Payout pool</span><strong>0.995000 pUSD (MOCK)</strong></div>
+                  <div class="rcpt-event-row"><span>Seat 1</span><strong title="0x7fce520d881454ea234d371e1256b75843609b62">0.497500 pUSD (MOCK) <i>→ 0x7fce52…609b62</i></strong></div>
+                  <div class="rcpt-event-row"><span>Seat 2</span><strong title="0x3f1004aaed662227d535d794da679110111a2fc4">0.298500 pUSD (MOCK) <i>→ 0x3f1004…1a2fc4</i></strong></div>
+                  <div class="rcpt-event-row"><span>Seat 3</span><strong title="0x3f1004aaed662227d535d794da679110111a2fc4">0.199000 pUSD (MOCK) <i>→ 0x3f1004…1a2fc4</i></strong></div>
+                  <div class="rcpt-event-row"><span>Payer</span><strong class="mono" title="0x3f1004aaed662227d535d794da679110111a2fc4">0x3f1004…1a2fc4</strong></div>
+                  <div class="rcpt-event-row"><span>Claim transaction</span><strong class="mono"><a href="https://www.oklink.com/xlayer-test/tx/0xd645981905f6e97989285c857bd0967f20248fee7a1ffb2fc8707dfcca214c9e" target="_blank" rel="noopener">0xd6459819…214c9e</a></strong></div>
+                </div>
+              </details>
+            </div>
+            <div class="rcpt-foot" id="claimFoot">
+              <span class="tiny">Payment delivered and paid out on X Layer. Amounts are the claim transaction's events, not recomputed.</span>
+            </div>
+          </article>
+        </div>
+        <p class="lp-art-note">Invoice <span class="mono">pago-261119-124452-a</span> — <a href="xlayer.html#pay/pago-261119-124452-a">open it in the app</a>.</p>
+      </div>
+    </div>
+  </section>
+
+  </div>
+
+  <!-- ═══════════════ CREATE — the form, with the wallet controls ═══════════════ -->
+  <section class="panel" id="panel-create" data-panel="create" hidden>
+    <div class="wrap">
+
+      <section class="block" id="newInvoice">
+        <div class="block-head">
+          <span class="eyebrow">new link</span>
+          <h2>What are you owed?</h2>
+          <p class="sub">One wallet transaction puts your request on chain. It holds no money, and nobody can take funds out of it.</p>
+        </div>
+
+        <!-- Wallet and network live in the header bar. The form runs in the
+             order a new user meets it: what they're paid in, where it lands,
+             how much, what it's for — then a small "More options" line. The
+             split is optional, off by default, and folded away until asked. -->
+
+        <div class="invoice-card">
+          <form id="createForm" novalidate>
+
+            <div class="field">
+              <span class="label">Paid in</span>
+              <div class="token-pill">
+                <svg class="coin" aria-hidden="true"><use href="#coin-stable"/></svg>
+                <div class="token-meta">
+                  <strong id="tokenLabel">Loading token&hellip;</strong>
+                  <span class="addr" id="tokenAddr">loading&hellip;</span>
+                </div>
+                <span class="token-badge" id="tokenBadge">allowlisted</span>
+                <label class="token-select-label" for="tokenSelect">token</label>
+                <select class="token-select" id="tokenSelect" aria-label="Payment token"></select>
+              </div>
+              <p class="tiny" id="tokenNote">Token details load from the selected network.</p>
+            </div>
+
+            <div class="field">
+              <span class="label">Paid to</span>
+              <div class="wallet-field empty" id="payToField">
+                <svg class="wf-ico" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="1.8" y="3.5" width="12.4" height="9" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M1.8 6.4h12.4" stroke="currentColor" stroke-width="1.3"/><circle cx="11.4" cy="9.6" r="1" fill="currentColor"/></svg>
+                <span class="wf-addr mono" id="payToAddr">connect a wallet</span>
+                <span class="token-badge" id="payToBadge" hidden>your wallet</span>
+              </div>
+              <p class="tiny">This is where the money lands when someone pays your link.</p>
+            </div>
+
+            <div class="field amount-field">
+              <label class="label" for="amount">Amount</label>
+              <div class="amount-input">
+                <input id="amount" name="amount" type="text" inputmode="decimal" placeholder="0" required autocomplete="off">
+                <span id="amountSymbol">pUSD</span>
+              </div>
+            </div>
+
+            <div class="field">
+              <label class="label" for="description">What's it for? <span class="tiny">&middot; required</span></label>
+              <input id="description" name="description" placeholder="Brand identity, logo work, June rent&hellip;" autocomplete="off" maxlength="280" required aria-describedby="noteError">
+              <p class="field-error" id="noteError" role="alert" hidden>Add a short note, for example Brand identity.</p>
+            </div>
+
+            <details class="more-options" id="moreOptions">
+              <summary>More options</summary>
+              <div class="more-body">
+                <div class="field">
+                  <label class="label" for="expires">Expires</label>
+                  <select id="expires" name="expires">
+                    <option value="0">never</option>
+                    <option value="24">in 24 hours</option>
+                    <option value="72" selected>in 3 days</option>
+                    <option value="168">in 7 days</option>
+                  </select>
+                  <p class="tiny">After that, the link stops accepting payment.</p>
+                </div>
+              </div>
+            </details>
+
+            <div class="split-toggle">
+              <label class="split-switch" for="splitToggle">
+                <input type="checkbox" id="splitToggle">
+                <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+                <span class="switch-copy">Split this payment
+                  <small>Optional &mdash; with it off, everything goes to you.</small>
+                </span>
+              </label>
+            </div>
+
+            <div class="split-editor" id="splitEditor" hidden>
+              <div class="split-group">
+                <div class="split-group-head">
+                  <h3>Where it goes</h3>
+                  <span class="split-total">Total <strong id="splitTotal">0%</strong></span>
+                </div>
+                <div class="split-seats" data-split-table="rule">
+                  <div class="split-seat"><span class="seat-name">Seat 1</span><input class="split-address" aria-label="Seat 1 recipient" placeholder="Recipient address (blank = you)" autocomplete="off" spellcheck="false"><label>Share <input class="split-share" aria-label="Seat 1 share in percent" type="number" min="0" max="100" step="5" placeholder="0" inputmode="numeric">%</label></div>
+                  <div class="split-seat"><span class="seat-name">Seat 2</span><input class="split-address" aria-label="Seat 2 recipient" placeholder="Recipient address (blank = you)" autocomplete="off" spellcheck="false"><label>Share <input class="split-share" aria-label="Seat 2 share in percent" type="number" min="0" max="100" step="5" placeholder="0" inputmode="numeric">%</label></div>
+                  <div class="split-seat"><span class="seat-name">Seat 3</span><input class="split-address" aria-label="Seat 3 recipient" placeholder="Recipient address (blank = you)" autocomplete="off" spellcheck="false"><label>Share <input class="split-share" aria-label="Seat 3 share in percent" type="number" min="0" max="100" step="5" placeholder="0" inputmode="numeric">%</label></div>
+                </div>
+                <p class="field-error" id="splitTotalErr" hidden>Shares must add up to 100% before you can create the link.</p>
+                <p class="split-help">A blank address means your connected wallet &mdash; that share goes to you.</p>
+                <details class="split-fallback">
+                  <summary>If the rule check fails, everything goes to you.</summary>
+                  <p>The check runs when the payment is made. If it does not pass, your wallet receives the full amount instead.</p>
+                </details>
+              </div>
+            </div>
+
+            <button class="btn btn-lg" type="submit" id="createBtn"><span>Create link</span></button>
+          </form>
+
+          <div id="createResult" class="tx-line" hidden></div>
+        </div>
+      </section>
+
+    </div>
+  </section>
+
+  <!-- ═══════════════ READY — the share card after the create tx ═══════════════ -->
+  <section class="panel" id="panel-ready" data-panel="ready" hidden>
+    <div class="wrap wrap-ready">
+      <div class="ready-head">
+        <span class="eyebrow">link ready</span>
+        <h2>Your link is <span class="accent">ready to send.</span></h2>
+        <p class="sub">Nobody needs an account to pay you. They open the link, approve the token once, and pay.</p>
+      </div>
+      <div class="ready-card" id="readyCard">
+        <div class="skeleton-block" aria-hidden="true"></div>
+        <div class="skeleton-block sk-w60" aria-hidden="true"></div>
+        <div class="skeleton-block sk-w30" aria-hidden="true"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ MY LINKS — read-only, no wallet needed ═══════════════ -->
+  <section class="panel" id="panel-ledger" data-panel="ledger" hidden>
+    <div class="wrap">
+      <div class="block-head">
+        <span class="eyebrow">my links</span>
+        <h2>Every link, <span class="accent">accounted for.</span></h2>
+        <p class="sub">No wallet needed to look &mdash; every link for an address, read straight from contract state via <code>getLinksByCreator</code>.</p>
+      </div>
+
+      <div class="toolbar">
+        <input class="mono" id="creatorInput" spellcheck="false" autocomplete="off" placeholder="0x…" aria-label="Creator address">
+        <button class="btn btn-sm" type="button" id="ledgerLoad"><span>Load</span></button>
+        <button class="btn btn-sm ghost export-btn" type="button" id="ledgerCsv" hidden>
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M8 2v8m0 0 3-3m-3 3L5 7M3 12.5h10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Export CSV</span>
+        </button>
+      </div>
+
+      <div class="stats" id="ledgerStats" hidden>
+        <div class="stat stat-hero">
+          <img class="stat-art" src="img/vault.svg" alt="" aria-hidden="true">
+          <span class="stat-k">total paid out</span>
+          <span class="stat-v" id="statReceived">&ndash;</span>
+        </div>
+        <div class="stat stat-hero">
+          <img class="stat-art hourglass" src="img/hourglass.png" alt="" aria-hidden="true">
+          <span class="stat-k">awaiting payment</span>
+          <span class="stat-v" id="statOpen">&ndash;</span>
+        </div>
+        <div class="stat stat-hero">
+          <img class="stat-art chain" src="img/chain.png" alt="" aria-hidden="true">
+          <span class="stat-k">links</span>
+          <span class="stat-v" id="statCount">&ndash;</span>
+        </div>
+      </div>
+
+      <div class="filters" id="ledgerFilters" role="group" aria-label="Filter links" hidden>
+        <button class="chip-btn on" type="button" data-filter="all">All <span class="f-n" data-f="all"></span></button>
+        <button class="chip-btn" type="button" data-filter="open">Unpaid <span class="f-n" data-f="open"></span></button>
+        <button class="chip-btn" type="button" data-filter="paid">Paid <span class="f-n" data-f="paid"></span></button>
+        <button class="chip-btn" type="button" data-filter="claimed">Claimed <span class="f-n" data-f="claimed"></span></button>
+        <button class="chip-btn" type="button" data-filter="cancelled">Cancelled <span class="f-n" data-f="cancelled"></span></button>
+        <button class="chip-btn" type="button" data-filter="expired">Expired <span class="f-n" data-f="expired"></span></button>
+      </div>
+
+      <div class="table-card">
+        <div class="table-toolbar">
+          <span class="eyebrow" id="tableCreator">&ndash;</span>
+          <span class="tiny" id="tableCount">&ndash;</span>
+        </div>
+        <div class="table-head" aria-hidden="true">
+          <span>link</span><span>amount</span><span>received</span><span>status</span><span>paid by</span><span></span>
+        </div>
+        <div id="ledgerList" class="review-list">
+          <div class="empty-line">Enter an address above to read the chain&hellip;</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="lp-footer">
+  <span class="lp-foot-mark" aria-hidden="true">Pago</span>
+  <div class="wrap footer-bar">
+    <span>© 2026 Pago · Payment links on X Layer</span>
+    <span>Demo on X Layer testnet — not independently audited. Read the contract addresses back before sending real funds.</span>
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* Splash: the bull holds the screen while the bar fills over five unhurried
+   seconds, then the status walks Loading → Ready → Welcome to Pago and the
+   homepage opens (header, main and footer fade in together). Click or tap
+   skips it — the timeline runs the same for everyone, so the app's opening
+   is always visible. */
+(function () {
+  var splash = document.getElementById("splash");
+  var fill = document.getElementById("splashFill");
+  var bar = document.getElementById("splashBar");
+  var status = document.getElementById("splashStatus");
+  var FILL_MS = 4000, READY_MS = 400, WELCOME_MS = 600;
+  var start = Date.now();
+  var closed = false;
+
+  document.documentElement.classList.add("splash-on");
+
+  function close() {
+    if (closed) return;
+    closed = true;
+    splash.classList.add("gone");
+    document.documentElement.classList.remove("splash-on");
+    window.setTimeout(function () { splash.setAttribute("hidden", ""); }, 600);
+  }
+
+  function tick() {
+    if (closed) return;
+    var e = Date.now() - start;
+    if (e < FILL_MS) {
+      var pct = Math.round((e / FILL_MS) * 100);
+      fill.style.width = pct + "%";
+      bar.setAttribute("aria-valuenow", String(pct));
+      status.textContent = "Loading · " + pct + "%";
+      window.requestAnimationFrame(tick);
+    } else if (e < FILL_MS + READY_MS) {
+      fill.style.width = "100%";
+      bar.setAttribute("aria-valuenow", "100");
+      status.textContent = "Ready";
+      window.requestAnimationFrame(tick);
+    } else if (e < FILL_MS + READY_MS + WELCOME_MS) {
+      status.textContent = "Welcome to Pago";
+      window.requestAnimationFrame(tick);
+    } else {
+      close();
+    }
+  }
+
+  splash.addEventListener("click", close);
+  window.requestAnimationFrame(tick);
+})();
+</script>
+
+<!-- The share card draws its QR here; the module below owns routing, the
+     form, the ledger and the share card for this document. -->
+<script defer src="vendor/qrcode.js"></script>
+<script type="module" src="xlayer.js?v=20261123a"></script>
+
+</body>
+</html>

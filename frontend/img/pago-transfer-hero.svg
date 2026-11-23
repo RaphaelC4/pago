@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" width="1200" height="900" role="img" aria-labelledby="title desc">
+  <title id="title">A payment moving between two phones</title>
+  <desc id="desc">A white sender phone, a lime receiving phone, pixel speech bubbles, and a stream of lime coins.</desc>
+  <defs>
+    <style>
+      .bg { fill: #000000; }
+      .lime { fill: #C8FF1A; stroke: #000000; stroke-width: 2.5; stroke-linejoin: round; }
+      .lime-white { fill: #C8FF1A; stroke: #FFFFFF; stroke-width: 2.5; stroke-linejoin: round; }
+      .lime-flat { fill: #C8FF1A; }
+      .black-fill { fill: #000000; stroke: #FFFFFF; stroke-width: 2.6; stroke-linejoin: round; }
+      .white-fill { fill: #FFFFFF; stroke: #000000; stroke-width: 2.5; stroke-linejoin: round; }
+      .line-white { fill: none; stroke: #FFFFFF; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+      .line-black { fill: none; stroke: #000000; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+      .price-text { fill: #000000; font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; font-weight: 900; letter-spacing: 2px; }
+    </style>
+  </defs>
+  <rect width="1200" height="900" class="bg" />
+  <g class="line-white">
+    <path d="M 300 620 L 285 575 L 340 595 L 365 545 L 395 595 L 440 570 L 430 615" />
+    <path d="M 520 650 L 575 635 L 540 685" />
+  </g>
+  <g transform="translate(175, 290) rotate(-14)">
+    <polygon points="-14,14 146,14 146,118 68,118 36,150 36,118 -14,118" class="black-fill" />
+    <polygon points="-7,7 153,7 153,111 75,111 43,143 43,111 -7,111" class="black-fill" />
+    <polygon points="0,0 160,0 160,104 82,104 50,136 50,104 0,104" class="black-fill" />
+    <rect x="44" y="44" width="14" height="14" fill="#FFFFFF" />
+    <rect x="73" y="44" width="14" height="14" fill="#FFFFFF" />
+    <rect x="102" y="44" width="14" height="14" fill="#FFFFFF" />
+  </g>
+  <g transform="translate(885, 110) rotate(10)">
+    <polygon points="-14,14 156,14 156,134 118,134 118,168 84,134 -14,134" class="black-fill" />
+    <polygon points="-7,7 163,7 163,127 125,127 125,161 91,127 -7,127" class="lime-white" />
+    <polygon points="0,0 170,0 170,120 132,120 132,154 98,120 0,120" class="black-fill" />
+    <g class="lime-flat" transform="translate(45, 26)">
+      <rect x="10" y="0" width="20" height="10" /><rect x="50" y="0" width="20" height="10" />
+      <rect x="0" y="10" width="80" height="20" /><rect x="10" y="30" width="60" height="12" />
+      <rect x="20" y="42" width="40" height="12" /><rect x="30" y="54" width="20" height="10" />
+    </g>
+  </g>
+  <g transform="translate(650, 210) rotate(-25)">
+    <rect x="0" y="0" width="235" height="450" rx="36" class="black-fill" />
+    <rect x="12" y="12" width="211" height="426" rx="26" class="lime" />
+    <rect x="92" y="24" width="52" height="10" rx="5" fill="none" stroke="#000000" stroke-width="2" />
+    <circle cx="80" cy="29" r="4" fill="none" stroke="#000000" stroke-width="2" />
+    <circle cx="118" cy="215" r="88" class="line-black" opacity="0.6" />
+    <circle cx="118" cy="215" r="46" class="line-black" opacity="0.6" />
+    <polygon points="118,86 110,100 126,100" fill="#000000" />
+    <polygon points="118,344 110,330 126,330" fill="#000000" />
+    <text x="118" y="236" text-anchor="middle" font-size="68" class="price-text">$85</text>
+    <g class="black-fill">
+      <rect x="-24" y="145" width="44" height="29" rx="14.5" /><path d="M -12 153 C -4 153, -4 166, -12 166" class="line-white" />
+      <rect x="-28" y="182" width="48" height="31" rx="15.5" /><path d="M -14 190 C -6 190, -6 204, -14 204" class="line-white" />
+      <rect x="-26" y="221" width="46" height="30" rx="15" /><path d="M -12 229 C -4 229, -4 242, -12 242" class="line-white" />
+      <rect x="-20" y="259" width="40" height="27" rx="13.5" /><path d="M -8 266 C 0 266, 0 278, -8 278" class="line-white" />
+    </g>
+    <path d="M 218 215 C 185 225, 172 262, 198 298 C 218 324, 250 302, 256 262" class="black-fill" />
+    <path d="M 235 195 C 275 235, 295 315, 275 395 L 315 520 L 145 550 L 115 450 L 210 450 C 232 450, 235 435, 235 415 Z" class="black-fill" />
+  </g>
+  <g>
+    <ellipse cx="422" cy="596" rx="44" ry="22" transform="rotate(-12 422 596)" class="lime" />
+    <ellipse cx="426" cy="566" rx="44" ry="22" transform="rotate(-8 426 566)" class="lime" />
+    <ellipse cx="434" cy="534" rx="44" ry="22" transform="rotate(2 434 534)" class="lime" />
+    <ellipse cx="446" cy="500" rx="44" ry="22" transform="rotate(14 446 500)" class="lime" />
+    <ellipse cx="464" cy="466" rx="44" ry="22" transform="rotate(26 464 466)" class="lime" />
+    <ellipse cx="486" cy="434" rx="44" ry="22" transform="rotate(38 486 434)" class="lime" />
+    <ellipse cx="514" cy="406" rx="44" ry="22" transform="rotate(50 514 406)" class="lime" />
+    <ellipse cx="546" cy="382" rx="44" ry="22" transform="rotate(62 546 382)" class="lime" />
+    <ellipse cx="582" cy="364" rx="44" ry="22" transform="rotate(74 582 364)" class="lime" />
+    <ellipse cx="620" cy="352" rx="44" ry="22" transform="rotate(84 620 352)" class="lime" />
+    <g transform="translate(664, 348) rotate(94)"><ellipse cx="0" cy="0" rx="44" ry="22" class="lime" /><ellipse cx="0" cy="0" rx="30" ry="14" class="lime" /></g>
+  </g>
+  <g>
+    <g transform="translate(275, 625) rotate(-8)">
+      <rect x="-6" y="8" width="285" height="92" rx="24" class="white-fill" />
+      <rect x="0" y="0" width="285" height="92" rx="24" class="white-fill" />
+      <rect x="20" y="14" width="76" height="42" rx="14" fill="#141414" />
+      <circle cx="40" cy="35" r="13" class="black-fill" /><circle cx="40" cy="35" r="6" class="line-white" /><circle cx="74" cy="35" r="11" class="black-fill" />
+    </g>
+    <path d="M 0 650 L 145 615 C 195 602, 245 595, 290 612 C 315 622, 310 648, 282 652 L 228 656 C 245 675, 295 685, 345 685 C 370 685, 375 712, 348 722 L 265 735 C 305 745, 355 742, 395 735 C 420 732, 425 758, 398 768 L 285 788 C 225 798, 165 788, 115 765 L 0 795 Z" class="black-fill" />
+    <path d="M 278 620 C 292 622, 294 636, 280 640" class="line-white" />
+    <path d="M 215 678 L 222 695 M 225 680 L 232 697 M 195 725 L 200 742 M 205 726 L 210 743" class="line-white" />
+  </g>
+</svg>

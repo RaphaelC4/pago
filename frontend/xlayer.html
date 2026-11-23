@@ -42,6 +42,15 @@
       min-height:0;max-width:none;padding:0;margin:0;
       border:0;background:transparent;opacity:0;cursor:pointer;
     }
+    /* The claim receipt's seat rows carry the same local portrait the
+       create form rotates. styles.css is frozen, so these two new bits
+       live here rather than in it. */
+    .rcpt-seat{display:flex;align-items:center;gap:.45rem;min-width:0}
+    .rcpt-avatar{
+      flex:none;width:20px;height:20px;border-radius:50%;
+      object-fit:cover;object-position:50% 30%;
+      background:#141413;box-shadow:0 0 0 1.5px rgba(255,255,255,.16);
+    }
   </style>
 <!-- Same three weights the first screen uses, preloaded for the same reason. -->
 <link rel="preload" href="fonts/satoshi-400.woff2" as="font" type="font/woff2" crossorigin>
@@ -136,6 +145,6 @@
 
 <!-- One module runs both documents; here it boots the payment card alone.
      The share card's QR helper lives with the site, which owns sharing now. -->
-<script type="module" src="xlayer.js?v=20261123a"></script>
+<script type="module" src="xlayer.js?v=20261123b"></script>
 </body>
 </html>

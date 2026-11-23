@@ -11,7 +11,7 @@
      visual base (tokens, buttons, header, receipt) that this page owns
      and evolves on its own — the app's styles.css stays Codex's and
      untouched. -->
-<link rel="stylesheet" href="pago-home.css?v=20261123a">
+<link rel="stylesheet" href="pago-home.css?v=20261123b">
 <!-- Reads go out to this endpoint before the script can even run; saying so
      here saves a DNS round trip on the first eth_call. -->
 <link rel="preconnect" href="https://rpc.xlayer.tech">
@@ -695,9 +695,9 @@ html.splash-on .lp-footer{opacity:0}
                 <summary>More details <span aria-hidden="true">›</span></summary>
                 <div class="rcpt-event-rows">
                   <div class="rcpt-event-row"><span>Payout pool</span><strong>0.995000 pUSD (MOCK)</strong></div>
-                  <div class="rcpt-event-row"><span>Seat 1</span><strong title="0x7fce520d881454ea234d371e1256b75843609b62">0.497500 pUSD (MOCK) <i>→ 0x7fce52…609b62</i></strong></div>
-                  <div class="rcpt-event-row"><span>Seat 2</span><strong title="0x3f1004aaed662227d535d794da679110111a2fc4">0.298500 pUSD (MOCK) <i>→ 0x3f1004…1a2fc4</i></strong></div>
-                  <div class="rcpt-event-row"><span>Seat 3</span><strong title="0x3f1004aaed662227d535d794da679110111a2fc4">0.199000 pUSD (MOCK) <i>→ 0x3f1004…1a2fc4</i></strong></div>
+                  <div class="rcpt-event-row"><span class="rcpt-seat"><img class="rcpt-avatar" data-seat-avatar="1" src="img/seat1-avatar.png" alt="" width="20" height="20" decoding="async">Seat 1</span><strong title="0x7fce520d881454ea234d371e1256b75843609b62">0.497500 pUSD (MOCK) <i>→ 0x7fce52…609b62</i></strong></div>
+                  <div class="rcpt-event-row"><span class="rcpt-seat"><img class="rcpt-avatar" data-seat-avatar="2" src="img/seat2-avatar.png" alt="" width="20" height="20" decoding="async">Seat 2</span><strong title="0x3f1004aaed662227d535d794da679110111a2fc4">0.298500 pUSD (MOCK) <i>→ 0x3f1004…1a2fc4</i></strong></div>
+                  <div class="rcpt-event-row"><span class="rcpt-seat"><img class="rcpt-avatar" data-seat-avatar="3" src="img/seat3-avatar.png" alt="" width="20" height="20" decoding="async">Seat 3</span><strong title="0x3f1004aaed662227d535d794da679110111a2fc4">0.199000 pUSD (MOCK) <i>→ 0x3f1004…1a2fc4</i></strong></div>
                   <div class="rcpt-event-row"><span>Payer</span><strong class="mono" title="0x3f1004aaed662227d535d794da679110111a2fc4">0x3f1004…1a2fc4</strong></div>
                   <div class="rcpt-event-row"><span>Claim transaction</span><strong class="mono"><a href="https://www.oklink.com/xlayer-test/tx/0xd645981905f6e97989285c857bd0967f20248fee7a1ffb2fc8707dfcca214c9e" target="_blank" rel="noopener">0xd6459819…214c9e</a></strong></div>
                 </div>
@@ -806,9 +806,9 @@ html.splash-on .lp-footer{opacity:0}
                   <span class="split-total">Total <strong id="splitTotal">0%</strong></span>
                 </div>
                 <div class="split-seats" data-split-table="rule">
-                  <div class="split-seat"><span class="seat-name">Seat 1</span><input class="split-address" aria-label="Seat 1 recipient" placeholder="Recipient address (blank = you)" autocomplete="off" spellcheck="false"><label>Share <input class="split-share" aria-label="Seat 1 share in percent" type="number" min="0" max="100" step="5" placeholder="0" inputmode="numeric">%</label></div>
-                  <div class="split-seat"><span class="seat-name">Seat 2</span><input class="split-address" aria-label="Seat 2 recipient" placeholder="Recipient address (blank = you)" autocomplete="off" spellcheck="false"><label>Share <input class="split-share" aria-label="Seat 2 share in percent" type="number" min="0" max="100" step="5" placeholder="0" inputmode="numeric">%</label></div>
-                  <div class="split-seat"><span class="seat-name">Seat 3</span><input class="split-address" aria-label="Seat 3 recipient" placeholder="Recipient address (blank = you)" autocomplete="off" spellcheck="false"><label>Share <input class="split-share" aria-label="Seat 3 share in percent" type="number" min="0" max="100" step="5" placeholder="0" inputmode="numeric">%</label></div>
+                  <div class="split-seat"><span class="seat-name"><button type="button" class="seat-avatar-btn" data-seat="1" aria-label="Change avatar for Seat 1"><img class="seat-avatar" data-seat-avatar="1" src="img/seat1-avatar.png" alt="" width="28" height="28" decoding="async"></button>Seat 1</span><input class="split-address" aria-label="Seat 1 recipient" placeholder="Recipient address (blank = you)" autocomplete="off" spellcheck="false"><label>Share <input class="split-share" aria-label="Seat 1 share in percent" type="number" min="0" max="100" step="5" placeholder="0" inputmode="numeric">%</label></div>
+                  <div class="split-seat"><span class="seat-name"><button type="button" class="seat-avatar-btn" data-seat="2" aria-label="Change avatar for Seat 2"><img class="seat-avatar" data-seat-avatar="2" src="img/seat2-avatar.png" alt="" width="28" height="28" decoding="async"></button>Seat 2</span><input class="split-address" aria-label="Seat 2 recipient" placeholder="Recipient address (blank = you)" autocomplete="off" spellcheck="false"><label>Share <input class="split-share" aria-label="Seat 2 share in percent" type="number" min="0" max="100" step="5" placeholder="0" inputmode="numeric">%</label></div>
+                  <div class="split-seat"><span class="seat-name"><button type="button" class="seat-avatar-btn" data-seat="3" aria-label="Change avatar for Seat 3"><img class="seat-avatar" data-seat-avatar="3" src="img/seat3-avatar.png" alt="" width="28" height="28" decoding="async"></button>Seat 3</span><input class="split-address" aria-label="Seat 3 recipient" placeholder="Recipient address (blank = you)" autocomplete="off" spellcheck="false"><label>Share <input class="split-share" aria-label="Seat 3 share in percent" type="number" min="0" max="100" step="5" placeholder="0" inputmode="numeric">%</label></div>
                 </div>
                 <p class="field-error" id="splitTotalErr" hidden>Shares must add up to 100% before you can create the link.</p>
                 <p class="split-help">A blank address means your connected wallet &mdash; that share goes to you.</p>
@@ -972,7 +972,7 @@ html.splash-on .lp-footer{opacity:0}
 <!-- The share card draws its QR here; the module below owns routing, the
      form, the ledger and the share card for this document. -->
 <script defer src="vendor/qrcode.js"></script>
-<script type="module" src="xlayer.js?v=20261123a"></script>
+<script type="module" src="xlayer.js?v=20261123b"></script>
 
 </body>
 </html>

@@ -385,6 +385,66 @@ async function readClaimEvidence(link) {
   return evidence;
 }
 
+/* Each seat carries a small portrait so people can tell the rows apart.
+   Two faces per seat; the portrait in the create form is a button that
+   rotates to the next one, and the choice lives in localStorage so the
+   receipt on this device shows the same face. Local decoration only —
+   nothing about it is written to the chain. */
+const SEAT_AVATARS = [
+  ["img/seat1-avatar.png", "img/seat1-avatar2.png"],
+  ["img/seat2-avatar.png", "img/seat2-avatar2.png"],
+  ["img/seat3-avatar.png", "img/seat3-avatar2.png"],
+];
+const seatAvatarKey = (seat) => `pago.seatAvatar.${seat}`;
+
+function seatAvatarIndex(seat) {
+  try {
+    const pool = SEAT_AVATARS[seat - 1];
+    const v = Number(localStorage.getItem(seatAvatarKey(seat)));
+    return pool && Number.isInteger(v) && v >= 0 && v < pool.length ? v : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function seatAvatarSrc(seat) {
+  const pool = SEAT_AVATARS[seat - 1];
+  return pool ? pool[seatAvatarIndex(seat)] : "";
+}
+
+/* Repaint every portrait on the page — the create form's three and any
+   receipt rows already on screen — from the stored choice. */
+function paintSeatAvatars() {
+  $$("[data-seat-avatar]").forEach((img) => {
+    const src = seatAvatarSrc(Number(img.dataset.seatAvatar));
+    if (src) img.src = src;
+  });
+}
+
+function wireSeatAvatars() {
+  $$(".seat-avatar-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const seat = Number(btn.dataset.seat);
+      const pool = SEAT_AVATARS[seat - 1];
+      if (!pool) return;
+      const next = (seatAvatarIndex(seat) + 1) % pool.length;
+      try {
+        localStorage.setItem(seatAvatarKey(seat), String(next));
+      } catch {
+        /* private mode: the rotation still shows, it just won't persist */
+      }
+      paintSeatAvatars();
+      const img = btn.querySelector(".seat-avatar");
+      if (img) {
+        img.classList.remove("is-rotating");
+        void img.offsetWidth; // restart the animation on a repeat tap
+        img.classList.add("is-rotating");
+      }
+    });
+  });
+  paintSeatAvatars();
+}
+
 /* Render the claimed receipt from the claim's own events: the pool, the
    fee, which table the circuit selected, one row per leg as the transaction
    emitted them, and the claim hash. Called by renderPay for Claimed links;
@@ -402,7 +462,7 @@ async function fillClaimReceipt(link) {
 
   const { feeLeg, seatLegs } = splitClaimLegs(legs, claim.fee, NET.feeAccount);
   const seatRow = (leg, index) => `
-    <div class="rcpt-event-row"><span>Seat ${index + 1}${leg.kind === "owed" ? " · owed" : ""}</span><strong title="${esc(leg.recipient)}">${formatUnits(leg.amount, DECIMALS)} ${esc(TOKEN_LABEL)} <i>→ ${truncate(leg.recipient, 8, 6)}</i></strong></div>`;
+    <div class="rcpt-event-row"><span class="rcpt-seat"><img class="rcpt-avatar" data-seat-avatar="${index + 1}" src="${seatAvatarSrc(index + 1)}" alt="" width="20" height="20" decoding="async">Seat ${index + 1}${leg.kind === "owed" ? " · owed" : ""}</span><strong title="${esc(leg.recipient)}">${formatUnits(leg.amount, DECIMALS)} ${esc(TOKEN_LABEL)} <i>→ ${truncate(leg.recipient, 8, 6)}</i></strong></div>`;
 
   rows.innerHTML = `<div class="rcpt-pairs">
       <div class="rcpt-pair"><span>Date</span><strong>${esc(fmtDate(link.claimedAt))}</strong></div>
@@ -1801,6 +1861,7 @@ function boot() {
   paintWallet();
   wireTabs();
   wireCreateForm();
+  wireSeatAvatars();
   wireActivity();
   wireWalletEvents();
 

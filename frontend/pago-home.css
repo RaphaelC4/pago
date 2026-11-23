@@ -597,6 +597,9 @@ main{padding-top:var(--header)}
   box-shadow:0 14px 34px -16px rgba(188,255,47,.65);
 }
 #createForm .btn-lg:hover{background:#d0ff72;border-color:#d0ff72;opacity:1}
+/* The rest of the form rings in lime; the primary button matches instead
+   of falling back to the site's blue focus accent. */
+#createForm .btn-lg:focus-visible{outline:2px solid #bcff2f;outline-offset:2px}
 
 .field-error{margin:0;font-size:12.5px;line-height:1.5;color:#e2a08f}
 
@@ -1476,7 +1479,43 @@ textarea{resize:vertical;min-height:88px;font-size:14px;line-height:1.55}
 .split-total strong.ok{color:#bcff2f}
 .split-seats{display:grid;gap:.5rem}
 #createForm .split-seat{display:grid;grid-template-columns:42px minmax(0,1fr) 104px;align-items:center;gap:.45rem;min-width:0}
-.split-seat .seat-name{font-size:10px;color:var(--muted)}
+/* The seat label stacks a small round portrait over its caption so a
+   second or third avatar can be dropped in later without touching the
+   grid — the caption stays the accessible name either way. */
+.split-seat .seat-name{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:3px;min-height:44px;font-size:10px;line-height:1.2;color:var(--muted);text-align:center;
+}
+.seat-avatar{
+  display:block;
+  width:28px;height:28px;border-radius:50%;object-fit:cover;object-position:50% 30%;
+  background:#141413;box-shadow:0 0 0 1.5px rgba(255,255,255,.16);
+}
+/* OKX-style: the portrait itself is the control. The button is exactly
+   the image's 28px box, so the seat row keeps its height — tapping (or
+   Tab + Enter) rotates to the seat's next face, with a small ↻ badge
+   marking it as changeable even where there is no hover. */
+.split-seat .seat-avatar-btn{
+  position:relative;display:block;width:28px;height:28px;
+  padding:0;border:0;background:none;border-radius:50%;
+  cursor:pointer;line-height:0;
+}
+.split-seat .seat-avatar-btn::after{
+  content:"↻";position:absolute;right:-1px;bottom:-1px;
+  width:13px;height:13px;border-radius:50%;
+  background:#0d1204;border:1px solid rgba(255,255,255,.28);
+  color:#bcff2f;font-size:9px;line-height:11px;text-align:center;
+  font-family:var(--font);pointer-events:none;
+  transition:transform .18s,border-color .18s;
+}
+.split-seat .seat-avatar-btn:hover::after{transform:rotate(180deg);border-color:#bcff2f}
+.split-seat .seat-avatar-btn:focus-visible{outline:2px solid #bcff2f;outline-offset:2px}
+.split-seat .seat-avatar-btn:hover .seat-avatar{box-shadow:0 0 0 1.5px rgba(188,255,47,.55)}
+@keyframes seat-avatar-rotate{
+  from{transform:rotate(-180deg) scale(.65);opacity:.25}
+  to{transform:rotate(0) scale(1);opacity:1}
+}
+.split-seat .seat-avatar.is-rotating{animation:seat-avatar-rotate .32s ease-out}
 #createForm .split-seat input{
   min-width:0;width:100%;height:38px;padding:.4rem .6rem;
   border:1px solid rgba(255,255,255,.07);border-radius:10px;
@@ -1558,6 +1597,14 @@ textarea{resize:vertical;min-height:88px;font-size:14px;line-height:1.55}
 .rcpt-event-row>strong{min-width:0;color:#e4e7e3;text-align:right;font-size:10px;font-weight:550;overflow-wrap:anywhere}
 .rcpt-event-row>strong i{color:#8a908c;font-style:normal;font-weight:400}
 .rcpt-event-row a{color:#d7f6a5;text-decoration:underline;text-underline-offset:2px}
+/* Seat rows carry the seat's portrait — the same local face the create
+   form rotates — so a payer can tell the rows apart at a glance. */
+.rcpt-seat{display:flex;align-items:center;gap:.45rem;min-width:0}
+.rcpt-avatar{
+  flex:none;width:20px;height:20px;border-radius:50%;
+  object-fit:cover;object-position:50% 30%;
+  background:#141413;box-shadow:0 0 0 1.5px rgba(255,255,255,.16);
+}
 .rcpt-foot{display:grid;gap:.75rem;margin-top:13px;padding-top:12px;border-top:1px solid rgba(255,255,255,.07)}
 .rcpt-foot .tiny{color:#858b87;font-size:10px;line-height:1.5}
 .rcpt-foot .rcpt-pdf{width:100%;min-height:44px;border:0;border-radius:999px;background:#bcff2f;color:#15180d;box-shadow:0 5px 22px rgba(188,255,47,.13);font-size:12px;font-weight:700}

@@ -1,93 +1,10 @@
-/* Paylink — light editorial UI, with a dark theme.
-   One accent (blue), one glass element per screen, mobile first.
-   Satoshi is self-hosted; there are no third-party font or image requests. */
+/* Paylink — dark-only responsive UI. Satoshi is self-hosted. */
 
 @font-face{font-family:"Satoshi";src:url("fonts/satoshi-400.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
 @font-face{font-family:"Satoshi";src:url("fonts/satoshi-500.woff2") format("woff2");font-weight:500;font-style:normal;font-display:swap}
 @font-face{font-family:"Satoshi";src:url("fonts/satoshi-700.woff2") format("woff2");font-weight:700;font-style:normal;font-display:swap}
 
 :root{
-  /* Light mode is a neon mint rather than white — NEAR's #00EC97 at ~40%
-     over white, so the page itself reads green instead of hinting at it.
-     The neutrals are pulled into the same family, so borders, chips and the
-     frosted header belong to the page instead of sitting on it as grays.
-     Dark mode (the demo) is untouched. */
-  --bg:#99f7d5;
-  --ink:#010100;
-  /* Body/secondary text darkened for the mint page (contrast pass): the old
-     grays read faint against #99f7d5 — this is a dark slate, still in the
-     green family so it doesn't look pasted on. Dark mode is untouched. */
-  --body:#2b3a34;
-  --muted:#3d544b;
-  --faint:#57c69f;
-  --line:#71ecc0;
-  --line-2:#5ce0ae;
-  --soft:#c4ffec;
-
-  /* background doodle: the finance pattern as a masked layer, so only the
-     line-art shows — dark ink on the neon page */
-  --doodle:rgba(2,46,27,.10);
-
-  --accent:#ecf4fd;
-  --accent-line:#c3ddf7;
-  --accent-ink:#193d61;
-  --accent-hot:#3c91e6;
-  /* halo the hero emblem is lit by — dimmed so the lit coin doesn't
-     outshine the neon page it sits on */
-  --art-glow:rgba(37,99,235,.13);
-
-  --good-bg:#f0f5ea;
-  --good-line:#d0e1bd;
-  --good-ink:#2b4312;
-
-  --warn-bg:#fdf1ee;
-  --warn-line:#f2cabf;
-  --warn-ink:#8c3b2e;
-
-  /* primary button = ink on white. Inverted by the dark theme. */
-  --btn-bg:#010100;
-  --btn-fg:#ffffff;
-  --shadow-btn:0 2px 0 0 #020201;
-  --shadow-btn-ghost:0 2px 0 0 var(--line);
-
-  --header-bg:rgba(153,247,213,.82);
-  --header-line:rgba(1,1,0,.07);
-  --glass-bg:rgba(153,247,213,.74);
-  --glass-line:rgba(255,255,255,.9);
-  --modal-veil:rgba(1,1,0,.42);
-
-  --shadow-card:0 2px 16px rgba(0,0,0,.04);
-  --shadow-lift:0 8px 40px rgba(1,1,0,.07);
-
-  /* floating mobile bar: ink pill on the mint page, mint icons on the pill */
-  --bar-bg:#010100;
-  --bar-fg:#99f7d5;
-  --bar-active-bg:#99f7d5;
-  --bar-active-fg:#010100;
-  --bar-dot:#3c91e6;
-
-  --r-xs:6px;
-  --r-sm:8px;
-  --r-md:14px;
-  --r-lg:20px;
-  --r-xl:28px;
-
-  --font:"Satoshi",system-ui,-apple-system,"Segoe UI",sans-serif;
-  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
-
-  --ease:cubic-bezier(.32,.72,0,1);
-  --header:60px;
-
-  /* How far the floating tabbar lifts off the bottom edge — one value shared
-     by the bar, the toast and the faucet sheet so they can never drift apart.
-     The safe-area inset is honoured but capped: some wallet in-app browsers
-     report ~100px, which floats the bar up into the middle of the page. The
-     page padding below adds this same value, so the bar always clears the
-     last line of text whatever a browser happens to report. */
-  --safe-b:min(env(safe-area-inset-bottom),24px);
-}
-
-[data-theme="dark"]{
   --bg:#0a0a0a;
   --ink:#f4f4f3;
   --body:#a3a3a1;
@@ -97,8 +14,7 @@
   --line-2:#2c2c2a;
   --soft:#141413;
 
-  /* same doodle layer on dark: faint white, quieter than light mode so the
-     demo keeps the look it has */
+  /* Faint white finance pattern. */
   --doodle:rgba(244,244,243,.055);
 
   --accent:#0b1a2b;
@@ -134,6 +50,17 @@
   --bar-active-bg:#f4f4f3;
   --bar-active-fg:#0a0a0a;
   --bar-dot:#5ba5f0;
+
+  --r-xs:6px;
+  --r-sm:8px;
+  --r-md:14px;
+  --r-lg:20px;
+  --r-xl:28px;
+  --font:"Satoshi",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --ease:cubic-bezier(.32,.72,0,1);
+  --header:60px;
+  --safe-b:min(env(safe-area-inset-bottom),24px);
 }
 
 @media (min-width:768px){ :root{ --header:72px; } }
@@ -144,7 +71,7 @@
 /* The page colour lives on html so the doodle layer (body::before, below)
    can sit between it and the content — a background on body would paint
    over a negative z-index child. */
-html{ -webkit-text-size-adjust:100%; scroll-behavior:smooth; background:var(--bg) }
+html{ color-scheme:dark; -webkit-text-size-adjust:100%; scroll-behavior:smooth; background:var(--bg) }
 html.flat{ scroll-behavior:auto }
 
 body{
@@ -177,26 +104,7 @@ body::before{
   -webkit-mask-size:680px 680px;
   mask-size:680px 680px;
 }
-
-/* Light only: fade the doodle out behind the left column, where the copy
-   lives. Paints after body::before (same z-index, later in the tree) and
-   under every piece of content, so only the pattern washes out — headings,
-   the emblem and the cards are unaffected. On phones the copy is full
-   width, so the wash runs top-down instead. The demo (dark) is untouched. */
-[data-theme="light"] body::after{
-  content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
-  background:linear-gradient(100deg,
-    #99f7d5 0 32%,
-    rgba(153,247,213,.94) 44%,
-    rgba(153,247,213,0) 60%);
-}
 @media (max-width:899px){
-  [data-theme="light"] body::after{
-    background:linear-gradient(180deg,
-      #99f7d5 0 52%,
-      rgba(153,247,213,.72) 78%,
-      rgba(153,247,213,0) 100%);
-  }
 }
 
 h1,h2,h3,p,dl,dd,ol,ul,figure{margin:0}
@@ -241,7 +149,7 @@ code{font-family:var(--mono);font-size:.92em}
 }
 /* The eyebrow is deliberately small type; on the dark page it needs to sit a
    step above --muted to clear contrast without shouting. */
-[data-theme="dark"] .eyebrow{color:#9c9c99}
+:root .eyebrow{color:#9c9c99}
 
 h1{
   font-size:clamp(30px,7vw,52px);
@@ -309,11 +217,6 @@ h3{font-size:18px;line-height:1.3;font-weight:500}
 }
 .icon-btn:hover{color:var(--ink);border-color:var(--line-2)}
 
-/* theme toggle: show the icon for the theme you would switch to */
-.theme-btn .ico-sun{display:none}
-[data-theme="dark"] .theme-btn .ico-sun{display:block}
-[data-theme="dark"] .theme-btn .ico-moon{display:none}
-
 /* wallet glyph inside the connect button — desktop keeps the text label, so
    the icon stays off until the phone media query below turns it on */
 .wallet-ico{display:none}
@@ -343,7 +246,7 @@ h3{font-size:18px;line-height:1.3;font-weight:500}
 }
 /* Dark: the mono mark is black — flip it to a white tile whose glyph
    cutout stays transparent and lets the page show through as the letter. */
-[data-theme="dark"] .brand-mark .logo-lib{filter:brightness(0) invert(1)}
+:root .brand-mark .logo-lib{filter:brightness(0) invert(1)}
 .brand-name{font-size:16px;font-weight:700;letter-spacing:-.02em}
 
 .site-nav{display:flex;align-items:center;gap:.15rem;margin-inline:auto}
@@ -389,12 +292,14 @@ main{padding-top:var(--header)}
 }
 
 /* ─────────────────────────────────────────────── floating mobile bar ── */
-/* Desktop keeps the header tablist. Below 560px the tabs move into a pill in
+/* Desktop keeps the header tablist. Below 760px the tabs move into a pill in
    the thumb zone, so the two navs never show at once and assistive tech only
    ever sees one tablist. */
 .tabbar{display:none}
 
-@media (max-width:560px){
+@media (max-width:760px){
+  .site-nav{display:none}
+  .net-chip{display:none}
   .tabbar{
     display:flex;align-items:center;gap:8px;
     position:fixed;left:0;right:0;bottom:0;z-index:60;
@@ -508,11 +413,11 @@ main{padding-top:var(--header)}
   flex:none;font-family:var(--mono);font-size:13px;font-weight:700;
   white-space:nowrap;padding-top:.1rem;
 }
-[data-theme="dark"] .feed-item{background:var(--bg);border-color:var(--line);color:var(--ink)}
-[data-theme="dark"] .feed-item .feed-m{color:var(--muted)}
-[data-theme="dark"] .feed-ico{background:var(--soft);color:var(--ink)}
-[data-theme="dark"] .feed-ico.good{background:var(--good-bg);color:var(--good-ink)}
-[data-theme="dark"] .feed-ico.warn{background:var(--warn-bg);color:var(--warn-ink)}
+:root .feed-item{background:var(--bg);border-color:var(--line);color:var(--ink)}
+:root .feed-item .feed-m{color:var(--muted)}
+:root .feed-ico{background:var(--soft);color:var(--ink)}
+:root .feed-ico.good{background:var(--good-bg);color:var(--good-ink)}
+:root .feed-ico.warn{background:var(--warn-bg);color:var(--warn-ink)}
 .feed-empty{
   padding:2.75rem 1.25rem;text-align:center;
   border:1px dashed var(--line-2);border-radius:var(--r-md);
@@ -590,7 +495,7 @@ main{padding-top:var(--header)}
    page. The demo (dark) renders exactly as before — no filter at all. */
 .hero-art img{position:relative;display:block;width:100%;height:100%;object-fit:contain;
   filter:drop-shadow(0 16px 26px rgba(1,44,26,.30)) drop-shadow(0 3px 8px rgba(1,44,26,.18)) brightness(.9)}
-[data-theme="dark"] .hero-art img{filter:none}
+:root .hero-art img{filter:none}
 .hero-copy{position:relative;z-index:1}
 
 .hero-steps{
@@ -1160,20 +1065,6 @@ textarea{resize:vertical;min-height:88px;font-size:14px;line-height:1.55}
    one 240px tile of circles at different radii, repeated across the width
    and drawn by a pseudo-element so the footer content is never masked. */
 .site-footer{position:relative;border-top:1px solid var(--line);background:#010100}
-[data-theme="light"] .site-footer{border-top:0}
-[data-theme="light"] .site-footer::before{
-  content:"";position:absolute;left:0;right:0;top:-18px;height:18px;
-  pointer-events:none;
-  background:
-    radial-gradient(circle 16px at 30px 100%,#010100 99%,rgba(1,1,0,0) 100%),
-    radial-gradient(circle 9px at 74px 100%,#010100 99%,rgba(1,1,0,0) 100%),
-    radial-gradient(circle 13px at 118px 100%,#010100 99%,rgba(1,1,0,0) 100%),
-    radial-gradient(circle 7px at 158px 100%,#010100 99%,rgba(1,1,0,0) 100%),
-    radial-gradient(circle 15px at 196px 100%,#010100 99%,rgba(1,1,0,0) 100%),
-    radial-gradient(circle 10px at 228px 100%,#010100 99%,rgba(1,1,0,0) 100%);
-  background-size:240px 100%;
-  background-repeat:repeat-x;
-}
 /* The bubble strip is desktop chrome — on phones the floating tabbar owns
    the bottom of the screen and a black strip under it would swallow the
    pill's outline. Same 560px line where the header hands over to the bar. */
@@ -1289,235 +1180,7 @@ textarea{resize:vertical;min-height:88px;font-size:14px;line-height:1.55}
   *,*::before,*::after{animation-duration:.01ms !important;transition-duration:.01ms !important;scroll-behavior:auto !important}
   .skeleton-block::after{display:none}
 }
-
-/* ═════════════════════════════════════════ light-mode dark cards ════════
-   The page is neon green now, so the create / share / pay / account cards
-   flip to the same near-black surface the activity feed uses: dark on green
-   keeps every reader inside comfortable contrast (green-on-green was not
-   readable, and it is hostile to colour vision deficiency). Everything here
-   is gated on [data-theme="light"], which the inline boot script sets before
-   first paint — the dark theme keeps its styles byte-for-byte. */
-
-[data-theme="light"] .invoice-card,
-[data-theme="light"] .ready-card,
-[data-theme="light"] .pay-card,
-[data-theme="light"] .acct-card{
-  background:#010100;
-  border-color:#010100;
-  color:#f4f4f3;
-  box-shadow:0 14px 38px rgba(1,44,26,.22);
-}
-/* the pay card stays glass — just tinted dark instead of pale */
-[data-theme="light"] .pay-card{background:rgba(3,5,4,.9)}
-
-/* secondary text on the dark surface */
-[data-theme="light"] .invoice-card .label,
-[data-theme="light"] .invoice-card .file-btn,
-[data-theme="light"] .ready-card .sub,
-[data-theme="light"] .pay-card .pay-who-txt span,
-[data-theme="light"] .pay-card .pay-token,
-[data-theme="light"] .pay-card .pay-fee,
-[data-theme="light"] .pay-card .pay-fee strong,
-[data-theme="light"] .pay-card .pay-desc b,
-[data-theme="light"] .pay-card .pi-h,
-[data-theme="light"] .pay-card .pi-p,
-[data-theme="light"] .pay-card .tech-body{color:#a3a3a1}
-
-/* tertiary / meta text on the dark surface */
-[data-theme="light"] .invoice-card .eyebrow,
-[data-theme="light"] .invoice-card .tiny,
-[data-theme="light"] .invoice-card .ai-note,
-[data-theme="light"] .invoice-card .token-meta .addr,
-[data-theme="light"] .invoice-card .wf-ico,
-[data-theme="light"] .invoice-card .wallet-field.empty .wf-addr,
-[data-theme="light"] .invoice-card .amount-input span,
-[data-theme="light"] .ready-card .ready-title span,
-[data-theme="light"] .ready-card .net-k,
-[data-theme="light"] .ready-card .qr-cap,
-[data-theme="light"] .pay-card .qr-cap,
-[data-theme="light"] .pay-card .eyebrow,
-[data-theme="light"] .pay-card .approx,
-[data-theme="light"] .pay-card .wallet-note,
-[data-theme="light"] .pay-card .tech summary,
-[data-theme="light"] .pay-card .tl-label,
-[data-theme="light"] .acct-card .acct-k{color:#8a8a88}
-
-/* dividers and outlines inside the cards */
-[data-theme="light"] .ready-card .ready-top,
-[data-theme="light"] .ready-card .ready-actions,
-[data-theme="light"] .pay-card .pay-desc,
-[data-theme="light"] .pay-card .pay-qr,
-[data-theme="light"] .pay-card .tech,
-[data-theme="light"] .invoice-card .ai-block{border-color:#2c2c2a}
-
-/* form fields */
-[data-theme="light"] .invoice-card input,
-[data-theme="light"] .invoice-card select,
-[data-theme="light"] .invoice-card textarea{
-  background:#141413;color:#f4f4f3;border-color:#2c2c2a;
-}
-[data-theme="light"] .invoice-card input::placeholder,
-[data-theme="light"] .invoice-card textarea::placeholder{color:#8a8a88}
-[data-theme="light"] .invoice-card .token-pill,
-[data-theme="light"] .invoice-card .wallet-field{
-  background:#141413;border-color:#2c2c2a;
-}
-[data-theme="light"] .invoice-card .ai-note.warn{color:#e2a08f}
-[data-theme="light"] .invoice-card .ai-note.ok{color:#a9d380}
-[data-theme="light"] .invoice-card .file-btn:hover{color:#f4f4f3;border-color:#55554f}
-[data-theme="light"] .invoice-card .file-btn.has-file{
-  background:#0b1a2b;border-color:#1e3a5f;color:#8ec1f0;
-}
-[data-theme="light"] .invoice-card .tx-line{background:#141413;border-color:#2c2c2a;color:#a3a3a1}
-
-/* share row (ready) */
-[data-theme="light"] .ready-card .share-url{background:#141413;border-color:#2c2c2a}
-[data-theme="light"] .ready-card .share-btn{
-  background:#141413;border-color:#2c2c2a;color:#f4f4f3;
-}
-[data-theme="light"] .ready-card .share-btn:hover{border-color:#55554f;background:#1c1c1a}
-[data-theme="light"] .ready-card .share-btn svg{color:#8a8a88}
-[data-theme="light"] .ready-card .copy{background:#141413;border-color:#2c2c2a;color:#a3a3a1}
-[data-theme="light"] .ready-card .copy:hover{color:#f4f4f3;border-color:#55554f}
-[data-theme="light"] .ready-card .qr-tile{border-color:#2c2c2a}
-[data-theme="light"] .pay-card .qr-tile{border-color:#2c2c2a}
-
-/* pills sit on the card: the neutral ones go dark, the status ones stay
-   pale chips (light on dark reads fine in every theme) */
-[data-theme="light"] .ready-card .pill{background:#1a1a19;border-color:#2c2c2a;color:#d0d0cd}
-[data-theme="light"] .ready-card .pill.paid{background:#f4f4f3;border-color:#f4f4f3;color:#0a0a0a}
-
-/* buttons inside the cards invert — the ink primary would vanish on black */
-[data-theme="light"] .invoice-card .btn,
-[data-theme="light"] .ready-card .btn,
-[data-theme="light"] .pay-card .btn,
-[data-theme="light"] .acct-card .btn{
-  background:#f4f4f3;color:#0a0a0a;border-color:#f4f4f3;
-  box-shadow:0 2px 0 0 #000000;
-}
-[data-theme="light"] .invoice-card .btn.ghost,
-[data-theme="light"] .ready-card .btn.ghost,
-[data-theme="light"] .pay-card .btn.ghost,
-[data-theme="light"] .acct-card .btn.ghost{
-  background:#141413;color:#f4f4f3;border-color:#2c2c2a;
-}
-
-/* skeleton loaders must not paint neon blocks on the dark card */
-[data-theme="light"] .invoice-card .skeleton-block,
-[data-theme="light"] .ready-card .skeleton-block,
-[data-theme="light"] .pay-card .skeleton-block,
-[data-theme="light"] .acct-card .skeleton-block{background:#1f1f1e}
-
-/* pay card internals */
-[data-theme="light"] .pay-card .pay-desc,
-[data-theme="light"] .pay-card .pi-l{color:#f4f4f3}
-[data-theme="light"] .pay-card .empty-line{color:#8a8a88;border-color:#2c2c2a}
-[data-theme="light"] .pay-card .tl-bar{background:#2c2c2a}
-[data-theme="light"] .pay-card .tl-step.done .tl-bar{background:#f4f4f3}
-[data-theme="light"] .pay-card .tl-step.warm .tl-bar{background:#e2a08f}
-[data-theme="light"] .pay-card .tl-step.done .tl-label{color:#f4f4f3}
-[data-theme="light"] .pay-card .tl-step.now .tl-label{color:#8ec1f0}
-[data-theme="light"] .pay-card .tl-step.warm .tl-label{color:#e2a08f}
-[data-theme="light"] .pay-card .tech-body code{background:#141413;border-color:#2c2c2a}
-
-/* ── pay page, light: lift and structure ──
-   The card was a flat dark slab on a flat wash. Now the wash is
-   translucent so the doodle layer reads through it, the card gets a brand
-   hairline and a grounded shadow, and each block inside it earns its own
-   surface: chip, inset note, glowing live step, receipt strip. */
-
-[data-theme="light"] #panel-pay{
-  background:linear-gradient(180deg,rgba(236,244,253,.72) 0,rgba(153,247,213,0) 460px);
-}
-
-/* card: real elevation on the neon page + a green→blue hairline on the edge */
-[data-theme="light"] .pay-card{
-  box-shadow:0 26px 60px rgba(1,44,26,.34),0 4px 14px rgba(1,44,26,.22);
-}
-[data-theme="light"] .pay-card::before{
-  content:"";position:absolute;top:0;left:1px;right:1px;height:2px;
-  border-radius:inherit;
-  background:linear-gradient(90deg,rgba(0,236,151,0),#00ec97 32%,#3c91e6 70%,rgba(60,145,230,0));
-}
-
-/* header: avatar ringed in brand green, live chip gets a pulsing dot */
-[data-theme="light"] .pay-card .pay-avatar{box-shadow:0 0 0 3px rgba(0,236,151,.20)}
-[data-theme="light"] .pay-card .pay-who-txt span{color:#a3a3a1}
-[data-theme="light"] .pay-card .pay-top .pill.open{position:relative;padding-left:1.5em}
-[data-theme="light"] .pay-card .pay-top .pill.open::before{
-  content:"";position:absolute;left:.55em;top:50%;transform:translateY(-50%);
-  width:6px;height:6px;border-radius:50%;
-  background:var(--accent-hot);box-shadow:0 0 0 3px rgba(60,145,230,.25);
-  animation:livepulse 1.7s ease-in-out infinite;
-}
 @keyframes livepulse{50%{opacity:.35}}
-
-/* token line becomes a chip instead of loose text */
-[data-theme="light"] .pay-card .pay-token{
-  display:inline-flex;align-items:center;gap:.45rem;
-  margin-top:.8rem;padding:.34rem .7rem;
-  background:#141413;border:1px solid #2c2c2a;border-radius:999px;
-  color:#d0d0cd;font-size:13px;
-}
-
-/* "for" note: inset block with a brand bar rather than a bare divider */
-[data-theme="light"] .pay-card .pay-desc,
-[data-theme="light"] .pay-card .pay-items{
-  margin-top:1.3rem;padding:.8rem .95rem;
-  background:rgba(255,255,255,.045);
-  border:1px solid #2c2c2a;border-left:3px solid #00ec97;
-  border-radius:10px;color:#f4f4f3;
-}
-
-/* timeline: thicker bars, uppercase labels, the live step glows */
-[data-theme="light"] .pay-card .timeline{gap:.6rem}
-[data-theme="light"] .pay-card .tl-step{gap:.55rem}
-[data-theme="light"] .pay-card .tl-bar{height:4px;background:#2c2c2a}
-[data-theme="light"] .pay-card .tl-label{font-size:10px;letter-spacing:.09em;text-transform:uppercase}
-[data-theme="light"] .pay-card .tl-step.done .tl-bar{background:#f4f4f3}
-[data-theme="light"] .pay-card .tl-step.done .tl-label{color:#f4f4f3}
-[data-theme="light"] .pay-card .tl-step.now .tl-bar{background:#3c91e6;box-shadow:0 0 12px rgba(60,145,230,.55)}
-[data-theme="light"] .pay-card .tl-step.now .tl-label{color:#8ec1f0}
-[data-theme="light"] .pay-card .tl-step.warm .tl-bar{background:#e2a08f}
-[data-theme="light"] .pay-card .tl-step.warm .tl-label{color:#e2a08f}
-
-/* pay button: a money glow under the white */
-[data-theme="light"] .pay-card .pay-actions .btn{
-  box-shadow:0 10px 26px rgba(0,236,151,.25),0 2px 0 0 #000;
-  font-weight:600;
-}
-
-/* fee line → receipt strip */
-[data-theme="light"] .pay-card .pay-fee{
-  margin-top:.75rem;padding:.55rem .75rem;
-  background:rgba(255,255,255,.045);border:1px solid #2c2c2a;border-radius:10px;
-  color:#a3a3a1;
-}
-[data-theme="light"] .pay-card .pay-fee strong{
-  color:#f4f4f3;font-family:var(--mono);font-size:12.5px;font-weight:700;
-}
-
-/* details rows: hover affordance + hairline structure */
-[data-theme="light"] .pay-card .tech summary{color:#a3a3a1;font-weight:500}
-[data-theme="light"] .pay-card .tech summary:hover{color:#f4f4f3}
-[data-theme="light"] .pay-card .tech-body{color:#a3a3a1}
-[data-theme="light"] .pay-card .tech-body code{background:#141413;border-color:#2c2c2a;color:#d0d0cd}
-[data-theme="light"] .pay-card .tech-body .row+.row{border-top:1px solid #2c2c2a;padding-top:.55rem}
-
-/* Placeholder boxes join the dark-card language too: the dashed neon box
-   was the last light surface in the Activity and My-links panels. */
-[data-theme="light"] .feed-empty,
-[data-theme="light"] .empty-line{
-  background:#010100;border:1px solid #2c2c2a;color:#a3a3a1;
-}
-[data-theme="light"] .feed-empty .btn,
-[data-theme="light"] .empty-line .btn{
-  background:#f4f4f3;color:#0a0a0a;border-color:#f4f4f3;
-}
-[data-theme="light"] .feed-empty .btn.ghost,
-[data-theme="light"] .empty-line .btn.ghost{
-  background:#141413;color:#f4f4f3;border-color:#2c2c2a;
-}
 
 /* ── pay page: faucet + swap rail (Tidepool) ── */
 .fund-block{display:grid;gap:.55rem;padding-top:1rem;margin-top:.4rem;border-top:1px dashed var(--line)}
@@ -1526,27 +1189,6 @@ textarea{resize:vertical;min-height:88px;font-size:14px;line-height:1.55}
 .fund-note{margin:.95rem 0 0;font-size:11px;color:var(--muted)}
 #fundRail .tx-line{margin-top:.15rem}
 #fundRail .btn{justify-self:start}
-
-/* light mode: the pay card is dark, so the rail borrows dark's palette —
-   the same rule every other block in that card follows */
-[data-theme="light"] .pay-card .fund-block{border-top-color:#2c2c2a}
-[data-theme="light"] .pay-card .fund-h{color:#a3a3a1}
-[data-theme="light"] .pay-card .fund-p{color:#a3a3a1}
-[data-theme="light"] .pay-card .fund-note{color:#6f6f6d}
-[data-theme="light"] .pay-card .chip-btn{background:#141413;border-color:#2c2c2a;color:#d0d0cd}
-[data-theme="light"] .pay-card .chip-btn:hover{background:#1f1f1e;border-color:#3a3a38;color:#f4f4f3}
-[data-theme="light"] .pay-card .chip-btn.on{background:#f4f4f3;border-color:#f4f4f3;color:#0a0a0a}
-[data-theme="light"] .pay-card .tx-line{background:#141413;border-color:#2c2c2a;color:#d0d0cd}
-[data-theme="light"] .pay-card .tx-line.pending{background:#0b1a2b;border-color:#1e3a5f;color:#8ec1f0}
-[data-theme="light"] .pay-card .tx-line.ok{background:#131f0d;border-color:#2e4420;color:#a9d380}
-[data-theme="light"] .pay-card .tx-line.err{background:#24110d;border-color:#4d231a;color:#e2a08f}
-/* new card furniture keeps the dark-surface palette: the muted/line vars
-   are light-theme values and would vanish on the black card */
-[data-theme="light"] .pay-card .pay-net{color:#8a8a88;border-color:#2c2c2a}
-[data-theme="light"] .pay-card .pay-or{color:#8a8a88}
-[data-theme="light"] .pay-card .pay-or::before,
-[data-theme="light"] .pay-card .pay-or::after{background:#2c2c2a}
-[data-theme="light"] .pay-card .pill-k{opacity:.7}
 
 /* ── phone: faucet bottom sheet (chip beside the floating pill) ──
    The dialog IS the veil: tapping the padding around the panel closes it,
@@ -1573,43 +1215,6 @@ textarea{resize:vertical;min-height:88px;font-size:14px;line-height:1.55}
 
 /* the Account card's faucet status line sits right under its button */
 .acct-card .tx-line{margin-top:.6rem}
-
-/* light mode: the sheet is a dark card like every other card here, borrowing
-   the same palette the pay rail uses on its dark surface */
-[data-theme="light"] .sheet-panel{
-  background:#010100;border-color:#010100;color:#f4f4f3;
-  box-shadow:0 14px 38px rgba(1,44,26,.22);
-}
-[data-theme="light"] .sheet-panel .tech-body{color:#a3a3a1}
-[data-theme="light"] .sheet-panel .tech-body code{background:#141413;border-color:#2c2c2a;color:#d0d0cd}
-[data-theme="light"] .sheet-panel .fund-block{border-top-color:#2c2c2a}
-[data-theme="light"] .sheet-panel .fund-h{color:#a3a3a1}
-[data-theme="light"] .sheet-panel .fund-p{color:#a3a3a1}
-[data-theme="light"] .sheet-panel .fund-note{color:#6f6f6d}
-[data-theme="light"] .sheet-panel .btn{background:#f4f4f3;color:#0a0a0a;border-color:#f4f4f3;box-shadow:0 2px 0 0 #000000}
-[data-theme="light"] .sheet-panel .icon-btn{background:#141413;border-color:#2c2c2a;color:#d0d0cd}
-[data-theme="light"] .sheet-panel .icon-btn:hover{color:#f4f4f3;border-color:#3a3a38}
-[data-theme="light"] .sheet-panel .tx-line{background:#141413;border-color:#2c2c2a;color:#d0d0cd}
-[data-theme="light"] .sheet-panel .tx-line.pending{background:#0b1a2b;border-color:#1e3a5f;color:#8ec1f0}
-[data-theme="light"] .sheet-panel .tx-line.ok{background:#131f0d;border-color:#2e4420;color:#a9d380}
-[data-theme="light"] .sheet-panel .tx-line.err{background:#24110d;border-color:#4d231a;color:#e2a08f}
-
-/* the Account panel's faucet status line lives on the dark card too */
-[data-theme="light"] .acct-card .tx-line{background:#141413;border-color:#2c2c2a;color:#d0d0cd}
-[data-theme="light"] .acct-card .tx-line.pending{background:#0b1a2b;border-color:#1e3a5f;color:#8ec1f0}
-[data-theme="light"] .acct-card .tx-line.ok{background:#131f0d;border-color:#2e4420;color:#a9d380}
-[data-theme="light"] .acct-card .tx-line.err{background:#24110d;border-color:#4d231a;color:#e2a08f}
-
-/* the share row the payee sees on their own link, same palette the ready
-   card's share row uses on its dark surface */
-[data-theme="light"] .pay-card .share-url{background:#141413;border-color:#2c2c2a}
-[data-theme="light"] .pay-card .share-btn{
-  background:#141413;border-color:#2c2c2a;color:#f4f4f3;
-}
-[data-theme="light"] .pay-card .share-btn:hover{border-color:#55554f;background:#1c1c1a}
-[data-theme="light"] .pay-card .share-btn svg{color:#8a8a88}
-[data-theme="light"] .pay-card .copy{background:#141413;border-color:#2c2c2a;color:#a3a3a1}
-[data-theme="light"] .pay-card .copy:hover{color:#f4f4f3;border-color:#55554f}
 
 /* ─────────────────────────────────────────── Tidepool rail (Phase 7) ──
    The cross-chain panel lives inside the pay card: same tokens, same type
@@ -1674,24 +1279,108 @@ textarea{resize:vertical;min-height:88px;font-size:14px;line-height:1.55}
   .tp-code{flex-wrap:wrap;align-items:flex-start}
 }
 
-/* Light theme: the pay card is a dark surface — re-pin the panel to it. */
-[data-theme="light"] .pay-card .tp-panel{background:rgba(255,255,255,.03);border-color:#2c2c2a}
-[data-theme="light"] .pay-card .tp-hsub,
-[data-theme="light"] .pay-card .tp-upstream,
-[data-theme="light"] .pay-card .tp-fine,
-[data-theme="light"] .pay-card .tp-deadline{color:#8a8a88}
-[data-theme="light"] .pay-card .tp-detail{color:#a3a3a1}
-[data-theme="light"] .pay-card .tp-panel .label{color:#a3a3a1}
-[data-theme="light"] .pay-card .tp-panel input,
-[data-theme="light"] .pay-card .tp-panel select{
-  background:#141413;color:#f4f4f3;border-color:#2c2c2a;
+/* X Layer network, token and split controls */
+.network-select,.token-select{
+  min-height:34px;max-width:132px;padding:.38rem 1.8rem .38rem .65rem;
+  border:1px solid var(--line-2);border-radius:999px;background:#111312;color:var(--ink);
+  font:500 11px/1.2 var(--font);color-scheme:dark;
 }
-[data-theme="light"] .pay-card .tp-panel input::placeholder{color:#8a8a88}
-[data-theme="light"] .pay-card .tp-code{background:#141413;border-color:#2c2c2a}
-[data-theme="light"] .pay-card .tp-code code{color:#d0d0cd}
-[data-theme="light"] .pay-card .tp-instr{background:#0e0e0d;border-color:#55554f}
-[data-theme="light"] .pay-card .tp-avail.ok{color:#a9d380}
-[data-theme="light"] .pay-card .tp-avail.err,
-[data-theme="light"] .pay-card .tp-err,
-[data-theme="light"] .pay-card .tp-deadline.warn{color:#e2a08f}
-[data-theme="light"] .pay-card .tp-receipt{background:#131f0d;border-color:#2e4420;color:#a9d380}
+.token-select-label{display:block;margin-top:.55rem;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.token-select{max-width:100%;width:100%;border-radius:var(--r-sm);font-size:13px}
+.split-editor{
+  display:grid;gap:.9rem;margin:1.15rem 0 0;padding:1rem;
+  border:1px solid var(--line-2);border-radius:var(--r-lg);background:rgba(255,255,255,.025);min-width:0;
+}
+.split-editor legend{padding:0 .45rem;font-size:13px;font-weight:700;letter-spacing:.01em}
+.split-intro,.split-help{font-size:11.5px;line-height:1.55;color:var(--muted)}
+.split-group{display:grid;gap:.45rem;padding-top:.75rem;border-top:1px solid var(--line)}
+.split-group-head{display:flex;align-items:center;justify-content:space-between;gap:.5rem}
+.split-group-head h3{font-size:12px;font-weight:650}
+.split-group-head>span{font-size:10px;color:var(--muted)}
+.split-seats{display:grid;gap:.45rem}
+.split-seat{display:grid;grid-template-columns:42px minmax(0,1fr) 104px;align-items:center;gap:.45rem;min-width:0}
+.split-seat .seat-name{font-size:10px;color:var(--muted)}
+.split-seat input{min-width:0;width:100%;height:36px;padding:.4rem .55rem;border:1px solid var(--line-2);border-radius:var(--r-sm);background:#111312;color:var(--ink);font:11px var(--mono)}
+.split-seat input::placeholder{color:#6e7470;font:10px var(--font)}
+.split-seat label{display:flex;align-items:center;justify-content:flex-end;gap:.28rem;color:var(--muted);font-size:10px;white-space:nowrap}
+.split-seat input.split-share{width:58px;text-align:right;font:12px var(--font);font-variant-numeric:tabular-nums}
+
+/* Payment receipt, adapted from the transfer reference for a narrow screen. */
+#claimReceipt{
+  position:relative;overflow:hidden;gap:0;margin:1.2rem 0 1rem;padding:18px 16px 14px;
+  border:1px solid rgba(255,255,255,.085);border-radius:22px;
+  background:radial-gradient(ellipse at 50% 0%,rgba(188,255,47,.065),transparent 45%),linear-gradient(155deg,#181a1a,#101111 68%,#0d0e0e);
+  color:#f3f4f1;box-shadow:0 18px 52px rgba(0,0,0,.38),0 0 36px rgba(188,255,47,.035);
+}
+#claimReceipt::before{content:"";position:absolute;left:8%;right:8%;top:0;height:1px;background:linear-gradient(90deg,transparent,rgba(188,255,47,.65),transparent)}
+.rcpt-topbar{display:flex;align-items:center;justify-content:space-between;gap:.7rem;margin-bottom:21px}
+.rcpt-brand{display:flex;align-items:center;gap:.4rem;font-size:12px;font-weight:750;letter-spacing:-.03em}
+.rcpt-brand i{width:8px;height:8px;border-radius:3px;background:#bcff2f;box-shadow:0 0 12px rgba(188,255,47,.65);transform:rotate(45deg)}
+.rcpt-brand span{font-size:10px;font-weight:500;letter-spacing:0;color:#858b87}
+.rcpt-state{display:flex;align-items:center;gap:.38rem;padding:.35rem .62rem;border:1px solid rgba(188,255,47,.2);border-radius:999px;background:rgba(188,255,47,.07);color:#d3f5a4;font-size:10px;font-weight:650}
+.rcpt-state i{width:6px;height:6px;border-radius:50%;background:#bcff2f;box-shadow:0 0 9px #bcff2f}
+#claimReceipt .rcpt-head{gap:.65rem;margin-bottom:.2rem}
+#claimReceipt .chk{width:25px;height:25px;background:#bcff2f;color:#15180d}
+#claimReceipt .rcpt-head-txt strong{font-size:13px;letter-spacing:.005em}
+#claimReceipt .rcpt-head-txt span{color:#898f8b;font-size:10px}
+.rcpt-amount{margin:.45rem 0 .15rem;font-size:clamp(27px,8vw,35px);line-height:1.12;font-weight:720;letter-spacing:-.055em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.rcpt-summary{margin:0 0 17px;color:#858b87;font-size:11px;line-height:1.45}
+#claimRows{display:block;padding:3px 12px;border:1px solid rgba(255,255,255,.06);border-radius:15px;background:rgba(255,255,255,.035)}
+.rcpt-pairs{display:grid;grid-template-columns:minmax(0,1fr);}
+.rcpt-pair{min-height:45px;display:flex;align-items:center;justify-content:space-between;gap:.7rem;border-bottom:1px solid rgba(255,255,255,.055)}
+.rcpt-pair:last-child{border-bottom:0}
+.rcpt-pair>span{color:#888e8a;font-size:11px}
+.rcpt-pair>strong{max-width:68%;color:#eff1ed;text-align:right;font-size:11px;font-weight:600;overflow-wrap:anywhere}
+.rcpt-pair>strong.rcpt-complete{color:#cafa8e}
+.rcpt-more{margin:10px 0 0;border:1px solid rgba(255,255,255,.06);border-radius:14px;background:rgba(255,255,255,.025)}
+.rcpt-more summary{min-height:46px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;color:#d5d9d5;font-size:11px;cursor:pointer;list-style:none}
+.rcpt-more summary::-webkit-details-marker{display:none}
+.rcpt-more summary span{color:#939a95;font-size:20px;line-height:1;transition:transform .18s}
+.rcpt-more[open] summary span{transform:rotate(90deg)}
+.rcpt-event-rows{display:grid;padding:0 12px 8px}
+.rcpt-event-row{min-height:38px;display:flex;align-items:center;justify-content:space-between;gap:.7rem;border-top:1px solid rgba(255,255,255,.05)}
+.rcpt-event-row>span{flex:none;color:#858b87;font-size:10px}
+.rcpt-event-row>strong{min-width:0;color:#e4e7e3;text-align:right;font-size:10px;font-weight:550;overflow-wrap:anywhere}
+.rcpt-event-row>strong i{color:#8a908c;font-style:normal;font-weight:400}
+.rcpt-event-row a{color:#d7f6a5;text-decoration:underline;text-underline-offset:2px}
+.rcpt-foot{display:grid;gap:.75rem;margin-top:13px;padding-top:12px;border-top:1px solid rgba(255,255,255,.07)}
+.rcpt-foot .tiny{color:#858b87;font-size:10px;line-height:1.5}
+.rcpt-foot .rcpt-pdf{width:100%;min-height:44px;border:0;border-radius:999px;background:#bcff2f;color:#15180d;box-shadow:0 5px 22px rgba(188,255,47,.13);font-size:12px;font-weight:700}
+.rcpt-foot .rcpt-pdf:hover{background:#d0ff72}
+
+.export-btn{display:inline-flex;align-items:center;justify-content:center;gap:.45rem}
+#ledgerCsv:not([hidden]){border-color:rgba(188,255,47,.24);color:#d8eba8}
+#ledgerCsv:not([hidden]):hover{border-color:rgba(188,255,47,.5);background:rgba(188,255,47,.08);color:#efffd0}
+#ledgerCsv:disabled{opacity:.65;cursor:progress}
+#panel-home .hero-art{aspect-ratio:4/3}
+@keyframes homepage-illustration-float{
+  0%,100%{transform:translateY(0) rotate(0)}
+  50%{transform:translateY(-11px) rotate(.6deg)}
+}
+#panel-home .hero-art img{
+  border-radius:18px;box-shadow:0 0 0 1px rgba(255,255,255,.07),0 16px 45px rgba(0,0,0,.34);
+  animation:homepage-illustration-float 3.8s ease-in-out infinite;will-change:transform;
+}
+
+@media (min-width:561px) and (max-width:899px){
+  #panel-home .hero{grid-template-columns:minmax(0,1.05fr) minmax(220px,.95fr);align-items:center;gap:1.25rem;padding-block:2rem}
+  #panel-home .hero-art{width:100%;margin:0}
+  #panel-home .hero-copy h1{font-size:clamp(2rem,5vw,2.7rem)}
+}
+@media (max-width:899px){
+  #panel-home .hero-art{width:min(100%,30rem)}
+}
+@media (max-width:560px){
+  #panel-home .hero-art{order:-1}
+}
+@media (prefers-reduced-motion:reduce){
+  #panel-home .hero-art img{animation-duration:3.8s !important;animation-iteration-count:infinite !important;will-change:transform}
+}
+@media (max-width:390px){
+  .network-select{max-width:112px;font-size:10px}
+  .split-editor{padding:.8rem}
+  .split-seat{grid-template-columns:34px minmax(0,1fr) 87px;gap:.35rem}
+  .split-seat input{padding:.35rem .4rem;font-size:10px}
+  .split-seat input.split-share{width:49px;font-size:11px}
+  #claimReceipt{padding:16px 13px 12px}
+}

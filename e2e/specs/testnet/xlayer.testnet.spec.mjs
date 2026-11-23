@@ -86,7 +86,9 @@ test.describe("X Layer testnet read-only", () => {
     await expect(page.locator("#payCard .pay-receipt")).toBeVisible({ timeout: 60_000 });
     await expect(page.locator("#payCard .pay-receipt")).toContainText("Paid out to the payee", { timeout: 60_000 });
     await expect(page.locator("#payCard .pay-receipt")).toContainText("0.995", { timeout: 60_000 });
-    await expect(page.locator("#payCard .pay-receipt")).toContainText("default split", { timeout: 60_000 });
+    /* Case-insensitive: the receipt's casing belongs to the UI design, the
+       fact being pinned is which table paid. */
+    await expect(page.locator("#payCard .pay-receipt")).toContainText(/default split/i, { timeout: 60_000 });
 
     /* Nothing payable on a settled invoice: no approve, no pay, no claim. */
     await expect(page.locator("#payBtn")).toHaveCount(0);
@@ -103,7 +105,7 @@ test.describe("X Layer testnet read-only", () => {
 
     await expect(page.locator("#payCard .pill")).toHaveText("Claimed", { timeout: 60_000 });
     await expect(page.locator("#payCard .pay-receipt")).toContainText("Paid out to the payee", { timeout: 60_000 });
-    await expect(page.locator("#payCard .pay-receipt")).toContainText("rule table", { timeout: 60_000 });
+    await expect(page.locator("#payCard .pay-receipt")).toContainText(/rule table/i, { timeout: 60_000 });
     await expect(page.locator("#payCard .pay-receipt")).toContainText("0.4975", { timeout: 60_000 });
     await expect(page.locator("#payCard .pay-receipt")).toContainText("0.005", { timeout: 60_000 });
   });

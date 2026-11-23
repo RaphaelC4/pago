@@ -302,11 +302,47 @@ export const XLAYER = {
       payee: "0x7FCe520D881454EA234d371E1256B75843609b62",
     },
 
-    /* null = no mainnet deployment approved yet (chain 196 stays read-only
-       until the exact approval phrase is given). When deployed, this block
-       carries its OWN addresses and its OWN unpinnedCap - separate from the
-       testnet values above, never shared between the two chains. */
-    mainnet: null,
+    /* Mainnet values are copied from docs/FRONTEND-HANDOFF.md. README.md
+       still describes chain 196 as read-only, so values not independently
+       documented there remain explicitly unverified here and must be checked
+       against the README/deployment record before a mainnet transaction. */
+    mainnet: {
+      chainId: 196,
+      rpc: "https://rpc.xlayer.tech",
+      explorer: "https://www.oklink.com/xlayer",
+      pago: "0xd63Ae612Cf9Acb9Ac8F7801eF68E8e71068E492c", // verify against README deployment evidence
+      tokens: [
+        {
+          address: "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+          symbol: "USD₮0",
+          decimals: 6,
+          eip3009: true,
+          // Handoff says read back; README does not yet list this token address.
+        },
+        {
+          address: "0x4ae46a509F6b1D9056937BA4500cb143933D2dc8",
+          symbol: "USDG",
+          decimals: 6,
+          eip3009: true,
+          // Handoff says read back; README does not yet list this token address.
+        },
+      ],
+      token: "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+      tokenSymbol: "USD₮0",
+      tokenDecimals: 6,
+      tokenIsMock: false,
+      feeBps: 50,
+      feeAccount: "0x7FCe520D881454EA234d371E1256B75843609b62", // verify against README deployment evidence
+      payee: "0x7FCe520D881454EA234d371E1256B75843609b62", // handoff address; verify against README before marking as verified
+      unpinnedCap: 10_000_000_000,
+      evaluatorPinned: true,
+      processor: "0xDd6BB6fbda8ee867EF838bbE56ebA7d1EcC2c2f4", // handoff read-back; README's processor address differs, verify before mainnet use
+      transistors: "0x96bCbd899f9D422b7051C492213DBEC68699B798", // verify against README deployment evidence
+      circuitId: 1,
+      netlistHash: "0xa593ea65a0b457237eb079b0e51f27911b3bd5c70653108796ef540848fb343f",
+      circuitBeacon: "0xf70d1ed4f62CF3780157B0b421b7E2F45bD0991C",
+      implementation: "0x977f217887E085D298Cb3819cDAD5A0ee35F29B2",
+    },
   },
 
   /* The Split3 payment rule, once it is taped out onto a processor.

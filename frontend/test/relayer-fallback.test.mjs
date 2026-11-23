@@ -55,7 +55,11 @@ for (const fn of ["async function handleCreate(", "async function performCreate(
 }
 
 const friendlyStart = src.indexOf("function friendly(err) {");
-const friendlyEnd = src.indexOf('const THEME_KEY = "paylink:theme";');
+/* End marker: the confetti comment that follows friendly(). The old marker
+   (THEME_KEY) left with the theme toggle, and a -1 end index slices to
+   end-of-file — which dragged const V into the harness and collided with
+   the V dependency. */
+const friendlyEnd = src.indexOf("function confetti() {");
 ok(friendlyStart >= 0 && friendlyEnd > friendlyStart, "friendly() block markers found");
 const friendlyBlock = src.slice(friendlyStart, friendlyEnd);
 

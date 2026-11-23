@@ -129,9 +129,9 @@ const good = (settlementOver = {}, bodyOver = {}) => ({
   ok(appSrc.includes("paintLedgerSettlements"), "the ledger paints settlement chips after render");
   ok(appSrc.includes('title="invoice status on chain"') || appSrc.includes("invoice status on chain"),
     "the on-chain pill stays present and honestly labelled");
-  ok(htmlSrc.includes("app.js?v=20261114a"), "index.html cache-busts the changed app.js");
+  ok(htmlSrc.includes("app.js?v=20261121b"), "index.html cache-busts the changed app.js");
   ok(appSrc.includes('tidepool.js?v=20261114a'), "app.js cache-busts the changed tidepool.js");
-  ok(htmlSrc.includes("styles.css?v=20261114a"), "index.html cache-busts the changed styles.css");
+  ok(htmlSrc.includes("styles.css?v=20261121c"), "index.html cache-busts the changed styles.css");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

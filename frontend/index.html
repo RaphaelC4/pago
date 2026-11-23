@@ -1,23 +1,21 @@
 <!doctype html>
 <html lang="en">
 <head>
+<!-- Pago is the homepage: the bare root opens Pago's landing. The Paylink
+     app below stays reachable at ?flat=1 (how the e2e suite loads it) —
+     it just isn't what a visitor lands on any more. -->
+<script>
+if (!location.search && (location.pathname === "/" || /\/index\.html$/.test(location.pathname))) {
+  location.replace("pago-onboarding.html" + location.hash);
+}
+</script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Paylink — Send a link. Get paid.</title>
 <meta name="description" content="Paylink turns a payment request into a link. They pay with the tokens already in their wallet; you receive them on NEAR. NEAR testnet.">
-<meta name="theme-color" content="#FFFFFF" id="themeColor">
+<meta name="theme-color" content="#0A0A0A">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23010100'/%3E%3Cpath d='M16 8v16M8 16h16' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
-<script>
-/* Set the theme before first paint so the page never flashes white. */
-(function () {
-  try {
-    var saved = localStorage.getItem("paylink:theme");
-    var dark = saved ? saved === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-    document.documentElement.dataset.theme = dark ? "dark" : "light";
-  } catch (e) { document.documentElement.dataset.theme = "light"; }
-})();
-</script>
-<link rel="stylesheet" href="styles.css?v=20261114a">
+<link rel="stylesheet" href="styles.css?v=20261121c">
 <!-- Preload the weights the first screen uses. The fonts are otherwise only
      discovered after the stylesheet parses, which delays the swap that
      re-paints the hero and pushes LCP. -->
@@ -77,10 +75,6 @@
       <button class="icon-btn acct-btn" id="acctBtn" type="button" title="Account" aria-label="Account" aria-controls="panel-account">
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="5.6" r="2.6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M2.9 13.4a5.1 5.1 0 0 1 10.2 0" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
       </button>
-      <button class="icon-btn theme-btn" id="themeBtn" type="button" title="Toggle appearance" aria-label="Toggle dark mode">
-        <svg class="ico ico-moon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M13.6 9.8A5.7 5.7 0 0 1 6.2 2.4a5.7 5.7 0 1 0 7.4 7.4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
-        <svg class="ico ico-sun" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 1v1.5M8 13.5V15M15 8h-1.5M2.5 8H1M12.9 3.1l-1.1 1.1M4.2 11.8 3.1 12.9M12.9 12.9l-1.1-1.1M4.2 4.2 3.1 3.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-      </button>
       <button class="btn btn-sm" id="walletBtn" type="button">
         <svg class="wallet-ico" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M2.5 5A1.5 1.5 0 0 1 4 3.5h8A1.5 1.5 0 0 1 13.5 5v6A1.5 1.5 0 0 1 12 12.5H4A1.5 1.5 0 0 1 2.5 11Z"/><path d="M13.5 6.6H10.8a1.6 1.6 0 0 0 0 3.2h2.7"/></svg>
         <span id="walletLabel">No wallet</span>
@@ -90,7 +84,7 @@
       </button>
 
       <!-- Phones: only the section tabs move down into the floating bar.
-           Everything here — network, activity, account, appearance and the
+           Everything here — network, activity, account and the
            wallet — stays reachable from the top edge at every width. The
            wallet label is clipped to sr-only below 560px, so the button
            reads as a circle but keeps its accessible name. -->
@@ -339,7 +333,7 @@
   <div class="wrap">
     <div class="footer-bar">
       <span>&copy; 2026 Paylink</span>
-      <span class="mono">NEAR testnet &middot; test tokens only &middot; not audited &middot; do not send real funds</span>
+      <span class="mono">NEAR testnet &middot; test tokens only &middot; do not send real funds</span>
     </div>
   </div>
 </footer>
@@ -425,6 +419,6 @@
 <!-- defer keeps it off the critical path but preserves execution order ahead
      of the module below, so window.qrcode exists when app.js renders. -->
 <script defer src="vendor/qrcode.js"></script>
-<script type="module" src="app.js?v=20261114a"></script>
+<script type="module" src="app.js?v=20261121b"></script>
 </body>
 </html>

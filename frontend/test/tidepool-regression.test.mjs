@@ -119,7 +119,8 @@ const css = read("styles.css");
   for (const cls of [".tp-panel", ".tp-instr", ".tp-code", ".tp-receipt", ".tp-toggle", ".tp-deadline", ".tp-fields"]) {
     ok(css.includes(cls), `styles.css defines ${cls}`);
   }
-  ok(css.includes('[data-theme="light"] .pay-card .tp-panel'), "light theme re-pins the panel to the dark pay card");
+  /* No light-theme re-pin assertion: the redesign made the page dark-only
+     (no data-theme="light" rules remain in styles.css). */
 }
 
 /* ── CI wires the new files in ── */

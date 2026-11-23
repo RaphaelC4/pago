@@ -351,12 +351,10 @@ async function railAtStatus(status, extra = {}) {
 }
 
 {
-  /* stylesheet: the receipt and its furniture, pinned for the light theme */
+  /* stylesheet: the receipt and its furniture */
   for (const sel of [".pay-receipt{", ".rcpt-rows{", ".rcpt-foot{", ".rcpt-sig{", ".pay-amount{", ".pay-net{", ".pay-or{", ".pill-k{"]) {
     ok(css.includes(sel), `styles.css defines ${sel.slice(0, sel.length - 1)}`);
   }
-  ok(css.includes(`[data-theme="light"] .pay-card .pay-net`), "light theme re-pins the network chip to the dark card");
-  ok(css.includes(`[data-theme="light"] .pay-card .pay-or`), "light theme re-pins the or-divider to the dark card");
   ok(css.includes(".pay-receipt a:focus-visible"), "receipt links get a visible focus ring");
   ok(css.includes(".rcpt-foot") && /@media \(max-width:560px\)\{[^}]*\.rcpt-foot/s.test(css), "the receipt foot stacks on phones");
   ok(!css.includes(".pay-success"), "the old success banner styles are gone");

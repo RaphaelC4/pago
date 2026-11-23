@@ -3,7 +3,7 @@
    Reads are unsigned JSON-RPC view calls; writes are signed in the wallet. */
 
 import NearConnect from "@hot-labs/near-connect";
-import { CONFIG, ONE_YOCTO, CREATE_STAKE, MAX_DESCRIPTION_BYTES, GAS_DEFAULT, GAS_CLAIM, GAS_FT_CALL } from "./config.js?v=20261114a";
+import { CONFIG, ONE_YOCTO, CREATE_STAKE, MAX_DESCRIPTION_BYTES, GAS_DEFAULT, GAS_CLAIM, GAS_FT_CALL } from "./config.js?v=20261121b";
 /* Phase 7 — the cross-chain payment rail. Self-contained: it renders into
    #tpWrap, gates the pay buttons through tpPayBlockReason/tpPayBlockHtml,
    and never touches the NEAR flow itself. */
@@ -194,32 +194,6 @@ function friendly(err) {
     return "The chain did not respond in time. Try again.";
   }
   return m;
-}
-
-/* ───────────────────────────────────────────────────────── appearance ── */
-
-const THEME_KEY = "paylink:theme";
-
-function applyTheme(theme) {
-  document.documentElement.dataset.theme = theme;
-  const meta = document.getElementById("themeColor");
-  if (meta) meta.content = theme === "dark" ? "#0A0A0A" : "#99f7d5";
-  const btn = document.getElementById("themeBtn");
-  if (btn) {
-    const next = theme === "dark" ? "light" : "dark";
-    btn.setAttribute("aria-label", `Switch to ${next} mode`);
-    btn.title = `Switch to ${next} mode`;
-  }
-}
-
-function initTheme() {
-  let theme = document.documentElement.dataset.theme || "light";
-  applyTheme(theme);
-  document.getElementById("themeBtn")?.addEventListener("click", () => {
-    theme = theme === "dark" ? "light" : "dark";
-    applyTheme(theme);
-    try { localStorage.setItem(THEME_KEY, theme); } catch { /* private mode */ }
-  });
 }
 
 /* ───────────────────────────────────────────────────────── confetti ── */
@@ -2992,7 +2966,6 @@ function setupAi() {
 /* ─────────────────────────────────────────────────────────────── boot ── */
 
 wire();
-initTheme();
 setupAi();
 /* Phase 7 — cross-chain payment rail. The endpoint comes from config (empty
    string hides the feature); the callbacks turn rail events into app-level

@@ -36,18 +36,35 @@ test.describe("X Layer testnet read-only", () => {
   test("the page's health check answers from the live X Layer RPC", async ({ page }) => {
     await page.goto("/xlayer.html");
 
+    /* The landing lives on the site now: a bare visit follows route()'s
+       redirect across. The site opens behind a splash that swallows
+       pointer events — dismiss it the way a tap does. */
+    await expect(page).toHaveURL(/pago-onboarding\.html/);
+    await page.evaluate(() => document.getElementById("splash")?.click());
+
     /* refreshChainInfo() issues two real eth_calls (feeBps + allowlist);
        the dot only turns green if both answered. An outage fails here. */
     await expect(page.locator("#netDot.ok")).toBeVisible({ timeout: 60_000 });
     await expect(page.locator("#netLabel")).toHaveText("X Layer testnet");
     await expect(page.locator("#panel-home h1")).toContainText("Send a link.");
-    await expect(page.locator("#heroChainNote")).toContainText("pUSD (MOCK)");
     await expect(page.locator("#walletLabel")).toHaveText("No wallet");
+
+    /* The old #heroChainNote slot is gone with the redesign. Where the
+       page names the token it must name it as MOCK, so ask the create
+       form — the same live config the health check just read. */
+    await page.goto("/xlayer.html#create");
+    await page.evaluate(() => document.getElementById("splash")?.click());
+    await expect(page.locator("#tokenBadge")).toHaveText("MOCK", { timeout: 60_000 });
+    await expect(page.locator("#tokenLabel")).toHaveText("pUSD (MOCK)");
   });
 
   test("a creator's ledger renders from live contract state", async ({ page }) => {
     await page.goto("/xlayer.html");
-    await page.locator("#tab-ledger").click();
+    await expect(page).toHaveURL(/pago-onboarding\.html/);
+    await page.evaluate(() => document.getElementById("splash")?.click());
+    /* The site's tabs are header links carrying data-tab, not the old
+       #tab-* buttons. */
+    await page.locator('[data-tab="ledger"]').first().click();
 
     /* The form ships prefilled with the payee address from config.js, so the
        read path needs no wallet — Load is the only click. */
@@ -73,10 +90,18 @@ test.describe("X Layer testnet read-only", () => {
   test("a real claimed invoice renders its payout from live state", async ({ page }) => {
     await page.goto(`/xlayer.html#pay/${encodeURIComponent(CLAIMED_LINK)}`);
 
-    await expect(page.locator("#payCard .pill")).toHaveText("Claimed", { timeout: 60_000 });
-    await expect(page.locator("#payCard .pay-token")).toContainText("pUSD (MOCK)");
-    await expect(page.locator("#payCard .pay-token")).toContainText("X Layer testnet");
-    await expect(page.locator("#payCard .pay-desc")).toContainText("live test: gasless payer path");
+    /* A settled invoice renders the receipt as the whole card: the old
+       status-pill head row (which carried .pay-token and .pay-desc) is
+       gone by design. The receipt names the network, the amount line
+       names the token exactly as the chain serves it, and the invoice
+       note under the receipt keeps the description. */
+    await expect(page.locator("#payCard .pay-receipt")).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator("#payCard .pill")).toHaveCount(0);
+    await expect(page.locator("#payCard .rcpt-brand")).toContainText("X Layer testnet");
+    await expect(page.locator("#claimAmount")).toContainText("pUSD (MOCK)", { timeout: 60_000 });
+    await expect(page.locator("#payNote")).toContainText("live test: gasless payer path", {
+      timeout: 60_000,
+    });
 
     /* 1.000000 credited, 0.5% fee → 0.995000 — but the receipt does not
        compute that: it locates the claim block (the RPC caps eth_getLogs at
@@ -103,7 +128,11 @@ test.describe("X Layer testnet read-only", () => {
        and print the seat the chain actually paid. */
     await page.goto(`/xlayer.html#pay/pago-261119-124452-a`);
 
-    await expect(page.locator("#payCard .pill")).toHaveText("Claimed", { timeout: 60_000 });
+    /* Same design as above: no status pill on a settled link — the
+       receipt is the card, and it must name the table the circuit
+       picked and print what the claim events actually paid. */
+    await expect(page.locator("#payCard .pay-receipt")).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator("#payCard .pill")).toHaveCount(0);
     await expect(page.locator("#payCard .pay-receipt")).toContainText("Paid out to the payee", { timeout: 60_000 });
     await expect(page.locator("#payCard .pay-receipt")).toContainText(/rule table/i, { timeout: 60_000 });
     await expect(page.locator("#payCard .pay-receipt")).toContainText("0.4975", { timeout: 60_000 });

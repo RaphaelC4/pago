@@ -1,12 +1,15 @@
 /* X Layer / Pago — smoke suite (mocked chain, no wallet, no egress).
  *
- * The page under test is frontend/xlayer.html: the Solidity port's own UI.
- * Every chain byte it reads comes from fixtures/xlayer-mocks.mjs, encoded
- * with the same frontend/abi.js the browser uses, so this suite asserts the
- * page's behaviour — rendering, routing, honest failure without a wallet —
- * and never claims a payment happened. Signing is deliberately unreachable
- * here: there is no window.ethereum, so the create path must fail loudly
- * rather than pretend.
+ * One module serves both documents: frontend/xlayer.html now owns only the
+ * payment card, while the landing, create form and ledger live on
+ * frontend/pago-onboarding.html — a bare visit to xlayer.html follows
+ * route()'s redirect across, and the first four tests below ride it and
+ * assert the site's own copy. Every chain byte either page reads comes
+ * from fixtures/xlayer-mocks.mjs, encoded with the same frontend/abi.js
+ * the browser uses, so this suite asserts rendering, routing and honest
+ * failure without a wallet — and never claims a payment happened. Signing
+ * is deliberately unreachable here: there is no window.ethereum, so the
+ * create path must fail loudly rather than pretend.
  *
  * Runs under the `smoke` project only (specs/testnet/ is excluded there).
  */
@@ -23,6 +26,10 @@ async function openPago(page, path = "/xlayer.html") {
   const { errors } = await installMocks(page, scenario);
   const xl = await installXLayerMocks(page);
   await page.goto(path);
+  /* The site opens behind a ~5 s splash that swallows pointer events;
+     close it the way a tap does so the header links are tappable at once.
+     (xlayer.html has no splash — the id simply isn't there there.) */
+  await page.evaluate(() => document.getElementById("splash")?.click());
   return { errors, scenario, xl };
 }
 
@@ -30,10 +37,15 @@ test.describe("X Layer / Pago page", () => {
   test("boots from files alone and reports a healthy chain from the mocked RPC", async ({ page }) => {
     const { errors, scenario, xl } = await openPago(page);
 
+    /* The landing lives on the site now: a bare visit to xlayer.html must
+       land there rather than on a document that has no home panel. */
+    await expect(page).toHaveURL(/pago-onboarding\.html/);
     await expect(page).toHaveTitle("Pago — Send a link. Get paid on X Layer.");
     await expect(page.locator("#panel-home h1")).toContainText("Send a link.");
     await expect(page.locator("#panel-home h1 .accent")).toContainText("Get paid.");
-    await expect(page.locator("#panel-home .hero-steps li")).toHaveCount(3);
+    /* The redesign's four-stat hero row stands where the old three-step
+       list was; it must be exactly four, not a stray markup drift. */
+    await expect(page.locator("#panel-home .lp-stat")).toHaveCount(4);
 
     /* The connection dot is driven by a real eth_call (feeBps + allowlist),
        so a green dot means the mocked chain answered, not that we hoped. */
@@ -44,11 +56,11 @@ test.describe("X Layer / Pago page", () => {
        than showing an address it does not have. */
     await expect(page.locator("#walletLabel")).toHaveText("No wallet");
 
-    /* MOCK is not optional: every surface that names the token names it as
-       MOCK, and the footer repeats the warning. */
-    await expect(page.locator("#heroChainNote")).toContainText("pUSD (MOCK)");
-    await expect(page.locator(".site-footer")).toContainText("pUSD (MOCK) test token only");
-    await expect(page.locator(".site-footer")).toContainText("do not send real funds");
+    /* The footer keeps the honest line — no audit claim, and the reader
+       is told to read the contract addresses back. MOCK labelling itself
+       is asserted on the create form below, where the token is named. */
+    await expect(page.locator(".lp-footer")).toContainText("not independently audited");
+    await expect(page.locator(".lp-footer")).toContainText("Read the contract addresses back");
 
     expect(scenario.unexpected, "the page must not reach beyond the mocked allowlist").toEqual([]);
     expect(errors, "boot must produce no console errors").toEqual([]);
@@ -60,17 +72,21 @@ test.describe("X Layer / Pago page", () => {
 
   test("section tabs swap panels and drive the hash", async ({ page }) => {
     const { errors, scenario } = await openPago(page);
+    await expect(page).toHaveURL(/pago-onboarding\.html/);
 
-    await page.locator("#tab-create").click();
+    /* The site's tabs are header links carrying data-tab, not the old
+       #tab-* buttons the flat app had. */
+    await page.locator('[data-tab="create"]').first().click();
     await expect(page.locator("#panel-create")).toBeVisible();
     await expect(page.locator("#panel-home")).toBeHidden();
     await expect(page).toHaveURL(/#create$/);
 
-    await page.locator("#tab-ledger").click();
+    await page.locator('[data-tab="ledger"]').first().click();
     await expect(page.locator("#panel-ledger")).toBeVisible();
     await expect(page).toHaveURL(/#ledger$/);
 
-    await page.locator("#tab-home").click();
+    /* No "home" tab: the brand mark is the way back. */
+    await page.locator(".brand").click();
     await expect(page.locator("#panel-home")).toBeVisible();
 
     expect(scenario.unexpected).toEqual([]);
@@ -79,13 +95,16 @@ test.describe("X Layer / Pago page", () => {
 
   test("the create form labels the token MOCK and refuses to pretend without a wallet", async ({ page }) => {
     const { errors, xl } = await openPago(page);
-    await page.locator("#tab-create").click();
+    await expect(page).toHaveURL(/pago-onboarding\.html/);
+    await page.locator('[data-tab="create"]').first().click();
 
     await expect(page.locator("#tokenLabel")).toHaveText("pUSD (MOCK)");
     await expect(page.locator("#tokenBadge")).toHaveText("MOCK");
     await expect(page.locator("#tokenNote")).toContainText("freely mintable test token");
-    /* The contract's own rule is surfaced, not hidden: the note is required. */
-    await expect(page.locator("label[for=description]")).toContainText("required by the contract");
+    /* The note is required, and the label says so in plain words — the
+       banned "required by the contract" phrasing must not come back. */
+    await expect(page.locator("label[for=description]")).toContainText("required");
+    await expect(page.locator("label[for=description]")).not.toContainText("contract");
 
     await page.locator("#amount").fill("2.5");
     await page.locator("#description").fill("smoke fixture invoice");
@@ -101,7 +120,8 @@ test.describe("X Layer / Pago page", () => {
 
   test("the ledger reads fixtures, counts states and filters without a wallet", async ({ page }) => {
     const { errors, xl } = await openPago(page);
-    await page.locator("#tab-ledger").click();
+    await expect(page).toHaveURL(/pago-onboarding\.html/);
+    await page.locator('[data-tab="ledger"]').first().click();
 
     /* Default creator is the configured payee, so the read-only path works
        with nothing connected — that is what the live testnet project uses. */
@@ -151,8 +171,11 @@ test.describe("X Layer / Pago page", () => {
   test("a claimed invoice shows the payout receipt and nothing payable", async ({ page }) => {
     const { errors } = await openPago(page, xlPayUrl("pago-e2e-0003-claimed"));
 
-    await expect(page.locator("#payCard .pill")).toHaveText("Claimed", { timeout: 15_000 });
-    await expect(page.locator("#payCard .pay-receipt")).toBeVisible();
+    /* Settled links show the receipt first — the redesign drops the old
+       status-pill head row entirely, so there is no .pill to read. */
+    await expect(page.locator("#payCard .pay-receipt")).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("#payCard .pill")).toHaveCount(0);
+    await expect(page.locator("#payCard .rcpt-state")).toContainText("Complete");
     await expect(page.locator("#payCard .pay-receipt")).toContainText("Paid out to the payee");
     await expect(page.locator("#payCard .pay-receipt")).toContainText("0.995");
     await expect(page.locator("#payBtn")).toHaveCount(0);

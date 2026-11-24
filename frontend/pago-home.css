@@ -297,9 +297,10 @@ main{padding-top:var(--header)}
 }
 
 /* ─────────────────────────────────────────────── floating mobile bar ── */
-/* Desktop keeps the header tablist. Below 760px the tabs move into a pill in
-   the thumb zone, so the two navs never show at once and assistive tech only
-   ever sees one tablist. */
+/* Desktop keeps navigation in the header. Below 760px a second entry point
+   appears in the thumb zone: the same sections as plain links (aria-current
+   marks the live one — showPanel() marks every [data-tab] on the page), so
+   neither nav ever claims a role=tablist. */
 .tabbar{display:none}
 
 @media (max-width:760px){
@@ -329,13 +330,13 @@ main{padding-top:var(--header)}
     cursor:pointer;opacity:.6;
     transition:opacity .16s ease;
   }
-  .tb[aria-selected="true"]{opacity:1;color:var(--bar-active-fg)}
+  .tb[aria-current="page"]{opacity:1;color:var(--bar-active-fg)}
   .tb::before{
     content:"";position:absolute;top:50%;left:50%;translate:-50% -50%;
     width:44px;height:44px;border-radius:50%;
     background:transparent;transition:background .16s ease;
   }
-  .tb[aria-selected="true"]::before{background:var(--bar-active-bg)}
+  .tb[aria-current="page"]::before{background:var(--bar-active-bg)}
   .tb > svg{position:relative;z-index:1}
 
   /* centre action: still a tab, just lifted out of the pill. The doubled
@@ -344,8 +345,8 @@ main{padding-top:var(--header)}
     flex:0 0 56px;height:56px;opacity:1;
     transform:translateY(-15px);
   }
-  .tb.tb-fab,.tb.tb-fab[aria-selected="true"]{color:#fff}
-  .tb.tb-fab::before,.tb.tb-fab[aria-selected="true"]::before{
+  .tb.tb-fab,.tb.tb-fab[aria-current="page"]{color:#fff}
+  .tb.tb-fab::before,.tb.tb-fab[aria-current="page"]::before{
     top:0;left:0;translate:0 0;
     width:56px;height:56px;
     background:var(--accent-hot);
@@ -1298,10 +1299,15 @@ textarea{resize:vertical;min-height:88px;font-size:14px;line-height:1.55}
 }
 .toast.show{opacity:1;transform:translateY(0)}
 
-/* Phones: lift both off the floating bar. These live after the base rules on
-   purpose — earlier in the file they would lose on equal specificity. */
-@media (max-width:560px){
+/* Phone lifts, at the bar's own 760px line: toasts and the footer's last
+   row clear the floating pill wherever it shows. These live after the base
+   rules on purpose — earlier in the file they would lose on equal
+   specificity, and the landing's own <style> block (which loads after this
+   sheet and sets `padding-block` on the same element) is beaten with an
+   extra element selector so the footer's last row still gets its runway. */
+@media (max-width:760px){
   .footer-bar{padding-bottom:calc(1.6rem + 72px + var(--safe-b))}
+  footer.lp-footer .footer-bar{padding-bottom:calc(1.6rem + 72px + var(--safe-b))}
   .toast{bottom:calc(86px + var(--safe-b))}
 }
 

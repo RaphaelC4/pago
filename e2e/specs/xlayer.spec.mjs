@@ -114,7 +114,9 @@ test.describe("X Layer / Pago page", () => {
     await expect(page.locator("#panel-ledger")).toBeVisible();
     await expect(page).toHaveURL(/#ledger$/);
 
-    /* No "home" tab: the brand mark is the way back. */
+    /* No "home" tab in the header — the brand mark is the way back on
+       desktop. Phones carry one in the floating homebar (its own test,
+       further down). */
     await page.locator(".brand").click();
     await expect(page.locator("#panel-home")).toBeVisible();
 
@@ -370,6 +372,31 @@ test.describe("X Layer pay page on a small phone", () => {
     /* The tabs stay on the bar at this width and stay reachable by tap. */
     await expect(page.locator('.header-right [data-tab="create"]')).toBeVisible();
     await expect(page.locator('.header-right [data-tab="ledger"]')).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+});
+
+/* The site on a phone: below 760px a second entry point rides the thumb
+ * zone — the same three sections as icons, marked with the same aria-current
+ * the header links get. Both navs lead to the same panels on purpose. */
+test.describe("X Layer site on a small phone", () => {
+  test.use({ viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+
+  test("the homebar carries the three sections and swaps panels", async ({ page }) => {
+    const { errors } = await openPago(page);
+    await expect(page).toHaveURL(/pago-onboarding\.html/);
+
+    const bar = page.locator(".tabbar");
+    await expect(bar).toBeVisible();
+    await expect(bar.locator(".tb")).toHaveCount(3);
+    /* The marker starts on the panel the page opens with. */
+    await expect(bar.locator('[data-tab="home"]')).toHaveAttribute("aria-current", "page");
+
+    await bar.locator('[data-tab="ledger"]').click();
+    await expect(page).toHaveURL(/#ledger$/);
+    await expect(page.locator("#panel-ledger")).toBeVisible();
+    await expect(page.locator("#panel-home")).toBeHidden();
+    await expect(bar.locator('[data-tab="ledger"]')).toHaveAttribute("aria-current", "page");
     expect(errors).toEqual([]);
   });
 });

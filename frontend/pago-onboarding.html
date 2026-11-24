@@ -11,7 +11,7 @@
      visual base (tokens, buttons, header, receipt) that this page owns
      and evolves on its own — the app's styles.css stays Codex's and
      untouched. -->
-<link rel="stylesheet" href="pago-home.css?v=20261124a">
+<link rel="stylesheet" href="pago-home.css?v=20261124b">
 <!-- Reads go out to this endpoint before the script can even run; saying so
      here saves a DNS round trip on the first eth_call. -->
 <link rel="preconnect" href="https://rpc.xlayer.tech">
@@ -36,8 +36,9 @@ body::before{content:none}
 html.splash-on{overflow:hidden}
 html.splash-on .site-header,
 html.splash-on main,
-html.splash-on .lp-footer{opacity:0}
-.site-header,main,.lp-footer{transition:opacity .55s var(--ease)}
+html.splash-on .lp-footer,
+html.splash-on .tabbar{opacity:0}
+.site-header,main,.lp-footer,.tabbar{transition:opacity .55s var(--ease)}
 
 /* Without a tablist in the header, the right group needs to self-align. */
 .header-inner .header-right{margin-left:auto;position:relative}
@@ -410,8 +411,10 @@ html.splash-on .lp-footer{opacity:0}
 .lp-cell p{font-size:14.5px;line-height:1.62;color:var(--body);margin:0}
 .lp-fee{font-family:var(--mono);font-size:clamp(2.8rem,5vw,4rem);font-weight:700;letter-spacing:-.05em;line-height:1;color:#bcff2f}
 
-/* ── footer: the app's footer surface, without its phone-only hide
-      (this page has no tabbar, so the footer must survive on phones) ── */
+/* ── footer: the app's footer surface, kept on phones (the flat app hides
+      its own footer down there; this landing keeps its — the floating
+      homebar only needs its last row cleared, which pago-home.css does at
+      the bar's own breakpoint) ── */
 .lp-footer{border-top:1px solid var(--line);background:#010100;position:relative;overflow:hidden;padding-top:clamp(3.5rem,8vw,6rem)}
 /* OKX-style giant wordmark, lime-tinted and cropped by the footer edge */
 .lp-foot-mark{
@@ -457,7 +460,7 @@ html.splash-on .lp-footer{opacity:0}
   .lp-ticker span{animation:lp-glow 2.4s ease-in-out infinite !important;animation-delay:var(--d) !important}
   .lp-ticker span::after{animation:lp-dot 2.4s ease-in-out infinite !important;animation-delay:var(--d) !important}
   .lp-ticker::after{animation:lp-sweep 6s linear infinite !important}
-  .site-header,main,.lp-footer{transition:none}
+  .site-header,main,.lp-footer,.tabbar{transition:none}
 }
 </style>
 <noscript><style>#splash{display:none}</style></noscript>
@@ -908,6 +911,28 @@ html.splash-on .lp-footer{opacity:0}
   </section>
 
 </main>
+
+<!-- The phone's homebar: the three sections as icons in the thumb zone,
+     hidden above 760px where the header owns navigation. xlayer.js wires it
+     with the header links — every [data-tab] gets the click handler and the
+     aria-current marker from the same showPanel() pass, so this is plain
+     markup riding the existing behaviour. -->
+<nav class="tabbar" aria-label="Primary">
+  <div class="tabbar-pill">
+    <a class="tb" data-tab="home" href="#home" title="Home" aria-current="page">
+      <svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 10.6 12 3.6l8.5 7"/><path d="M5.8 9.4V19a1.5 1.5 0 0 0 1.5 1.5H10V15h4v5.5h2.7A1.5 1.5 0 0 0 18.2 19V9.4"/></svg>
+      <span class="sr-only">Home</span>
+    </a>
+    <a class="tb" data-tab="create" href="#create" title="Create a link">
+      <svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 3.5 10.8 13.2"/><path d="M20.5 3.5 14.2 20.5l-3.4-7.3L3.5 9.8l17-6.3Z"/></svg>
+      <span class="sr-only">Create a link</span>
+    </a>
+    <a class="tb" data-tab="ledger" href="#ledger" title="My links">
+      <svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2.8H7.2A1.8 1.8 0 0 0 5.4 4.6v14.8A1.8 1.8 0 0 0 7.2 21.2h9.6a1.8 1.8 0 0 0 1.8-1.8V7.6Z"/><path d="M14 2.8v3.4a1.4 1.4 0 0 0 1.4 1.4h3.2"/><path d="M9 9.6h3"/><path d="M9 13h6"/><path d="M9 16.6h6"/></svg>
+      <span class="sr-only">My links</span>
+    </a>
+  </div>
+</nav>
 
 <footer class="lp-footer">
   <span class="lp-foot-mark" aria-hidden="true">Pago</span>

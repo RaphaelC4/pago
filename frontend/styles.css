@@ -1384,3 +1384,60 @@ textarea{resize:vertical;min-height:88px;font-size:14px;line-height:1.55}
   .split-seat input.split-share{width:49px;font-size:11px}
   #claimReceipt{padding:16px 13px 12px}
 }
+/* OKX-inspired payment request card: quiet charcoal surfaces, a centered
+   amount and a precise transfer-style detail list. */
+#panel-pay{background:radial-gradient(ellipse at 50% -14%,rgba(188,255,47,.055),transparent 42%),#090a0b!important}
+.wrap-pay{max-width:540px;padding-block:clamp(1.25rem,5vw,3rem)}
+#payCard.pay-card{max-width:480px;margin-inline:auto;padding:clamp(1.05rem,4.5vw,1.5rem);border:1px solid rgba(255,255,255,.075);border-radius:26px;background:linear-gradient(155deg,#1b1d1f 0%,#151718 48%,#111314 100%);box-shadow:0 26px 80px rgba(0,0,0,.46),inset 0 1px 0 rgba(255,255,255,.035);backdrop-filter:blur(18px) saturate(120%);-webkit-backdrop-filter:blur(18px) saturate(120%)}
+.pay-card .pay-card-bar{display:grid;grid-template-columns:38px minmax(0,1fr) 38px;align-items:center;gap:.6rem;margin:-.2rem 0 1.5rem}
+.pay-card .pay-card-bar>strong{justify-self:center;color:#f5f6f3;font-size:15px;font-weight:650;letter-spacing:-.015em}
+.pay-card .pay-iconbtn{width:36px;height:36px;display:inline-grid;place-items:center;padding:0;border:1px solid rgba(255,255,255,.075);border-radius:50%;background:rgba(255,255,255,.035);color:#a8adaa;text-decoration:none;cursor:pointer;transition:background .18s ease,border-color .18s ease,color .18s ease}
+.pay-card .pay-iconbtn:hover{background:rgba(255,255,255,.085);border-color:rgba(255,255,255,.18);color:#fff}
+.pay-card .pay-iconbtn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.pay-card .pay-top{align-items:center;margin-bottom:1.45rem}
+.pay-card .pay-who{gap:.6rem}
+.pay-card .pay-avatar{width:34px;height:34px;padding:2px;background:#111610;border:1px solid rgba(210,255,87,.52)}
+.pay-card .pay-avatar .coin{width:100%;height:100%}
+.pay-card .pay-who-txt strong{color:#f2f3f0;font-size:12px}
+.pay-card .pay-who-txt span{color:#858b87;font-size:11px}
+.pay-card .pill{padding:.32rem .66rem;border-radius:999px;font-size:11px;font-weight:600}
+.pay-card .pay-amount{justify-items:center;text-align:center}
+.pay-card .pay-usd{justify-content:center;align-items:baseline;gap:.15em;font-size:clamp(38px,10.2vw,48px);line-height:1.04;letter-spacing:-.055em;font-weight:700}
+.pay-card .pay-usd .approx{font-size:.42em;color:#e9ece8;letter-spacing:-.02em}
+.pay-card .pay-token{justify-content:center;gap:.42rem;margin-top:.62rem;color:#b9bfbb;font-size:13px}
+.pay-card .pay-token .coin{width:19px;height:19px}
+.pay-card .pay-net{padding:.16rem .48rem;border-color:rgba(255,255,255,.1);background:rgba(255,255,255,.035);color:#8d948f;font-size:10px}
+.pay-card .pay-desc{margin-top:1.2rem;padding:0;border:0;text-align:center;color:#f0f1ee;font-size:14px;line-height:1.45}
+.pay-card .pay-desc b{display:inline;margin:0 .35em 0 0;color:#858b87;font-size:12px;font-weight:500}
+.pay-card .pay-nosplit{margin-top:1rem;padding:.75rem .85rem;border:1px solid rgba(188,255,47,.15);border-radius:14px;background:rgba(188,255,47,.045)}
+.pay-card .pay-nosplit-line{margin:0;color:#dce1da;font-size:12px;line-height:1.55}
+.pay-card .pay-nosplit-sub{margin:.28rem 0 0;color:#899089;font-size:11px}
+.pay-card .pay-items{margin-top:1.25rem;padding:.5rem .9rem;border:1px solid rgba(255,255,255,.065);border-radius:17px;background:rgba(255,255,255,.035)}
+.pay-card .pay-items .pi-h{margin:.3rem 0 .15rem;color:#777f7a;font-size:10px;font-weight:650;letter-spacing:.12em;text-transform:uppercase}
+.pay-card .pi-row{align-items:center;min-height:43px;gap:.75rem;font-size:12px;line-height:1.4}
+.pay-card .pi-row+.pi-row{margin:0;border-top:1px solid rgba(255,255,255,.055)}
+.pay-card .pi-l{color:#969d99;font-size:12px}
+.pay-card .pi-p{color:#f0f2ee;font-size:12px;font-weight:560;text-align:right;white-space:normal;overflow-wrap:anywhere}
+.pay-card .pi-p.mono{font-size:10px}
+.pay-card .pay-details{margin-top:.8rem}
+.pay-card .pay-details>summary{display:flex;align-items:center;justify-content:space-between;min-height:44px;padding:.1rem .2rem;color:#aeb4af;font-size:12px;cursor:pointer;list-style:none}
+.pay-card .pay-details>summary::-webkit-details-marker{display:none}
+.pay-card .pay-details>summary::after{content:"⌄";color:#858c87;font-size:17px;transition:transform .18s ease}
+.pay-card .pay-details[open]>summary::after{transform:rotate(180deg)}
+.pay-card .pay-actions{margin-top:1rem;gap:.55rem}
+.pay-card .pay-actions .btn-lg{min-height:54px;border-radius:999px;border:1px solid #f5f5f2;background:#f5f5f2;color:#10110e;font-weight:650;box-shadow:0 7px 24px rgba(0,0,0,.2);transition:transform .18s ease,background .18s ease}
+.pay-card .pay-actions .btn-lg:hover{background:#fff;transform:translateY(-1px)}
+.pay-card .wallet-note{max-width:34ch;margin-top:.8rem;color:#858b87;font-size:11px}
+.pay-card .pay-result{padding:1rem;border:1px solid rgba(255,255,255,.07);border-radius:18px;background:rgba(255,255,255,.035)}
+.pay-card .pay-result .pay-items{background:rgba(0,0,0,.15)}
+.pay-card .pay-result .rcpt-foot{margin-top:.8rem}
+@media(max-width:560px){
+  .wrap-pay{padding:1rem .75rem 2rem}
+  #payCard.pay-card{border-radius:23px;padding:1rem .9rem}
+  .pay-card .pay-card-bar{margin-bottom:1.2rem}
+  .pay-card .pay-top{margin-bottom:1.2rem}
+  .pay-card .pay-usd{font-size:clamp(35px,10.5vw,45px)}
+  .pay-card .pay-items{padding:.4rem .75rem}
+  .pay-card .pi-row{min-height:41px}
+  .pay-card .pay-actions .btn-lg{min-height:52px}
+}

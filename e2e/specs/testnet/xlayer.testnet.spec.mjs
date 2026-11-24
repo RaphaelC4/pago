@@ -90,30 +90,31 @@ test.describe("X Layer testnet read-only", () => {
   test("a real claimed invoice renders its payout from live state", async ({ page }) => {
     await page.goto(`/xlayer.html#pay/${encodeURIComponent(CLAIMED_LINK)}`);
 
-    /* A settled invoice renders the receipt as the whole card: the old
-       status-pill head row (which carried .pay-token and .pay-desc) is
-       gone by design. The receipt names the network, the amount line
-       names the token exactly as the chain serves it, and the invoice
-       note under the receipt keeps the description. */
-    await expect(page.locator("#payCard .pay-receipt")).toBeVisible({ timeout: 60_000 });
-    await expect(page.locator("#payCard .pill")).toHaveCount(0);
-    await expect(page.locator("#payCard .rcpt-brand")).toContainText("X Layer testnet");
-    await expect(page.locator("#claimAmount")).toContainText("pUSD (MOCK)", { timeout: 60_000 });
-    await expect(page.locator("#payNote")).toContainText("live test: gasless payer path", {
+    /* A settled invoice renders the same card as an open one: the payee
+       row, the status pill reading the contract's word for the state, the
+       amount block still naming the network, the "for" line still carrying
+       the description, and the invoice table underneath. */
+    await expect(page.locator("#payCard .pay-result")).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator("#payCard .pill")).toHaveText("Claimed");
+    await expect(page.locator("#payCard .pay-net")).toContainText("X Layer testnet");
+    await expect(page.locator("#payCard .pay-desc")).toContainText("live test: gasless payer path", {
       timeout: 60_000,
     });
 
-    /* 1.000000 credited, 0.5% fee → 0.995000 — but the receipt does not
-       compute that: it locates the claim block (the RPC caps eth_getLogs at
-       100 blocks), reads the LinkClaimed and LegPaid events of that exact
+    /* The payout result sits where the pay button was. It does not compute
+       anything: it locates the claim block (the RPC caps eth_getLogs at 100
+       blocks), reads the LinkClaimed and LegPaid events of that exact
        transaction and prints what they say. The generous timeout is the
        locate-then-read trip, not a slow assertion. */
-    await expect(page.locator("#payCard .pay-receipt")).toBeVisible({ timeout: 60_000 });
-    await expect(page.locator("#payCard .pay-receipt")).toContainText("Paid out to the payee", { timeout: 60_000 });
-    await expect(page.locator("#payCard .pay-receipt")).toContainText("0.995", { timeout: 60_000 });
-    /* Case-insensitive: the receipt's casing belongs to the UI design, the
+    await expect(page.locator("#payCard .pay-result")).toContainText("Paid out to the payee", { timeout: 60_000 });
+    /* 1.000000 credited, 0.5% fee → 0.995000, straight out of the event. */
+    await expect(page.locator("#claimAmount")).toContainText("0.995000 pUSD (MOCK)", { timeout: 60_000 });
+    await expect(page.locator("#claimSummary")).toContainText("amounts read from payout events", {
+      timeout: 60_000,
+    });
+    /* Case-insensitive: the row's casing belongs to the UI design, the
        fact being pinned is which table paid. */
-    await expect(page.locator("#payCard .pay-receipt")).toContainText(/default split/i, { timeout: 60_000 });
+    await expect(page.locator("#claimRows")).toContainText(/default split/i, { timeout: 60_000 });
 
     /* Nothing payable on a settled invoice: no approve, no pay, no claim. */
     await expect(page.locator("#payBtn")).toHaveCount(0);
@@ -124,19 +125,23 @@ test.describe("X Layer testnet read-only", () => {
   test("a rule-table claim shows which table the circuit selected", async ({ page }) => {
     /* Leg A of the same run: its rule table summed to exactly 20 steps, so
        the circuit accepted it and the claim paid the rule seats — 497,500
-       to the payee, not the whole pool. The receipt must say "rule table"
+       to the payee, not the whole pool. The result must say "rule table"
        and print the seat the chain actually paid. */
     await page.goto(`/xlayer.html#pay/pago-261119-124452-a`);
 
-    /* Same design as above: no status pill on a settled link — the
-       receipt is the card, and it must name the table the circuit
-       picked and print what the claim events actually paid. */
-    await expect(page.locator("#payCard .pay-receipt")).toBeVisible({ timeout: 60_000 });
-    await expect(page.locator("#payCard .pill")).toHaveCount(0);
-    await expect(page.locator("#payCard .pay-receipt")).toContainText("Paid out to the payee", { timeout: 60_000 });
-    await expect(page.locator("#payCard .pay-receipt")).toContainText(/rule table/i, { timeout: 60_000 });
-    await expect(page.locator("#payCard .pay-receipt")).toContainText("0.4975", { timeout: 60_000 });
-    await expect(page.locator("#payCard .pay-receipt")).toContainText("0.005", { timeout: 60_000 });
+    /* Same design as above: the card keeps its status pill and its rows —
+       only the figures under them come from the claim's events, and they
+       must name the table the circuit picked and what it actually paid. */
+    await expect(page.locator("#payCard .pay-result")).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator("#payCard .pill")).toHaveText("Claimed");
+    await expect(page.locator("#payCard .pay-result")).toContainText("Paid out to the payee", { timeout: 60_000 });
+    /* The event's `payout` is the post-fee pool the circuit distributed —
+       0.995000 here, as on leg B. The rule table's own share for this leg,
+       0.4975 to the payee, is one of the legs printed under More details. */
+    await expect(page.locator("#claimAmount")).toContainText("0.995000", { timeout: 60_000 });
+    await expect(page.locator("#claimRows")).toContainText(/rule table/i, { timeout: 60_000 });
+    await expect(page.locator("#claimRows")).toContainText("0.497500", { timeout: 60_000 });
+    await expect(page.locator("#claimSummary")).toContainText("0.005000", { timeout: 60_000 });
   });
 
   test("an unknown id says so instead of inventing an invoice", async ({ page }) => {

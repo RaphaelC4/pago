@@ -71,6 +71,28 @@ test.describe("X Layer / Pago page", () => {
     ).toEqual([]);
   });
 
+  test("the payment page's own bar carries the site's two section links", async ({ page }) => {
+    const { errors } = await openPago(page, xlPayUrl("pago-e2e-0001-open"));
+
+    /* This document renders only the payment card, but its bar is the
+       site's bar: mark, Create a link, My links, then the network and the
+       wallet — the same order and the same lime as pago-onboarding.html. */
+    const bar = page.locator(".site-header .header-right");
+    await expect(bar.locator('[data-tab="create"]')).toHaveText("Create a link");
+    await expect(bar.locator('[data-tab="ledger"]')).toHaveText("My links");
+    await expect(page.locator("#payCard .pill")).toHaveText("Open", { timeout: 15_000 });
+    await expect(page.locator("#netLabel")).toHaveText("X Layer testnet");
+    /* No wallet in this browser, and the label says so — never an address. */
+    await expect(page.locator("#walletLabel")).toHaveText("No wallet");
+
+    /* The links lead across to the page that owns the panel: this document
+       has no create or ledger panel of its own. */
+    await bar.locator('[data-tab="ledger"]').click();
+    await expect(page).toHaveURL(/pago-onboarding\.html#ledger$/);
+    await expect(page.locator("#panel-ledger")).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+
   test("section tabs swap panels and drive the hash", async ({ page }) => {
     const { errors, scenario } = await openPago(page);
     await expect(page).toHaveURL(/pago-onboarding\.html/);
@@ -180,8 +202,11 @@ test.describe("X Layer / Pago page", () => {
 
     await expect(page.locator("#payCard .pill")).toHaveText("Open", { timeout: 15_000 });
 
-    /* The one line a new payer should read, at the very top of the card,
-       naming the actual destination and the actual fee. */
+    /* The one line a new payer should read, naming the actual destination
+       and the actual fee. The redesigned card leads with the nav bar and
+       the amount head; this line is still the first thing before any
+       invoice detail — above the invoice table, the collapsed details and
+       the pay button. */
     const line = page.locator("#payCard .pay-nosplit-line");
     await expect(line).toBeVisible();
     await expect(line).toContainText("No split. The full amount, minus the 0.5% fee, goes to");
@@ -189,11 +214,18 @@ test.describe("X Layer / Pago page", () => {
     await expect(page.locator("#payCard .pay-nosplit-sub")).toHaveText(
       "The rule check can't change where this money goes."
     );
-    /* It sits above everything else in the card. */
-    const first = await page.evaluate(
-      () => document.querySelector("#payCard .pay-nosplit") === document.querySelector("#payCard").firstElementChild
-    );
-    expect(first).toBe(true);
+    /* It leads the details: the invoice table, the collapsed section and
+       the pay action all come after it. */
+    const leads = await page.evaluate(() => {
+      const card = document.querySelector("#payCard");
+      const nosplit = card?.querySelector(".pay-nosplit");
+      const facts = card?.querySelector(".pay-items");
+      const actions = card?.querySelector("#payActions");
+      if (!card || !nosplit || !facts || !actions) return false;
+      const after = (el) => Boolean(nosplit.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+      return after(facts) && after(actions);
+    });
+    expect(leads).toBe(true);
 
     /* The detail is one click away, collapsed by default, and still sits
        before the pay button — present, never removed (handoff §7). */
@@ -226,18 +258,39 @@ test.describe("X Layer / Pago page", () => {
     expect(errors).toEqual([]);
   });
 
-  test("a claimed invoice shows the payout receipt and nothing payable", async ({ page }) => {
+  test("a claimed invoice shows the payout result and nothing payable", async ({ page }) => {
     const { errors } = await openPago(page, xlPayUrl("pago-e2e-0003-claimed"));
 
-    /* Settled links show the receipt first — the redesign drops the old
-       status-pill head row entirely, so there is no .pill to read. */
-    await expect(page.locator("#payCard .pay-receipt")).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator("#payCard .pill")).toHaveCount(0);
-    await expect(page.locator("#payCard .rcpt-state")).toContainText("Complete");
-    await expect(page.locator("#payCard .pay-receipt")).toContainText("Paid out to the payee");
-    await expect(page.locator("#payCard .pay-receipt")).toContainText("0.995");
+    /* The card is the card in every state: payee row, status pill (the
+       contract's own word for the state), amount, "for" line and the
+       invoice table — a settled invoice is the same invoice, only paid. */
+    await expect(page.locator("#payCard .pill")).toHaveText("Claimed", { timeout: 15_000 });
+    await expect(page.locator("#payCard .pay-usd")).toBeVisible();
+    await expect(page.locator("#payCard .pay-desc")).toContainText("E2E fixture — claimed and settled");
+    await expect(page.locator("#payCard .pay-items").first()).toContainText("pago-e2e-0003-claimed");
+
+    /* The payout result takes the pay button's place: the success line and
+       the stored facts come up at once, then the claim's own events — pool,
+       fee and the table that paid — read back from the chain. */
+    const result = page.locator("#payCard .pay-result");
+    await expect(result).toBeVisible();
+    await expect(result).toContainText("Paid out to the payee");
+    await expect(page.locator("#claimAmount")).toContainText("0.995", { timeout: 15_000 });
+    await expect(page.locator("#claimSummary")).toContainText("amounts read from payout events", {
+      timeout: 15_000,
+    });
+    await expect(page.locator("#claimRows")).toContainText(/default split/i, { timeout: 15_000 });
+
+    /* The legs the claim actually paid sit one click away, collapsed. */
+    const legs = page.locator("#claimRows details.pay-details");
+    await expect(legs).toBeVisible();
+    await expect(legs).not.toHaveAttribute("open", "");
+    await expect(legs.locator("img[data-seat-avatar]")).not.toHaveCount(0);
+
+    /* Nothing payable on a settled invoice: no connect, no approve, no pay. */
     await expect(page.locator("#payBtn")).toHaveCount(0);
     await expect(page.locator("#payConnect")).toHaveCount(0);
+    await expect(page.locator("#approveBtn")).toHaveCount(0);
     expect(errors).toEqual([]);
   });
 
@@ -258,6 +311,39 @@ test.describe("X Layer / Pago page", () => {
     await expect(page.locator("#claimBtn")).toBeVisible();
     await expect(page.locator("#claimBtn")).toContainText("0.995");
     await expect(page.locator("#payCard .pay-fee")).toContainText("Anyone can press this");
+    expect(errors).toEqual([]);
+  });
+});
+
+/* The bar now carries the site's two section links, and the settled card
+ * carries a payout result with addresses in it — both are exactly the sort
+ * of thing that fits a desktop and spills sideways on a phone, so the pay
+ * page gets its own narrow-viewport check rather than inheriting one. */
+test.describe("X Layer pay page on a small phone", () => {
+  test.use({ viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+
+  test("the header tabs and the settled card fit with no sideways scroll", async ({ page }) => {
+    const { errors } = await openPago(page, xlPayUrl("pago-e2e-0003-claimed"));
+    await expect(page.locator("#payCard .pill")).toHaveText("Claimed", { timeout: 15_000 });
+    await expect(page.locator("#claimAmount")).toContainText("0.995", { timeout: 15_000 });
+
+    /* Nothing may push the page sideways: not the two header links, not
+       the result rows, not the seat addresses in More details. */
+    const fits = await page.evaluate(() => ({
+      scrollW: document.documentElement.scrollWidth,
+      innerW: window.innerWidth,
+    }));
+    expect(fits.scrollW, `scrollWidth ${fits.scrollW} must fit the viewport`).toBeLessThanOrEqual(fits.innerW);
+
+    const card = await page.locator("#payCard").evaluate((el) => ({
+      scrollW: el.scrollWidth,
+      clientW: el.clientWidth,
+    }));
+    expect(card.scrollW, "the pay card must not scroll sideways either").toBeLessThanOrEqual(card.clientW + 1);
+
+    /* The tabs stay on the bar at this width and stay reachable by tap. */
+    await expect(page.locator('.header-right [data-tab="create"]')).toBeVisible();
+    await expect(page.locator('.header-right [data-tab="ledger"]')).toBeVisible();
     expect(errors).toEqual([]);
   });
 });

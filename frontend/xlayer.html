@@ -7,17 +7,59 @@
 <meta name="description" content="Pago turns a payment request into a link, paid in stablecoins on X Layer.">
 <meta name="theme-color" content="#0A0A0A">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23010100'/%3E%3Cpath d='M16 8v16M8 16h16' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="styles.css?v=20261121c">
-  <!-- A claimed invoice renders the site's #proof receipt design: the
-       receipt is the page, flat on the card, at the proof section's width
-       — not the payment card stacked above it. xlayer.js adds .claim-view
-       for that one state, so Open/Paid/Expired invoices keep the normal
-       app layout. The PDF button stays: unlike the homepage's static copy,
-       this document can actually read the claim events to build the file. -->
+<link rel="stylesheet" href="styles.css?v=20261124d">
+  <!-- A settled invoice renders the same card as an open one — payee row,
+       status pill, amount, "for" line, invoice table — with the payout
+       result taking the pay button's place underneath. That result is
+       styled here: styles.css is frozen, and its #claimReceipt rules belong
+       to the site's static proof receipt, which this document never
+       renders. The PDF button stays live — unlike the homepage's static
+       copy, this page can actually read the claim events to build it. -->
   <style>
-    .pay-card.claim-view{
-      max-width:40rem;margin-inline:auto;
-      -webkit-backdrop-filter:none;backdrop-filter:none;
+    /* ── payout result: the card's own rows, where the pay button was ── */
+    .pay-result{display:grid;gap:1rem}
+    .pay-result-ok{display:flex;align-items:center;gap:.6rem;margin:0;font-size:15px}
+    .pay-result-ok strong{font-weight:600}
+    .pay-result-ok .chk{
+      flex:none;display:inline-flex;align-items:center;justify-content:center;
+      width:25px;height:25px;border-radius:50%;
+      background:#bcff2f;color:#15180d;
+    }
+    /* The invoice table already printed these figures from stored state;
+       inside the result the same rows are read back from the claim's own
+       events, so they are separated by spacing rather than boxed off. */
+    .pay-result .pay-items{margin-top:0;padding-top:0;border-top:0}
+    /* The result's values carry full amounts and addresses; let them wrap
+       rather than push the card sideways on a 360px screen. */
+    .pay-result .pi-p{white-space:normal;overflow-wrap:anywhere}
+    /* styles.css frames #claimRows as part of the old receipt slab; here it
+       is the card's own row list — unframed, and absent until the events
+       actually land (`:empty` covers the read in flight and a failed one). */
+    #claimRows{display:block;padding:0;border:0;border-radius:0;background:transparent}
+    #claimRows:empty{display:none}
+    .pay-result-foot{display:grid;gap:.8rem}
+    .pay-result-foot .tiny{line-height:1.5}
+    #claimPdf{
+      width:100%;min-height:44px;border:0;border-radius:999px;
+      background:#bcff2f;color:#15180d;
+      box-shadow:0 5px 22px rgba(188,255,47,.13);
+      font-size:13px;font-weight:700;
+    }
+    #claimPdf:hover{background:#d0ff72;opacity:1}
+    /* The header is the site's header — the two section links between the
+       mark and the network / wallet group. styles.css's .btn is the plain
+       light one, so the lime the site's bar wears is restated here, and the
+       group takes the right edge the way the site's does (there its
+       .site-nav absorbs the free space; this page has no nav to carry it). */
+    .header-right{margin-left:auto}
+    .header-right .btn{background:#bcff2f;border-color:#bcff2f;color:#0d1204;font-weight:600}
+    .lp-appbar{display:flex;align-items:center;gap:.5rem;margin:0;flex:none}
+    /* Phones: only the two links and the wallet circle fit one row, so the
+       network readout steps out here the way it does on the site — the
+       card's amount block and the footer still name the network. */
+    @media (max-width:560px){
+      .lp-appbar .net-pill{display:none}
+      .brand-name{display:none}
     }
     /* One pill, one style — the same network readout the site header uses.
        styles.css carries the base .network-select (its own border, radius and
@@ -42,10 +84,12 @@
       min-height:0;max-width:none;padding:0;margin:0;
       border:0;background:transparent;opacity:0;cursor:pointer;
     }
-    /* The claim receipt's seat rows carry the same local portrait the
-       create form rotates. styles.css is frozen, so these two new bits
-       live here rather than in it. */
+    /* The claim's seat rows carry the same local portrait the create form
+       rotates, laid out in the card's row language: portrait and seat in
+       the label with the address underneath it, amount in the value. */
     .rcpt-seat{display:flex;align-items:center;gap:.45rem;min-width:0}
+    .rcpt-seat-txt{display:grid;min-width:0;font-size:13px;line-height:1.35}
+    .rcpt-seat-txt i{font-style:normal;font-size:11.5px;color:var(--muted);overflow-wrap:anywhere}
     .rcpt-avatar{
       flex:none;width:20px;height:20px;border-radius:50%;
       object-fit:cover;object-position:50% 30%;
@@ -53,9 +97,10 @@
     }
     /* One-recipient links (handoff §7): one plain sentence at the very top
        of the card, the full rule/default/cap/fallback detail one click away
-       in "Payment details" — collapsed by default, never removed. Scoped to
-       .pay-nosplit/.pay-details so a multi-recipient card's rule block is
-       untouched. */
+       in "Payment details" — collapsed by default, never removed. Only the
+       sentence is namespaced to .pay-nosplit; the rule block's own styles
+       sit un-scoped below, because a multi-recipient card prints that block
+       in the open with no .pay-details wrapper around it. */
     .pay-nosplit{
       border:1px solid rgba(188,255,47,.28);
       border-radius:var(--r-lg,14px);
@@ -78,24 +123,53 @@
     }
     .pay-details[open] summary::after{rotate:225deg}
     .pay-details summary:focus-visible{outline:2px solid rgba(188,255,47,.8);outline-offset:3px;border-radius:4px}
-    /* The rule block ships without styles.css rules (styles.css is frozen);
-       inside the collapsed section it is given just enough to read as
-       labelled rows rather than bare text. */
-    .pay-details .pay-rule-card{display:grid;gap:.7rem;margin-top:.85rem;font-size:13px;line-height:1.5}
-    .pay-details .pay-rule-title{display:flex;justify-content:space-between;gap:.7rem;align-items:center;font-weight:500}
-    .pay-details .rule-tag{
-      font-size:11px;color:var(--muted);border:1px solid var(--line);
-      border-radius:999px;padding:.15rem .5rem;font-weight:500;
+    /* The rule block ships without styles.css rules (styles.css is frozen),
+       so it carries its own — OKX Wallet's standard, the same language the
+       create form wears: a pure-black card on the page's near-black, a
+       hairline border, uppercase micro-labels, dark chips, lime only on the
+       tag, mono for whatever the chain served. Deliberately not scoped to
+       .pay-details: a multi-recipient card prints this block in the open,
+       and it has to read the same either way. */
+    .pay-rule-card{
+      margin-top:1.1rem;background:#000;
+      border:1px solid rgba(255,255,255,.09);border-radius:14px;
+      padding:.95rem 1.05rem;display:grid;gap:.75rem;
+      font-size:13px;line-height:1.5;
     }
-    .pay-details .pay-rule-row{display:grid;grid-template-columns:6.5rem 1fr;gap:.5rem;align-items:start}
-    .pay-details .pay-rule-row b{font-weight:500;color:var(--muted)}
-    .pay-details .rule-share-list{display:flex;flex-wrap:wrap;gap:.35rem;margin:.35rem 0}
-    .pay-details .rule-share-list span{
-      font-size:12px;border:1px solid var(--line);border-radius:999px;
-      padding:.12rem .5rem;color:var(--body);
+    .pay-rule-title{display:flex;justify-content:space-between;gap:.7rem;align-items:center}
+    .pay-rule-title>span:first-child{font-size:14px;font-weight:650;letter-spacing:-.01em}
+    .rule-tag{
+      font-size:10.5px;font-weight:600;color:#bcff2f;
+      border:1px solid rgba(188,255,47,.35);background:rgba(188,255,47,.06);
+      border-radius:999px;padding:.15rem .55rem;
+      text-transform:uppercase;letter-spacing:.08em;
     }
-    .pay-details .rule-note{display:block;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
-    .pay-details .rule-fallback{margin:0;font-size:12px;color:var(--muted)}
+    .pay-rule-row{display:grid;grid-template-columns:7rem 1fr;gap:.5rem .75rem;align-items:start}
+    .pay-rule-row>div{min-width:0}
+    .pay-rule-row b{
+      padding-top:.15rem;font-size:11px;font-weight:600;color:var(--muted);
+      text-transform:uppercase;letter-spacing:.09em;
+    }
+    .rule-share-list{display:flex;flex-wrap:wrap;gap:.35rem;margin:.4rem 0}
+    .rule-share-list span{
+      font-size:12px;border:1px solid rgba(255,255,255,.09);border-radius:999px;
+      padding:.15rem .55rem;color:#f4f4f3;background:#141413;
+      font-variant-numeric:tabular-nums;
+    }
+    .rule-note{display:block;margin:.3rem 0 0;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+    .rule-fallback{
+      margin:0;font-size:12px;color:var(--muted);
+      border-top:1px solid rgba(255,255,255,.07);padding-top:.65rem;
+    }
+    /* After the base rules on purpose: at equal specificity the later rule
+       wins, so this query has to sit below them to actually stack. The label
+       column is a luxury a phone cannot afford — the rows stack, and the
+       chips and hashes get the card's full width instead of a narrow ribbon
+       beside the label. */
+    @media (max-width:560px){
+      .pay-rule-row{grid-template-columns:1fr;gap:.2rem}
+      .pay-rule-row b{padding-top:0}
+    }
   </style>
 <!-- Same three weights the first screen uses, preloaded for the same reason. -->
 <link rel="preload" href="fonts/satoshi-400.woff2" as="font" type="font/woff2" crossorigin>
@@ -128,9 +202,11 @@
 
 <header class="site-header">
   <div class="wrap header-inner">
-    <!-- Home, Create and My links are pages on the site now
-         (pago-onboarding.html). This document only renders the payment card
-         a link opens, so the mark is the way back. -->
+    <!-- The site's bar, carried over: the mark is the way home, the two
+         section links lead to the pages that own them (xlayer.js sends the
+         click across — this document has no create or ledger panel), and
+         the network + wallet group sits at the edge as it does on
+         pago-onboarding.html. -->
     <a class="brand" href="pago-onboarding.html" aria-label="Pago home">
       <span class="brand-mark" aria-hidden="true">
         <svg class="logo-pago" width="26" height="26" viewBox="0 0 32 32"><use href="#coin-stable"/></svg>
@@ -139,19 +215,23 @@
     </a>
 
     <div class="header-right">
-      <!-- One pill carries the whole network readout — status dot, the label
-           xlayer.js paints (including "chain unreachable" when the RPC dies)
-           and the selector laid transparently over it, so tapping anywhere on
-           the pill opens the real network menu. Same pill as the site header. -->
-      <span class="net-pill">
-        <span class="dot js-netdot" id="netDot" aria-hidden="true"></span>
-        <span id="netLabel">X Layer</span>
-        <select class="network-select" id="networkSelect" aria-label="X Layer network"></select>
-      </span>
-      <button class="btn btn-sm" id="walletBtn" type="button">
-        <svg class="wallet-ico" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M2.5 5A1.5 1.5 0 0 1 4 3.5h8A1.5 1.5 0 0 1 13.5 5v6A1.5 1.5 0 0 1 12 12.5H4A1.5 1.5 0 0 1 2.5 11Z"/><path d="M13.5 6.6H10.8a1.6 1.6 0 0 0 0 3.2h2.7"/></svg>
-        <span id="walletLabel">Connect</span>
-      </button>
+      <a class="btn btn-sm" data-tab="create" href="pago-onboarding.html#create"><span>Create a link</span></a>
+      <a class="btn btn-sm" data-tab="ledger" href="pago-onboarding.html#ledger"><span>My links</span></a>
+      <div class="lp-appbar">
+        <!-- One pill carries the whole network readout — status dot, the label
+             xlayer.js paints (including "chain unreachable" when the RPC dies)
+             and the selector laid transparently over it, so tapping anywhere on
+             the pill opens the real network menu. Same pill as the site header. -->
+        <span class="net-pill">
+          <span class="dot js-netdot" id="netDot" aria-hidden="true"></span>
+          <span id="netLabel">X Layer</span>
+          <select class="network-select" id="networkSelect" aria-label="X Layer network"></select>
+        </span>
+        <button class="btn btn-sm" id="walletBtn" type="button">
+          <svg class="wallet-ico" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M2.5 5A1.5 1.5 0 0 1 4 3.5h8A1.5 1.5 0 0 1 13.5 5v6A1.5 1.5 0 0 1 12 12.5H4A1.5 1.5 0 0 1 2.5 11Z"/><path d="M13.5 6.6H10.8a1.6 1.6 0 0 0 0 3.2h2.7"/></svg>
+          <span id="walletLabel">Connect</span>
+        </button>
+      </div>
     </div>
   </div>
 </header>
@@ -190,6 +270,6 @@
 
 <!-- One module runs both documents; here it boots the payment card alone.
      The share card's QR helper lives with the site, which owns sharing now. -->
-<script type="module" src="xlayer.js?v=20261124a"></script>
+<script type="module" src="xlayer.js?v=20261124c"></script>
 </body>
 </html>

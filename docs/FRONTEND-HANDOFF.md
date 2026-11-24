@@ -143,7 +143,7 @@ Show, from the link's own stored fields:
 **Amendment (one-recipient links).** Every pay card must show these details
 before payment. For a one-recipient link — both the rule and the default
 table pay 100% to the same seat-1 destination, nothing to seats 2 and 3 —
-the card leads with one plain line at the top, **"No split. The full amount,
+the card shows one plain line above the invoice table, **"No split. The full amount,
 minus the 0.5% fee, goes to \<payee address\>."**, under it the small line
 **"The rule check can't change where this money goes."**, and the details
 above may be collapsed into a **"Payment details"** section (one click

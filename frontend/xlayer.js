@@ -445,10 +445,10 @@ function wireSeatAvatars() {
   paintSeatAvatars();
 }
 
-/* Render the claimed receipt from the claim's own events: the pool, the
-   fee, which table the circuit selected, one row per leg as the transaction
+/* Render the payout result from the claim's own events: the pool, the fee,
+   which table the circuit selected, one row per leg as the transaction
    emitted them, and the claim hash. Called by renderPay for Claimed links;
-   the shell is already on screen, so a slow RPC only delays these rows. */
+   the card is already on screen, so a slow RPC only delays these rows. */
 async function fillClaimReceipt(link) {
   const { claim, legs } = await readClaimEvidence(link);
   const amount = $("#claimAmount");
@@ -461,28 +461,38 @@ async function fillClaimReceipt(link) {
   summary.textContent = `${formatUnits(claim.fee, DECIMALS)} ${TOKEN_LABEL} fee · amounts read from payout events`;
 
   const { feeLeg, seatLegs } = splitClaimLegs(legs, claim.fee, NET.feeAccount);
+  /* One row per leg the claim emitted, in the card's own row language: the
+     portrait and the seat sit in the label, the amount it paid sits in the
+     value, and the address it went to rides under the seat — the full
+     address stays in `title`, so no row can outgrow a 360px screen. */
   const seatRow = (leg, index) => `
-    <div class="rcpt-event-row"><span class="rcpt-seat"><img class="rcpt-avatar" data-seat-avatar="${index + 1}" src="${seatAvatarSrc(index + 1)}" alt="" width="20" height="20" decoding="async">Seat ${index + 1}${leg.kind === "owed" ? " · owed" : ""}</span><strong title="${esc(leg.recipient)}">${formatUnits(leg.amount, DECIMALS)} ${esc(TOKEN_LABEL)} <i>→ ${truncate(leg.recipient, 8, 6)}</i></strong></div>`;
+    <div class="pi-row">
+      <span class="pi-l rcpt-seat">
+        <img class="rcpt-avatar" data-seat-avatar="${index + 1}" src="${seatAvatarSrc(index + 1)}" alt="" width="20" height="20" decoding="async">
+        <span class="rcpt-seat-txt">Seat ${index + 1}${leg.kind === "owed" ? " · owed" : ""}<i>→ ${truncate(leg.recipient, 8, 6)}</i></span>
+      </span>
+      <span class="pi-p" title="${esc(leg.recipient)}">${formatUnits(leg.amount, DECIMALS)} ${esc(TOKEN_LABEL)}</span>
+    </div>`;
 
-  rows.innerHTML = `<div class="rcpt-pairs">
-      <div class="rcpt-pair"><span>Date</span><strong>${esc(fmtDate(link.claimedAt))}</strong></div>
-      <div class="rcpt-pair"><span>Status</span><strong class="rcpt-complete">Completed</strong></div>
-      <div class="rcpt-pair"><span>Recipient</span><strong class="mono" title="${esc(link.creator)}">${truncate(link.creator, 8, 6)}</strong></div>
-      <div class="rcpt-pair"><span>Split applied</span><strong>${claim.usedRuleSplit ? "Rule table" : "Default split"}</strong></div>
-      <div class="rcpt-pair"><span>Pago fee</span><strong>${formatUnits(claim.fee, DECIMALS)} ${esc(TOKEN_LABEL)}${feeLeg ? ` · ${truncate(feeLeg.recipient, 7, 5)}` : ""}</strong></div>
+  /* The event rows sit under the stored facts as their own table — only
+     what the claim transaction itself said, nothing restated from the card
+     above; the legs themselves, who was paid what, are one click away,
+     collapsed, so the settled card still reads like the open one. */
+  rows.innerHTML = `<div class="pay-items">
+      <span class="pi-h">payout events</span>
+      <div class="pi-row"><span class="pi-l">split applied</span><span class="pi-p">${claim.usedRuleSplit ? "Rule table" : "Default split"}</span></div>
+      <div class="pi-row"><span class="pi-l">Pago fee</span><span class="pi-p">${formatUnits(claim.fee, DECIMALS)} ${esc(TOKEN_LABEL)}${feeLeg ? ` · ${truncate(feeLeg.recipient, 7, 5)}` : ""}</span></div>
     </div>
-    <details class="rcpt-more">
-      <summary>More details <span aria-hidden="true">›</span></summary>
-      <div class="rcpt-event-rows">
-        <div class="rcpt-event-row"><span>Payout pool</span><strong>${formatUnits(claim.payout, DECIMALS)} ${esc(TOKEN_LABEL)}</strong></div>
+    <details class="pay-details">
+      <summary>More details</summary>
+      <div class="pay-items">
         ${seatLegs.map(seatRow).join("")}
-        <div class="rcpt-event-row"><span>Payer</span><strong class="mono" title="${esc(link.paidBy)}">${truncate(link.paidBy, 8, 6)}</strong></div>
-        <div class="rcpt-event-row"><span>Claim transaction</span><strong class="mono"><a href="${esc(txUrl(claim.txHash))}" target="_blank" rel="noopener">${truncate(claim.txHash, 10, 6)}</a></strong></div>
+        <div class="pi-row"><span class="pi-l">claim transaction</span><span class="pi-p mono"><a href="${esc(txUrl(claim.txHash))}" target="_blank" rel="noopener">${truncate(claim.txHash, 10, 6)}</a></span></div>
       </div>
     </details>`;
 
   foot.innerHTML = `<span class="tiny">${esc(XLAYER_RECEIPT_SENTENCE)}. Amounts are the claim transaction's events, not recomputed.</span>
-    <button class="btn btn-sm rcpt-pdf" type="button" id="claimPdf"><span>Download PDF receipt</span></button>`;
+    <button class="btn btn-sm" type="button" id="claimPdf"><span>Download PDF receipt</span></button>`;
   $("#claimPdf")?.addEventListener("click", () => {
     const lines = claimReceiptLines({
       linkId: link.linkId,
@@ -1221,9 +1231,6 @@ async function renderPay(id) {
   const card = $("#payCard");
   const status = $("#payStatus");
   status.hidden = true;
-  /* Every early return below (chain error, unknown id) renders the plain
-     app state, so the #proof claim layout is cleared before any of them. */
-  card.classList.remove("claim-view");
 
   let res;
   try {
@@ -1279,22 +1286,21 @@ async function renderPay(id) {
     : paymentRules;
 
   /* ── facts every state shares ── */
-  /* On a claimed link "payee receives" would contradict the receipt below
-     it (the rule table may have paid the payee a seat, not the pool), so
-     the row is labelled for what it is: the post-fee pool — which is
-     exactly what the claim event's `payout` field carries. */
+  /* A claimed link prints no computed pool here: the rule table may have
+     paid the payee a seat rather than the pool, so a figure this page
+     derived would either contradict the claim events or repeat them. The
+     pool is read back from the claim and printed once, in the payout
+     result — the event's own number, not this page's arithmetic. */
   const isClaimed = statusNameNow === "Claimed";
-  /* A settled link has nothing left to pay, so the payment card — the big
-     amount and the invoice table — is not what the page shows. The receipt
-     is, laid out the way the site's #proof section lays it out: the
-     claim-view class on the card (xlayer.html) centers it at the proof
-     width and drops the glass blur, the status row and the "for" line stay
-     above it, the invoice id moves into the note below. */
-  const facts = isClaimed ? "" : `
+  /* Every state renders the same card: the payee row, the status pill, the
+     amount, the "for" line and this invoice table. A settled link is the
+     same invoice, only paid — the payout result below replaces the pay
+     button, not the card (xlayer.html styles the .pay-result block). */
+  const facts = `
     <div class="pay-items">
       <span class="pi-h">invoice</span>
       <div class="pi-row"><span class="pi-l">amount</span><span class="pi-p">${fmt(link.amount)} ${esc(TOKEN_LABEL)}</span></div>
-      <div class="pi-row"><span class="pi-l">${isClaimed ? "payout pool" : "payee receives"}</span><span class="pi-p">${fmt(payout)} ${esc(TOKEN_LABEL)}</span></div>
+      ${isClaimed ? "" : `<div class="pi-row"><span class="pi-l">payee receives</span><span class="pi-p">${fmt(payout)} ${esc(TOKEN_LABEL)}</span></div>`}
       <div class="pi-row"><span class="pi-l">fee (${NET.feeBps / 100}%)</span><span class="pi-p">${fmt(fee)} ${esc(TOKEN_LABEL)}</span></div>
       <div class="pi-row"><span class="pi-l">link id</span><span class="pi-p mono">${esc(link.linkId)}</span></div>
       <div class="pi-row"><span class="pi-l">created</span><span class="pi-p">${esc(fmtDate(link.createdAt))}</span></div>
@@ -1303,17 +1309,30 @@ async function renderPay(id) {
       ${Number(link.claimedAt) > 0 ? `<div class="pi-row"><span class="pi-l">claimed</span><span class="pi-p">${esc(fmtDate(link.claimedAt))}</span></div>` : ""}
     </div>`;
 
-  /* Claimed: the receipt replaces all of it — the status row and the "for"
-     line too, the way #proof shows the proof — receipt first, invoice note
-     under it. The note carries the id and the description, so nothing that
-     sat above the receipt is lost. */
-  const head = isClaimed ? "" : `
+  /* Nobody is owed anything on a settled invoice, so the line under the
+     payee says what the link is now instead of repeating the open card's
+     promise. */
+  const whoLine = isCreator
+    ? "this is your invoice"
+    : isClaimed ? "this invoice is settled" : "is owed money";
+
+  /* The card is the card in every state: the payee row, the status pill
+     (the contract's own word for the state), the amount, the "for" line and
+     the invoice table render for a settled link too — a claimed invoice is
+     the same invoice, only paid. What changes is what sits underneath: the
+     payout result takes the pay button's place. */
+  const head = `
+    <div class="pay-card-bar">
+      <a class="pay-iconbtn" href="#home" aria-label="Back to Pago home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 5-7 7 7 7"/></svg></a>
+      <strong>${isClaimed ? "Transfer" : "Payment request"}</strong>
+      <button class="pay-iconbtn" type="button" id="payCardShare" aria-label="Share payment request"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="2.4"/><circle cx="6" cy="12" r="2.4"/><circle cx="18" cy="19" r="2.4"/><path d="m8.1 10.9 7.8-4.7M8.1 13.1l7.8 4.7"/></svg></button>
+    </div>
     <div class="pay-top">
       <div class="pay-who">
-        <span class="pay-avatar" aria-hidden="true">P</span>
+        <span class="pay-avatar" aria-hidden="true"><svg class="coin"><use href="#coin-stable"/></svg></span>
         <div class="pay-who-txt">
           <strong title="${esc(link.creator)}">${truncate(link.creator, 10, 6)}</strong>
-          <span>${isCreator ? "this is your invoice" : "is owed money"}</span>
+          <span>${whoLine}</span>
         </div>
       </div>
       <span class="${pillClass(statusNameNow)}">${esc(statusNameNow)}</span>
@@ -1330,11 +1349,19 @@ async function renderPay(id) {
 
     <div class="pay-desc"><b>for</b>${esc(link.description)}</div>`;
 
-  card.classList.toggle("claim-view", isClaimed);
-  card.innerHTML = `${prelude}${head}${facts}${details}
+  card.innerHTML = `${head}${prelude}${facts}${details}
     <div class="pay-actions" id="payActions"></div>
     <p class="wallet-note" id="payNote"></p>`;
 
+  $("#payCardShare")?.addEventListener("click", async () => {
+    const url = payUrlFor(id);
+    if (navigator.share) {
+      try { await navigator.share({ title: "Pago payment request", text: `${fmt(link.amount)} ${TOKEN_LABEL} — ${link.description}`, url }); }
+      catch { /* the user closed the share sheet */ }
+    } else {
+      toast(await copyText(url) ? "Payment link copied." : "Copy failed.");
+    }
+  });
   const actions = $("#payActions");
   const note = $("#payNote");
 
@@ -1343,36 +1370,38 @@ async function renderPay(id) {
 
   /* ── terminal states: nothing to do, say so plainly ── */
   if (statusNameNow === "Claimed") {
-    /* The strong sentence and the stored facts render immediately; the
-       payout event itself is a separate live read (the RPC caps eth_getLogs
-       at 100 blocks, so the claim has to be located first), so its rows and
-       the PDF button appear when it answers. Nothing here is recomputed —
-       every amount below comes out of the claim's own events. */
-    setActions(`<article class="pay-receipt" id="claimReceipt" role="status" aria-label="Payment receipt">
-      <div class="rcpt-topbar"><span class="rcpt-brand"><i aria-hidden="true"></i>Pago <span>· ${esc(NETWORK_LABEL)}</span></span><span class="rcpt-state"><i aria-hidden="true"></i>Complete</span></div>
-      <div class="rcpt-head">
+    /* The payout result renders where the pay button sat, in the card's own
+       row language: the success line, the pool and the stored facts come up
+       at once — the payout event itself is a separate live read (the RPC
+       caps eth_getLogs at 100 blocks, so the claim has to be located
+       first), so its rows, the fee line and the PDF button appear when it
+       answers. Nothing here is recomputed: every amount in the result comes
+       out of the claim's own events. */
+    setActions(`<div class="pay-result" id="claimResult" role="status" aria-label="Payout result">
+      <p class="pay-result-ok">
         <span class="chk" aria-hidden="true">
-          <svg viewBox="0 0 16 16" width="13" height="13"><path d="M3.5 8.4 6.6 11.5 12.5 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg viewBox="0 0 16 16" width="12" height="12"><path d="M3.5 8.4 6.6 11.5 12.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </span>
-        <div class="rcpt-head-txt">
-          <strong>Paid out to the payee</strong>
-          <span>Transfer receipt</span>
-        </div>
+        <strong>Paid out to the payee</strong>
+      </p>
+      <div class="pay-items">
+        <span class="pi-h">payout</span>
+        <!-- The claim event's payout field is the post-fee pool the
+             circuit distributed — not a single recipient's share, so the
+             row says pool. The legs that shared it are in More details. -->
+        <div class="pi-row"><span class="pi-l">payout pool</span><span class="pi-p" id="claimAmount">Reading payout&hellip;</span></div>
+        <div class="pi-row"><span class="pi-l">payee</span><span class="pi-p mono" title="${esc(link.creator)}">${truncate(link.creator, 10, 6)}</span></div>
+        <div class="pi-row"><span class="pi-l">payer</span><span class="pi-p mono" title="${esc(link.paidBy)}">${truncate(link.paidBy, 10, 6)}</span></div>
       </div>
-      <div class="rcpt-amount" id="claimAmount" aria-live="polite">Reading payout&hellip;</div>
-      <p class="rcpt-summary" id="claimSummary">Reading the payout event from the chain&hellip;</p>
-      <div class="rcpt-rows" id="claimRows">
-        <span class="rcpt-k">payee</span><span class="rcpt-v mono">${esc(link.creator)}</span>
-        <span class="rcpt-k">payer</span><span class="rcpt-v mono">${esc(link.paidBy)}</span>
-        <span class="rcpt-k">claimed</span><span class="rcpt-v">${esc(fmtDate(link.claimedAt))}</span>
-      </div>
-      <div class="rcpt-foot" id="claimFoot"></div>
-    </article>`);
-    setNote(`Invoice <code>${esc(link.linkId)}</code>${link.description ? ` &middot; ${esc(link.description)}` : ""} &middot; A link can only be claimed once, and only ever by its payee.`);
+      <p class="pay-fee" id="claimSummary">Reading the payout event from the chain&hellip;</p>
+      <div id="claimRows"></div>
+      <div class="pay-result-foot" id="claimFoot"></div>
+    </div>`);
+    setNote(`Invoice <code>${esc(link.linkId)}</code> &middot; A link can only be claimed once, and only ever by its payee.`);
     fillClaimReceipt(link).catch((err) => {
       /* The stored rows above are contract state and stay; only the event
          read failed, and the page says exactly that instead of guessing. */
-      const el = $("#claimReceipt");
+      const el = $("#claimResult");
       if (!el) return; // the user navigated away mid-read
       const summary = $("#claimSummary");
       if (summary) summary.textContent = "The payout event could not be read from the chain just now.";

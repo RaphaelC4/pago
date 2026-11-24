@@ -1384,8 +1384,8 @@ deploy-time configuration? **No.** The constructor writes exactly one value
 per token, `MAX_LINK_AMOUNT_UNPINNED[token]`, and `createLink` enforces it
 only when `evaluatorPinned()` is false (src/Pago.sol:429); there is no
 second, always-enforced knob, so adding one would be a contract change —
-which the freeze rules out. The honest position instead: **this contract is
-unaudited**, and on a pinned deployment links are uncapped.
+which the freeze rules out. The honest position instead: **this contract's
+only review is its own test battery**, and on a pinned deployment links are uncapped.
 
 ### Function selectors (`cast sig`, 2026-11-18)
 

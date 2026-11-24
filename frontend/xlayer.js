@@ -1499,7 +1499,7 @@ async function renderPay(id) {
 
     setActions(html);
     setNote(MOCK
-      ? `Gas is paid in OKB on chain ${CHAIN_ID}. ${TOKEN_LABEL} is test scaffolding — do not send real funds.`
+      ? `Gas is paid in OKB on chain ${CHAIN_ID}. ${TOKEN_LABEL} is test scaffolding — every amount here is test money.`
       : `Gas is paid in OKB on chain ${CHAIN_ID}. Token and payout details are read from this network.`);
 
     $("#mintBtn")?.addEventListener("click", () => runMint(id, account));
@@ -1879,14 +1879,14 @@ function paintStatic() {
 
   const hero = $("#heroChainNote");
   if (hero) {
-    hero.innerHTML = `Chain ${CHAIN_ID} &middot; token <strong>${esc(TOKEN_LABEL)}</strong> &middot; fixed ${NET.feeBps / 100}% fee &middot; no relayer, no custody.`;
+    hero.innerHTML = `Chain ${CHAIN_ID} &middot; token <strong>${esc(TOKEN_LABEL)}</strong> &middot; fixed ${NET.feeBps / 100}% fee &middot; no sign-up, no admin keys, funds move only through the contract.`;
   }
   const networkCopy = $("#heroNetworkLabel");
   if (networkCopy) networkCopy.textContent = `${NETWORK_LABEL} · payment links`;
   const networkChip = $("#netLabel");
   if (networkChip) networkChip.textContent = NETWORK_LABEL;
   const footer = $("#footerNetworkLabel");
-  if (footer) footer.textContent = `${NETWORK_LABEL} (${CHAIN_ID}) · ${MOCK ? `${TOKEN_LABEL} test token only · do not send real funds` : `${TOKEN_LABEL} · allowlisted stablecoin`}`;
+  if (footer) footer.textContent = `${NETWORK_LABEL} (${CHAIN_ID}) · ${MOCK ? `${TOKEN_LABEL} test token only` : `${TOKEN_LABEL} · allowlisted stablecoin`}`;
   /* The site footer's safety line names the network this page is actually
      on: a mainnet build must never read "Demo on X Layer testnet". */
   const safety = $("#footerSafetyNote");

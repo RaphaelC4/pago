@@ -1,6 +1,6 @@
 # Pago
 
-**Status:** Live on X Layer mainnet. Reviewed and tested by the author: 150 tests (unit, fuzz, invariant, mainnet-fork), addresses and hashes verified on-chain. Start with small amounts while you get comfortable.
+**Status:** Live on X Layer mainnet. Reviewed and tested by the author: 150+ tests (unit, fuzz, invariant, mainnet-fork), addresses and hashes verified on-chain. Start with small amounts while you get comfortable.
 
 **Send someone a link. Get paid in stablecoins.**
 
@@ -295,7 +295,7 @@ The tests assert every property below:
   check passes, so links are uncapped. Adding an always-on cap would be a
   contract change, and the source is frozen at this build.
 
-**Status:** Live on X Layer mainnet. Reviewed and tested by the author: 150 tests (unit, fuzz, invariant, mainnet-fork), addresses and hashes verified on-chain. Start with small amounts while you get comfortable.
+**Status:** Live on X Layer mainnet. Reviewed and tested by the author: 150+ tests (unit, fuzz, invariant, mainnet-fork), addresses and hashes verified on-chain. Start with small amounts while you get comfortable.
 
 ---
 
@@ -315,7 +315,7 @@ processor fault proven to fall back instead of freezing), `PagoInvariantTest` +
 status never backward — 128,000 interleaved calls in the invariant run),
 `Split3Test` (the exhaustive circuit check) and the TAP-02 reference
 evaluator's own suite — need no network at all. The fork suites prove the
-Tier 2 and Phase 0 claims against real X Layer mainnet state. **150 tests,
+Tier 2 and Phase 0 claims against real X Layer mainnet state. **150+ tests,
 0 failed** (run 2026-11-24; build record:
 [`docs/RESEARCH.md` §17](docs/RESEARCH.md)).
 
@@ -404,7 +404,7 @@ via `?chainId=196`. **Cost:** testnet free, mainnet gas in OKB.
 - **No refunds.** Payment links are final once claimed.
 - **Pays in stablecoins.** USD₮0 and USDG on X Layer.
 - **No cash-out.** Pago moves stablecoins between wallets; there is no bank off-ramp.
-- **Gasless relay is run by the project.** The payer signs an EIP-3009 authorization off-chain; the relay submits it and pays the gas.
+- **No relay service.** A normal payment is sent from the payer's own wallet; a gasless one is a free off-chain EIP-3009 signature that the payee — or any account — submits, paying the gas.
 
 ---
 
@@ -450,6 +450,11 @@ Everything from the X Layer work forward is committed in this repository; the
 tag `xlayer-pre` marks the state before it began, so
 `git diff xlayer-pre..HEAD` is the submission diff in one command.
 
+What is new versus the earlier NEAR build is pointed at by tags rather than
+carried in the tree: `pre-hackathon` marks the empty baseline that build grew
+from and `xlayer-pre` its last state, so `git diff pre-hackathon..xlayer-pre`
+shows that build on its own.
+
 ---
 
 ## Development
@@ -458,7 +463,7 @@ tag `xlayer-pre` marks the state before it began, so
 # contract suites — Foundry; only the fork suites need the RPC
 cd contracts-evm
 $env:XLAYER_RPC = "https://rpc.xlayer.tech"
-forge test                                 # 150 tests: unit, fuzz, invariant, mainnet-fork
+forge test                                 # 150+ tests: unit, fuzz, invariant, mainnet-fork
 
 # frontend unit tests — no dependencies, plain node (repo root)
 Get-ChildItem frontend\test\*.test.mjs | %{ node $_.FullName }

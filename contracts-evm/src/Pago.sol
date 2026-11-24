@@ -937,8 +937,8 @@ interface IEIP3009 {
         address from,
         address to,
         uint256 value,
-        uint64 validAfter,
-        uint64 validBefore,
+        uint256 validAfter,
+        uint256 validBefore,
         bytes32 nonce,
         bytes calldata signature
     ) external;

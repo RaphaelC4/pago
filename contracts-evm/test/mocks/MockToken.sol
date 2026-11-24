@@ -10,11 +10,23 @@ pragma solidity 0.8.28;
 ///
 /// The EIP-3009 implementation here follows the specification exactly
 /// (domain separator, `TransferWithAuthorization` typehash, `validAfter` /
-/// `validBefore` strict comparisons, per-signer single-use nonces). Phase 0
-/// already proved the same flow against two *real* X Layer stablecoins,
-/// USDT0 and USDG (docs/RESEARCH.md section 8), so what the mock is for is
-/// Pago's own logic - in particular that its nonce binding is what stops a
-/// signature for one link being spent against another - not re-proving EIP-3009.
+/// `validBefore` strict comparisons, per-signer single-use nonces).
+///
+/// SHAPE PINNED TO THE REAL TOKEN. This mock used to declare
+/// `uint64 validAfter, uint64 validBefore` - a shape no live X Layer token
+/// has - so `transferWithAuthorization` resolved to selector 0xd8fde8d5 while
+/// the real USD0 implements the `uint256` form, 0xcf092995. Pago's gasless
+/// path therefore reverted against the real token while every test here still
+/// passed, because the mock was the only token the suite ever routed Pago
+/// through. The typehash, `digestOf` and `transferWithAuthorization` below now
+/// match USD0's EIP-3009 surface, so a mock that disagrees with a live token
+/// breaks the build or a test instead of hiding the difference.
+///
+/// What the mock is genuinely for is Pago's own logic - in particular that its
+/// nonce binding is what stops a signature for one link being spent against
+/// another. Phase 0 proved the *tokens* honour EIP-3009 (docs/RESEARCH.md
+/// section 8); it never proved Pago routes through them, which is what the
+/// mainnet-fork payWithAuthorization test now covers.
 ///
 /// `digestOf` exposes the exact hash the token verifies, so a test can sign it
 /// with `vm.sign` without reimplementing the encoding and getting a byte wrong.
@@ -44,7 +56,7 @@ contract MockToken {
         "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
     );
     bytes32 public constant TRANSFER_WITH_AUTHORIZATION_TYPEHASH = keccak256(
-        "TransferWithAuthorization(address from,address to,uint256 value,uint64 validAfter,uint64 validBefore,bytes32 nonce)"
+        "TransferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)"
     );
 
     event Transfer(address indexed from, address indexed to, uint256 value);
@@ -106,7 +118,7 @@ contract MockToken {
 
     /// The EIP-712 digest an authorization must be signed over. Mirrored by
     /// the verifier below so tests and token can never disagree.
-    function digestOf(address from, address to, uint256 value, uint64 validAfter, uint64 validBefore, bytes32 nonce)
+    function digestOf(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce)
         public
         view
         returns (bytes32)
@@ -123,8 +135,8 @@ contract MockToken {
         address from,
         address to,
         uint256 value,
-        uint64 validAfter,
-        uint64 validBefore,
+        uint256 validAfter,
+        uint256 validBefore,
         bytes32 nonce,
         bytes calldata signature
     ) external {

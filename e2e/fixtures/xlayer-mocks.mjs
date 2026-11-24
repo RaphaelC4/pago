@@ -269,6 +269,14 @@ export async function installXLayerMocks(page, links = makeXlLinks()) {
           const mine = String(creator).toLowerCase() === PAYEE ? links : [];
           return out(GET_LINKS_TYPES, [mine]);
         }
+        /* Rule-6 state, answered the way the live testnet answers it: both
+           legs pass (so the check reads true) and the configured cap is on
+           the books. The create page and the pay card read these together —
+           Promise.all rejects if either is missing. */
+        case SEL.evaluatorPinned:
+          return out(["bool"], [true]);
+        case SEL.maxLinkAmountUnpinned:
+          return out(["uint256"], [10_000_000_000n]);
         default:
           return fail(-32601, `e2e mock: unhandled selector ${selector}`);
       }

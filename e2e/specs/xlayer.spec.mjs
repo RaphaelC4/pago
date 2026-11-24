@@ -135,6 +135,16 @@ test.describe("X Layer / Pago page", () => {
     await expect(page.locator("label[for=description]")).toContainText("required");
     await expect(page.locator("label[for=description]")).not.toContainText("contract");
 
+    /* The create head carries two quiet lines: the finality rule, and the
+       circuit state the chain just read — on testnet that must be the label
+       config.js requires, never a bare "pinned". */
+    const finality = page.locator("#createFinality");
+    await expect(finality).toBeVisible();
+    await expect(finality).toContainText("Links are final once claimed — there are no refunds.");
+    const pin = page.locator("#createPinLine");
+    await expect(pin).toBeVisible();
+    await expect(pin).toContainText("testnet pin reference is the MOCK stand-in; mainnet uses the recorded TapeOut references.");
+
     await page.locator("#amount").fill("2.5");
     await page.locator("#description").fill("smoke fixture invoice");
     await page.locator("#createBtn").click();
@@ -200,6 +210,16 @@ test.describe("X Layer / Pago page", () => {
     await expect(page.locator("#payCard .pay-nosplit")).toHaveCount(0);
     await expect(page.locator("#payCard .pay-details")).toHaveCount(0);
     await expect(page.locator("#payCard .pay-rule-card")).toBeVisible();
+
+    /* Under the invoice table: the finality rule, then the circuit line the
+       chain just read — on testnet that must be the label config.js
+       requires, never a bare "pinned". */
+    const finality = page.locator("#payFinality");
+    await expect(finality).toBeVisible();
+    await expect(finality).toContainText("Links are final once claimed — there are no refunds.");
+    const pin = page.locator("#payPinLine");
+    await expect(pin).toBeVisible();
+    await expect(pin).toContainText("testnet pin reference is the MOCK stand-in; mainnet uses the recorded TapeOut references.");
     expect(errors).toEqual([]);
   });
 

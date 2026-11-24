@@ -463,6 +463,11 @@ main{padding-top:var(--header)}
 .panel > .wrap > .block-head{padding-top:clamp(1.75rem,5vw,3rem)}
 .block-head .eyebrow{margin-bottom:.85rem}
 .block-head .sub{margin-top:.9rem}
+/* The create head's two quiet lines: the finality rule under the sub, and
+   the circuit status the chain reads a beat after paint (it stays hidden
+   until that read returns). */
+#createFinality{margin-top:.7rem}
+#createPinLine{margin-top:.55rem}
 .block-head.row{
   display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;flex-wrap:wrap;
 }

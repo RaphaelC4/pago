@@ -11,7 +11,7 @@
      visual base (tokens, buttons, header, receipt) that this page owns
      and evolves on its own — the app's styles.css stays Codex's and
      untouched. -->
-<link rel="stylesheet" href="pago-home.css?v=20261123b">
+<link rel="stylesheet" href="pago-home.css?v=20261124a">
 <!-- Reads go out to this endpoint before the script can even run; saying so
      here saves a DNS round trip on the first eth_call. -->
 <link rel="preconnect" href="https://rpc.xlayer.tech">
@@ -562,7 +562,7 @@ html.splash-on .lp-footer{opacity:0}
       <div class="hero-copy">
         <span class="lp-chip"><i aria-hidden="true"></i>Live on X Layer testnet/TapeOut</span>
         <h1 class="lp-title">Send a link.<br><span class="accent">Get paid.</span></h1>
-        <p class="lede lp-lede">Ask for money like you'd send a message — no sign-up. Share the link: they pay from their wallet, or sign without gas, and the money lands on X Layer with a receipt you can check on chain. No admin keys, and funds only move through the contract.</p>
+        <p class="lede lp-lede">Ask for money like you'd send a message — no sign-up. Share the link: they pay from their wallet, and the money lands on X Layer with a receipt you can check on chain. No admin keys, and funds only move through the contract.</p>
         <div class="hero-actions">
           <a class="btn" href="#create"><span>Create a link</span></a>
           <a class="btn ghost" href="#why"><span>See how it works</span></a>
@@ -724,6 +724,8 @@ html.splash-on .lp-footer{opacity:0}
           <span class="eyebrow">new link</span>
           <h2>What are you owed?</h2>
           <p class="sub">One wallet transaction puts your request on chain. It holds no money, and nobody can take funds out of it.</p>
+          <p class="tiny" id="createFinality">Links are final once claimed &mdash; there are no refunds.</p>
+          <div id="createPinLine" hidden></div>
         </div>
 
         <!-- Wallet and network live in the header bar. The form runs in the
@@ -972,7 +974,7 @@ html.splash-on .lp-footer{opacity:0}
 <!-- The share card draws its QR here; the module below owns routing, the
      form, the ledger and the share card for this document. -->
 <script defer src="vendor/qrcode.js"></script>
-<script type="module" src="xlayer.js?v=20261124f"></script>
+<script type="module" src="xlayer.js?v=20261124g"></script>
 
 </body>
 </html>

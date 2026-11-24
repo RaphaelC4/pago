@@ -86,8 +86,9 @@ build, only bug fixes may follow — with pUSD **(MOCK)**
 hardware)** `0xe4b4ABb2c6A0B15603b1A308Eba0264f8f676E02` and mock circuit
 beacon **(MOCK)** `0x359749641523b7AcC791a856FC6afD35A756F723`. **The testnet
 pin reference is the MOCK stand-in; mainnet uses the recorded TapeOut
-references** — never a bare "pinned" — so `evaluatorPinned()` reads `false`
-here and links stay capped.
+references** — never a bare "pinned". Both legs of the live check pass here
+against those stand-ins, so `evaluatorPinned()` reads `true` and the
+configured cap is stored but not enforced while the check passes.
 
 **Both payer paths ran end to end against this build and reconciled to the
 unit:** the live rule-6 check passed, so leg A's claim was paid from the
@@ -148,6 +149,39 @@ so one authorization can never pay two links. Both USD₮0 and USDG were proven
 to support EIP-3009 on X Layer mainnet during Phase 0. Creation itself is an
 ordinary transaction the creator pays for — there is no meta-transaction
 wrapper around `createLink`.
+
+### Who relays a gasless payment
+
+**Nobody — there is no relay service in this build.** Both payer paths
+settle through ordinary transactions on X Layer:
+
+- **Normal pay** is two transactions from the payer's own wallet: `approve`,
+  then `pay`. The payer signs both and pays both gas fees; no third party is
+  involved at any step.
+- **Gasless pay** is one free off-chain signature: the payer signs an
+  EIP-3009 `transferWithAuthorization` (no gas, no token approval) and the
+  **payee — or any account at all — submits it on chain and pays that gas.**
+  `claim` only ever moves money to the link's payee and the fee account,
+  never to the caller, so the submitter gains nothing by submitting: there
+  is no funded hot wallet, no keeper and no service to trust or to run.
+
+**The web page does not offer it yet.** The pay card has no gasless submit
+button — a payer's wallet only ever signs `approve` + `pay`. The gasless leg
+is demonstrated by script instead: the twelve-transaction run across deploy
+and both payer paths, recorded in [`docs/RESEARCH.md` §17](docs/RESEARCH.md),
+while the browser journey signs nothing off chain.
+
+**Who runs it: whoever's transaction it is.** Every state change — create,
+pay, claim — is sent by the participant whose wallet it comes from.
+Settlement is manual too: on a paid link the pay card shows a *Release*
+button, and anyone may press it (or call `claim` themselves) — the caller
+is never paid by it.
+
+**If gasless is unavailable** — the wallet will not produce the
+authorization, the RPC is having a bad day, anything — **fall back to a
+normal pay**: connect the payer's wallet and send `approve` + `pay` from
+it. Same contract, same 0.5% fee, same result; the payer simply pays gas
+for those two transactions.
 
 ### Why a circuit
 
@@ -222,10 +256,12 @@ same interface and runs the **real Split3 netlist bytes** through the same
 TAP-02 evaluator that was proven bit-for-bit against a live mainnet
 processor. The verdicts come from the netlist; the deploy log says
 "EVM stand-in, not hardware". Its code is not the recorded TapeOut
-implementation, so on testnet `evaluatorPinned()` reads **false** — shown
-honestly as "unpinned, capped" — and every link stays capped; mainnet runs
-the recorded processor and the recorded beacon, both legs of the code check
-pass, and the flag reads true.
+implementation — on testnet leg 1 checks the stand-in's own codehash
+instead, which is exactly why the page never says a bare "pinned" — so
+`evaluatorPinned()` reads **true** there and the configured cap is stored
+but not enforced while the check passes; mainnet runs the recorded
+processor and the recorded beacon, both legs pass against the recorded
+references, and the flag reads true for the recorded build.
 
 The other reason is the hackathon: the X Layer TapeOut Accelerate track
 explicitly asks for TapeOut circuits, contracts or onchain data
@@ -395,7 +431,11 @@ via `?chainId=196`. **Cost:** testnet free, mainnet gas in OKB.
    and the payer loses only gas.
 8. **Check the pin yourself.**
    `cast call <Pago> "evaluatorPinned()(bool)" --rpc-url https://rpc.xlayer.tech`
-   — reads `true` on mainnet, `false` on the MOCK testnet build.
+   — reads `true` on mainnet against the recorded TapeOut references, and
+   `true` on the MOCK testnet build as well: there both legs pass against
+   the stand-ins, which is why the page labels it "testnet pin reference is
+   the MOCK stand-in; mainnet uses the recorded TapeOut references" instead
+   of a bare "pinned".
 
 ---
 

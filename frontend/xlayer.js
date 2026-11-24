@@ -541,6 +541,23 @@ async function readPaymentPolicy(token) {
   };
 }
 
+/* One line about the circuit state, rendered the way config.js demands:
+   never a bare "pinned". Mainnet's line is green and short; testnet's
+   carries the required label — its check passes against the MOCK stand-in's
+   own codehash, not a recorded TapeOut shell; a failed check is a warning,
+   because on that network every link is capped. A check that never came
+   back renders nothing: a status printed from an unanswered call would be
+   a guess dressed as a fact. */
+function pinLine(policy) {
+  if (!policy) return "";
+  if (CHAIN_ID !== 196) {
+    return `<p class="ai-note">testnet pin reference is the MOCK stand-in; mainnet uses the recorded TapeOut references.</p>`;
+  }
+  return policy.ruleCheckPasses
+    ? `<p class="ai-note ok">Circuit pinned on mainnet.</p>`
+    : `<p class="ai-note warn">Circuit check did not pass — links are capped on this network.</p>`;
+}
+
 function splitRowsMarkup(split, payee) {
   return split.shares.map((rawShare, index) => {
     const share = Number(rawShare);
@@ -1307,7 +1324,9 @@ async function renderPay(id) {
       <div class="pi-row"><span class="pi-l">expires</span><span class="pi-p">${esc(fmtDate(link.expiresAt))}</span></div>
       ${Number(link.paidAt) > 0 ? `<div class="pi-row"><span class="pi-l">paid</span><span class="pi-p">${esc(fmtDate(link.paidAt))}</span></div>` : ""}
       ${Number(link.claimedAt) > 0 ? `<div class="pi-row"><span class="pi-l">claimed</span><span class="pi-p">${esc(fmtDate(link.claimedAt))}</span></div>` : ""}
-    </div>`;
+    </div>
+    <p class="tiny" id="payFinality" style="margin-top:1rem">Links are final once claimed &mdash; there are no refunds.</p>
+    <div id="payPinLine" style="margin-top:.6rem">${pinLine(paymentPolicy)}</div>`;
 
   /* Nobody is owed anything on a settled invoice, so the line under the
      payee says what the link is now instead of repeating the open card's
@@ -1872,6 +1891,22 @@ function paintStatic() {
     note.innerHTML = MOCK
       ? `<strong>${esc(TOKEN_LABEL)}</strong> is a freely mintable test token with no backing and no redemption value. Every amount on this page is fake money.`
       : `${esc(TOKEN_LABEL)} is the allowlisted token for this deployment.`;
+  }
+
+  /* The create head's circuit line fills once, from the same live rule
+     check the pay card shows. It starts hidden and stays hidden if the
+     read fails; the guard keeps a later paintStatic() (renderPay calls it
+     too) from re-reading a chain the page already asked. */
+  const pinSlot = $("#createPinLine");
+  if (pinSlot && !pinSlot.dataset.done) {
+    pinSlot.dataset.done = "1";
+    readPaymentPolicy(TOKEN)
+      .then((policy) => {
+        if (!policy) return;
+        pinSlot.hidden = false;
+        pinSlot.innerHTML = pinLine(policy);
+      })
+      .catch(() => { /* no line rather than a guessed one */ });
   }
 
   const input = $("#creatorInput");

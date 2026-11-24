@@ -51,6 +51,51 @@
       object-fit:cover;object-position:50% 30%;
       background:#141413;box-shadow:0 0 0 1.5px rgba(255,255,255,.16);
     }
+    /* One-recipient links (handoff §7): one plain sentence at the very top
+       of the card, the full rule/default/cap/fallback detail one click away
+       in "Payment details" — collapsed by default, never removed. Scoped to
+       .pay-nosplit/.pay-details so a multi-recipient card's rule block is
+       untouched. */
+    .pay-nosplit{
+      border:1px solid rgba(188,255,47,.28);
+      border-radius:var(--r-lg,14px);
+      background:rgba(188,255,47,.05);
+      padding:1rem 1.1rem;margin-bottom:1.2rem;
+    }
+    .pay-nosplit-line{margin:0;font-size:15px;line-height:1.5;font-weight:500}
+    .pay-nosplit-addr{overflow-wrap:anywhere;word-break:break-all;font-size:13px;opacity:.9}
+    .pay-nosplit-sub{margin:.4rem 0 0;font-size:13px;line-height:1.45;color:var(--muted)}
+    .pay-details{margin-top:1.15rem;border-top:1px solid var(--line);padding-top:.9rem}
+    .pay-details summary{
+      cursor:pointer;list-style:none;display:flex;align-items:center;gap:.5rem;
+      font-size:13px;font-weight:500;color:var(--muted);
+    }
+    .pay-details summary::-webkit-details-marker{display:none}
+    .pay-details summary::after{
+      content:"";width:6px;height:6px;flex:none;opacity:.7;
+      border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;
+      rotate:45deg;transition:rotate .15s ease;
+    }
+    .pay-details[open] summary::after{rotate:225deg}
+    .pay-details summary:focus-visible{outline:2px solid rgba(188,255,47,.8);outline-offset:3px;border-radius:4px}
+    /* The rule block ships without styles.css rules (styles.css is frozen);
+       inside the collapsed section it is given just enough to read as
+       labelled rows rather than bare text. */
+    .pay-details .pay-rule-card{display:grid;gap:.7rem;margin-top:.85rem;font-size:13px;line-height:1.5}
+    .pay-details .pay-rule-title{display:flex;justify-content:space-between;gap:.7rem;align-items:center;font-weight:500}
+    .pay-details .rule-tag{
+      font-size:11px;color:var(--muted);border:1px solid var(--line);
+      border-radius:999px;padding:.15rem .5rem;font-weight:500;
+    }
+    .pay-details .pay-rule-row{display:grid;grid-template-columns:6.5rem 1fr;gap:.5rem;align-items:start}
+    .pay-details .pay-rule-row b{font-weight:500;color:var(--muted)}
+    .pay-details .rule-share-list{display:flex;flex-wrap:wrap;gap:.35rem;margin:.35rem 0}
+    .pay-details .rule-share-list span{
+      font-size:12px;border:1px solid var(--line);border-radius:999px;
+      padding:.12rem .5rem;color:var(--body);
+    }
+    .pay-details .rule-note{display:block;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+    .pay-details .rule-fallback{margin:0;font-size:12px;color:var(--muted)}
   </style>
 <!-- Same three weights the first screen uses, preloaded for the same reason. -->
 <link rel="preload" href="fonts/satoshi-400.woff2" as="font" type="font/woff2" crossorigin>
@@ -145,6 +190,6 @@
 
 <!-- One module runs both documents; here it boots the payment card alone.
      The share card's QR helper lives with the site, which owns sharing now. -->
-<script type="module" src="xlayer.js?v=20261123b"></script>
+<script type="module" src="xlayer.js?v=20261124a"></script>
 </body>
 </html>

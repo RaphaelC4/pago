@@ -100,6 +100,26 @@ export function makeXlLinks() {
   ];
 }
 
+/**
+ * A one-recipient link: both preset tables pay the whole amount to the payee
+ * and nothing to seats 2 and 3 — the shape whose pay card leads with the
+ * "No split" line (handoff §7). Deliberately NOT part of makeXlLinks(): the
+ * ledger test pins the mocked ledger at three links, and this one exists
+ * only for the test that asks for it by id.
+ */
+export function makeXlNosplitLink() {
+  return [
+    link({
+      linkId: "pago-e2e-0004-nosplit",
+      amount: 2_500_000n,
+      description: "E2E fixture — one recipient, no split",
+      status: 0n,
+      defaultSplit: { recipients: [PAYEE, ZERO, ZERO], shares: [20, 0, 0] },
+      ruleSplit: { recipients: [PAYEE, ZERO, ZERO], shares: [20, 0, 0] },
+    }),
+  ];
+}
+
 const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, POST, OPTIONS",

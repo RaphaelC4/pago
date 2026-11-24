@@ -16,15 +16,16 @@
 
 import { test, expect } from "@playwright/test";
 import { makeScenario, installMocks } from "../fixtures/mocks.mjs";
-import { installXLayerMocks, xlPayUrl } from "../fixtures/xlayer-mocks.mjs";
+import { installXLayerMocks, xlPayUrl, makeXlNosplitLink } from "../fixtures/xlayer-mocks.mjs";
 
 /* installMocks() first (it owns the catch-all), then the X Layer route —
  * Playwright matches the most recently registered route first, so the RPC
- * is answered by the fixture rather than aborted as off-allowlist. */
-async function openPago(page, path = "/xlayer.html") {
+ * is answered by the fixture rather than aborted as off-allowlist.
+ * `links` swaps the served set for a spec that needs its own invoice. */
+async function openPago(page, path = "/xlayer.html", links) {
   const scenario = makeScenario();
   const { errors } = await installMocks(page, scenario);
-  const xl = await installXLayerMocks(page);
+  const xl = await installXLayerMocks(page, links);
   await page.goto(path);
   /* The site opens behind a ~5 s splash that swallows pointer events;
      close it the way a tap does so the header links are tappable at once.
@@ -165,6 +166,63 @@ test.describe("X Layer / Pago page", () => {
        fail in the signer. */
     await expect(page.locator("#payConnect")).toBeVisible();
     await expect(page.locator("#payNote")).toContainText("never needed a wallet");
+
+    /* This fixture's rule table splits (10/6/4), so the card keeps the full
+       rule block in the open — no "No split" line and no collapsed section. */
+    await expect(page.locator("#payCard .pay-nosplit")).toHaveCount(0);
+    await expect(page.locator("#payCard .pay-details")).toHaveCount(0);
+    await expect(page.locator("#payCard .pay-rule-card")).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+
+  test("a one-recipient invoice leads with the No split line and keeps its full details", async ({ page }) => {
+    const { errors } = await openPago(page, xlPayUrl("pago-e2e-0004-nosplit"), makeXlNosplitLink());
+
+    await expect(page.locator("#payCard .pill")).toHaveText("Open", { timeout: 15_000 });
+
+    /* The one line a new payer should read, at the very top of the card,
+       naming the actual destination and the actual fee. */
+    const line = page.locator("#payCard .pay-nosplit-line");
+    await expect(line).toBeVisible();
+    await expect(line).toContainText("No split. The full amount, minus the 0.5% fee, goes to");
+    await expect(line).toContainText("0x7fce520d881454ea234d371e1256b75843609b62");
+    await expect(page.locator("#payCard .pay-nosplit-sub")).toHaveText(
+      "The rule check can't change where this money goes."
+    );
+    /* It sits above everything else in the card. */
+    const first = await page.evaluate(
+      () => document.querySelector("#payCard .pay-nosplit") === document.querySelector("#payCard").firstElementChild
+    );
+    expect(first).toBe(true);
+
+    /* The detail is one click away, collapsed by default, and still sits
+       before the pay button — present, never removed (handoff §7). */
+    const details = page.locator("#payCard .pay-details");
+    await expect(details).toBeVisible();
+    await expect(details).not.toHaveAttribute("open", "");
+    await expect(page.locator("#payCard .pay-details .pay-rule-card")).toBeHidden();
+    const beforeActions = await page.evaluate(() => {
+      const d = document.querySelector("#payCard .pay-details");
+      const a = document.querySelector("#payActions");
+      return Boolean(d && a && d.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING);
+    });
+    expect(beforeActions).toBe(true);
+
+    /* Open it: rule, default split, cap and the fallback sentence are all
+       still on the page. */
+    await page.locator("#payCard .pay-details summary").click();
+    await expect(page.locator("#payCard .pay-details .pay-rule-card")).toBeVisible();
+    const rows = page.locator("#payCard .pay-details .pay-rule-row b");
+    await expect(rows).toHaveCount(3);
+    await expect(rows.nth(0)).toHaveText("Rule");
+    await expect(rows.nth(1)).toHaveText("Default split");
+    await expect(rows.nth(2)).toHaveText("Cap");
+    await expect(page.locator("#payCard .pay-details .rule-fallback")).toContainText(
+      "If the rule check fails at payout time, this default split applies instead"
+    );
+    /* Network and MOCK labelling travel with the detail, not instead of it. */
+    await expect(page.locator("#payCard .pay-details")).toContainText("X Layer testnet");
+    await expect(page.locator("#payCard .pay-details")).toContainText("pUSD (MOCK)");
     expect(errors).toEqual([]);
   });
 

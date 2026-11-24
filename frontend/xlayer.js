@@ -560,6 +560,25 @@ function paymentRulesMarkup(link, policy) {
   </section>`;
 }
 
+/* A one-recipient link: both preset tables pay the whole amount to the same
+   seat-1 destination and nothing at all to seats 2 and 3. Shares are twenty
+   steps of 5%, so 20 is 100%. Returns that destination's address, or null
+   for anything that actually splits — the pay card only changes shape when
+   the money has exactly one place to go. */
+function oneRecipientDestination(link) {
+  const allToOne = (split) =>
+    Number(split.shares[0]) === 20 &&
+    Number(split.shares[1]) === 0 &&
+    Number(split.shares[2]) === 0 &&
+    sameAddr(split.recipients[1], ZERO_ADDR) &&
+    sameAddr(split.recipients[2], ZERO_ADDR) &&
+    !sameAddr(split.recipients[0], ZERO_ADDR);
+  if (!allToOne(link.ruleSplit) || !allToOne(link.defaultSplit)) return null;
+  return sameAddr(link.ruleSplit.recipients[0], link.defaultSplit.recipients[0])
+    ? link.defaultSplit.recipients[0]
+    : null;
+}
+
 async function readLedger(creator) {
   const data = callData(SEL.getLinksByCreator, ["address"], [creator]);
   const ret = await ethCall(PAGO, data);
@@ -1243,6 +1262,21 @@ async function renderPay(id) {
     catch { /* keep the configured cap visible; paying stays paused until live state reads */ }
   }
   const paymentRules = statusNameNow === "Open" ? paymentRulesMarkup(link, paymentPolicy) : "";
+  /* One-recipient links lead with one plain sentence and move the full
+     detail into "Payment details" — collapsed by default, one click away,
+     and always present before the pay button (handoff §7: the details may
+     be collapsed for these links, but never removed). Multi-recipient
+     links keep the rule card exactly as it renders above. */
+  const payeeDestination = statusNameNow === "Open" ? oneRecipientDestination(link) : null;
+  const prelude = payeeDestination
+    ? `<div class="pay-nosplit">
+         <p class="pay-nosplit-line">No split. The full amount, minus the ${NET.feeBps / 100}% fee, goes to <span class="mono pay-nosplit-addr" title="${esc(payeeDestination)}">${esc(payeeDestination)}</span>.</p>
+         <p class="pay-nosplit-sub">The rule check can't change where this money goes.</p>
+       </div>`
+    : "";
+  const details = payeeDestination
+    ? `<details class="pay-details"><summary>Payment details</summary>${paymentRules}</details>`
+    : paymentRules;
 
   /* ── facts every state shares ── */
   /* On a claimed link "payee receives" would contradict the receipt below
@@ -1297,7 +1331,7 @@ async function renderPay(id) {
     <div class="pay-desc"><b>for</b>${esc(link.description)}</div>`;
 
   card.classList.toggle("claim-view", isClaimed);
-  card.innerHTML = `${head}${facts}${paymentRules}
+  card.innerHTML = `${prelude}${head}${facts}${details}
     <div class="pay-actions" id="payActions"></div>
     <p class="wallet-note" id="payNote"></p>`;
 

@@ -140,6 +140,18 @@ Show, from the link's own stored fields:
 4. The sentence, verbatim: **"If the rule check fails at payout time, this
    default split applies instead"**.
 
+**Amendment (one-recipient links).** Every pay card must show these details
+before payment. For a one-recipient link — both the rule and the default
+table pay 100% to the same seat-1 destination, nothing to seats 2 and 3 —
+the card leads with one plain line at the top, **"No split. The full amount,
+minus the 0.5% fee, goes to \<payee address\>."**, under it the small line
+**"The rule check can't change where this money goes."**, and the details
+above may be collapsed into a **"Payment details"** section (one click
+away, collapsed by default, always visible before the Pay button). For those
+links the details may be collapsed, but they must be present and must not
+be removed from the page. Multi-recipient links are unchanged: they show the
+full rule card as it renders today.
+
 ## 8. Labels and honesty rules
 
 - Network chip / footer: **"X Layer mainnet"** when the page runs on chain 196,

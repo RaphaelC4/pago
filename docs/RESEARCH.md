@@ -72,10 +72,26 @@ money moves.
 | Token | Address | Notes |
 |---|---|---|
 | USDT0 | `0x779Ded0c9e1022225f8E0630b35a9b54bE713736` | EIP-3009 `transferWithAuthorization` works |
-| USDG | `0x4ae46a509F6b1D9056937BA4500cb143933D2dc8` | EIP-3009 works |
+| USDG | `0x4ae46a509F6b1D9056937BA4500cb143933D2dc8` | EIP-3009 works (diamond — see the selector note below) |
 
 Both tokens' EIP-3009 `DOMAIN_SEPARATOR` was recomputed off-chain and matched the
 on-chain value exactly, for domain version `"1"`.
+
+> **Selector correction (2026-11-24).** The rows above are right about the
+> *tokens*: both implement EIP-3009 with `uint256` `validAfter`/`validBefore`,
+> selector **`0xcf092995`**. What was wrong was
+> **Pago's own `IEIP3009` interface**, which declared those two arguments as
+> `uint64` and therefore called **`0xd8fde8d5`** — a function neither token
+> has. USDG, being a diamond, answers that mismatched call with
+> `FacetNotFound`. `payWithAuthorization`'s own selector (`0x69c1372a`) and
+> `createLink`'s (`0x6c5b7a11`) were never affected; only the token hop was.
+> Fixed in `contracts-evm/src/Pago.sol` and proven against a mainnet fork by
+> `test/PagoGaslessFork.t.sol` (6/6), including USDG: `0xcf092995` reaches the
+> signature check (`InvalidSignature` on a garbage signature, and
+> `InsufficientFunds` — signature accepted — for a correctly signed
+> authorization from a payer holding no USDG). USDG `DOMAIN_SEPARATOR`
+> `0x415f0706e345fcaf25d5be24c4fd7830d0054fc5742c51a0db9319c759bd3743`.
+> The mainnet contract has **not** been redeployed with the fix yet.
 
 ---
 
@@ -313,6 +329,14 @@ Proven on both USDT0 and USDG:
 
 **Design conclusion:** Pago uses `transferWithAuthorization`, submitted by a
 relayer. `receiveWithAuthorization` is unusable for a relayer on USDT0.
+
+> **Note on scope:** every row above was exercised **against the tokens
+> directly**, using their real `uint256` window arguments (selector
+> `0xcf092995`). It proves the *tokens* are ready. It does **not** prove Pago
+> can reach them — Pago's `IEIP3009` declared those arguments as `uint64` and
+> called `0xd8fde8d5`, which neither token implements. See the selector
+> correction in §2 and
+> [`README.md`](../README.md) "The gasless selector bug and its fix".
 
 > **Note for reviewers:** an earlier version of these tests reported
 > "invalid signature" for the third-party case. That was a bug in the test — it

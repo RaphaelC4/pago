@@ -22,6 +22,9 @@ Run it from `frontend/` — static files, no build step, see
   fixed at creation; a share card with a QR code follows.
 - **Two payer paths.** An ordinary ERC-20 `approve` + `pay`, or a gasless
   EIP-3009 authorization the payer signs off-chain and a third party submits.
+  **The gasless path is not usable on the mainnet contract yet** — it ships
+  with a selector bug, fixed and fork-proven but not yet redeployed; see
+  [The gasless selector bug and its fix](#the-gasless-selector-bug-and-its-fix).
 - **The payout is computed, not argued.** At claim, the contract asks a
   published 104-gate circuit (Split3) whether the rule table holds; anything
   wrong with the answer — revert, garbage, gas exhaustion, an unsafe verdict —
@@ -59,9 +62,12 @@ chat, no seed-phrase hand-holding, nothing held in between.
 
 ### The networks and the contracts
 
-**Mainnet (X Layer, chain 196) — live.**
+**Mainnet (X Layer, chain 196) — live, ordinary `pay()` only.**
 
-- **Pago:** `0xd63Ae612Cf9Acb9Ac8F7801eF68E8e71068E492c`
+- **Pago:** `0xd63Ae612Cf9Acb9Ac8F7801eF68E8e71068E492c` — **superseded by the
+  fixed source below; carries the gasless selector bug.** No link has ever
+  been created on it (see
+  [The gasless selector bug and its fix](#the-gasless-selector-bug-and-its-fix)).
 - **Tokens:** USD₮0 `0x779Ded0c9e1022225f8E0630b35a9b54bE713736` · USDG
   `0x4ae46a509F6b1D9056937BA4500cb143933D2dc8` — 6 decimals, both EIP-3009
 - **Fee:** 50 bps → `0x7FCe520D881454EA234d371E1256B75843609b62`, immutable
@@ -95,7 +101,13 @@ unit:** the live rule-6 check passed, so leg A's claim was paid from the
 **rule table** — payee 497,500 plus 497,500 back to the rule seat, with the
 claim event recording `usedRuleSplit=true` — and leg B fell to the default
 split (payee 995,000, `usedRuleSplit=false`); payee +1,492,500, payer
-−1,492,500, the contract kept 0. An earlier copy (`0xA4AA0B19…17bfF`) stays on
+−1,492,500, the contract kept 0. **That run is a record of the pre-fix build:**
+the deployed testnet Pago and the deployed testnet mock both carried the old
+`uint64` window arguments, so they agreed with each other and the gasless leg
+settled. The source has since been corrected on both sides (interface and
+mock), which no longer matches that deployment — the testnet is redeployed
+from the fixed source as step 6 below, and until then this paragraph describes
+the old pair only. An earlier copy (`0xA4AA0B19…17bfF`) stays on
 chain as the **failure-path proof**, where leg 1 is checked against the
 recorded TapeOut shell the stand-in can never match, so both claims fell to
 the default split instead ([`docs/RESEARCH.md` §17](docs/RESEARCH.md)). The
@@ -146,9 +158,12 @@ pay, both transactions signed by the payer. The second path is gasless — the
 payer signs an EIP-3009 `transferWithAuthorization` off-chain and any account
 may submit it and pay the gas; its nonce is derived from `(linkKey, payer)`,
 so one authorization can never pay two links. Both USD₮0 and USDG were proven
-to support EIP-3009 on X Layer mainnet during Phase 0. Creation itself is an
-ordinary transaction the creator pays for — there is no meta-transaction
-wrapper around `createLink`.
+to support EIP-3009 on X Layer mainnet during Phase 0 — **but Pago's own
+interface asked for it with the wrong argument types**, so the gasless hop
+reverts against both tokens until the contract is redeployed; see
+[The gasless selector bug and its fix](#the-gasless-selector-bug-and-its-fix).
+Creation itself is an ordinary transaction the creator pays for — there is no
+meta-transaction wrapper around `createLink`.
 
 ### Who relays a gasless payment
 
@@ -164,6 +179,9 @@ settle through ordinary transactions on X Layer:
   `claim` only ever moves money to the link's payee and the fee account,
   never to the caller, so the submitter gains nothing by submitting: there
   is no funded hot wallet, no keeper and no service to trust or to run.
+  **This leg does not settle on the current mainnet contract** — the selector
+  bug above — so on mainnet today the working route is the normal `approve` +
+  `pay`.
 
 **The web page does not offer it yet.** The pay card has no gasless submit
 button — a payer's wallet only ever signs `approve` + `pay`. The gasless leg
@@ -182,6 +200,80 @@ authorization, the RPC is having a bad day, anything — **fall back to a
 normal pay**: connect the payer's wallet and send `approve` + `pay` from
 it. Same contract, same 0.5% fee, same result; the payer simply pays gas
 for those two transactions.
+
+### The gasless selector bug and its fix
+
+**The gasless path does not settle against the real tokens on the mainnet
+contract as it stands today.** The ordinary `pay()` path is unaffected and is
+what the page offers; this section exists so nobody has to discover the
+gasless failure the hard way.
+
+The `IEIP3009` interface inside `contracts-evm/src/Pago.sol` declared the two
+authorization window arguments as `uint64`:
+
+```solidity
+function transferWithAuthorization(address from, address to, uint256 value,
+                                   uint64 validAfter, uint64 validBefore,
+                                   bytes32 nonce, bytes calldata signature) external;
+```
+
+Argument types are part of a function's selector, so that declaration hashes
+to **`0xd8fde8d5`**. Real USD₮0 declares the same two arguments as `uint256`,
+which hashes to **`0xcf092995`**. `payWithAuthorization` therefore called a
+function the token does not have, and the token hop of every gasless payment
+reverted. USDG is a diamond, and the mismatched call came back as
+`FacetNotFound` — which is how it was caught.
+
+**The fix is two type keywords in the interface.** `validAfter` and
+`validBefore` are now `uint256`, matching the real tokens. Nothing else moved:
+
+- `payWithAuthorization` keeps its selector `0x69c1372a`
+- `createLink` keeps its selector `0x6c5b7a11`
+- the deployed size stays 15,327 bytes
+- `abi.js` and Pago's own ABI are unchanged, so the frontend needs no edit
+
+**Proven against a mainnet fork, not against a mock.**
+`contracts-evm/test/PagoGaslessFork.t.sol` deploys a fresh Pago from the fixed
+source onto a fork of chain 196, funds a payer with `deal()`, and signs a real
+EIP-3009 authorization with `vm.sign` — no keystore and no mainnet transaction
+involved. Six cases, **6/6 passing**: a full settle against live USD₮0 (payer
+debited exactly, Pago escrowed, `LinkClaimed(key, 995_000, 5_000, false)`, the
+payee paid 995,000, the fee 5,000, escrow back to 0), plus replay, expired,
+wrong-signer, wrong-nonce and underpayment rejections.
+
+**USDG too.** USDG lacks the old selector (`FacetNotFound` on `0xd8fde8d5`)
+but has the fixed one: `0xcf092995` reaches the signature check and returns
+`InvalidSignature` for a garbage signature, and a correctly signed
+authorization made with the payee's key reached `InsufficientFunds` — the
+signature was accepted and the call failed only for want of a balance. So
+USDG becomes gasless-settleable by the same fix. Its `DOMAIN_SEPARATOR` is
+`0x415f0706e345fcaf25d5be24c4fd7830d0054fc5742c51a0db9319c759bd3743`.
+
+**Status: fixed and proven, not yet deployed.** Until a corrected contract is
+live on X Layer mainnet and a real gasless payment has settled through it,
+this README does **not** claim gasless works on mainnet. The steps are:
+
+1. ✅ interface fixed in `contracts-evm/src/Pago.sol`
+2. ✅ mock token pinned to the real USD₮0 shape in all three places
+3. ✅ fork test passing against live USD₮0
+4. ✅ this record
+5. full suite, smoke and testnet green
+6. testnet redeploy and exercise of both payer paths
+7. read-only mainnet preparation
+8. mainnet redeploy — **requires the phrase `deploy to mainnet tier 1`**
+9. a live 0.1 USD₮0 gasless demo payment — **requires the phrase
+   `send mainnet demo payment`**
+
+**The superseded mainnet contract.** The Pago at
+`0xd63Ae612Cf9Acb9Ac8F7801eF68E8e71068E492c` is the build that carries the
+bug, and it is superseded by the fixed source above. **No payment link has
+ever been created on it:** `getLinksByCreator` returns an empty list for all
+three addresses that have ever held its keys — the payee
+`0x7FCe520D881454EA234d371E1256B75843609b62`, the payer
+`0x6256B90E4f36ee9e7A16cd29E7705dbdc539ec7b` and the deployer
+`0x3f1004AAeD662227d535D794dA679110111a2FC4` — and no `LinkCreated` event
+appears in the 100 blocks following its deployment at block 76,435,642. Its
+ordinary `pay()` path works; only the gasless hop is affected.
 
 ### Why a circuit
 
@@ -396,7 +488,10 @@ paying one claim and the fallback paying the other —
 proven by that script rather than by this page: the page has the payer sign
 and pay both transactions themselves, while any account can submit an
 EIP-3009 authorization off chain. Full record: [`docs/RESEARCH.md` §16](docs/RESEARCH.md)
-(page) and [§17](docs/RESEARCH.md) (contract).
+(page) and [§17](docs/RESEARCH.md) (contract). **That run exercised the tokens'
+EIP-3009 directly; the selector bug below was found afterwards, in Pago's own
+interface, and the mainnet contract has not been redeployed with the fix** —
+see [The gasless selector bug and its fix](#the-gasless-selector-bug-and-its-fix).
 
 ---
 
@@ -444,7 +539,7 @@ via `?chainId=196`. **Cost:** testnet free, mainnet gas in OKB.
 - **No refunds.** Payment links are final once claimed.
 - **Pays in stablecoins.** USD₮0 and USDG on X Layer.
 - **No cash-out.** Pago moves stablecoins between wallets; there is no bank off-ramp.
-- **No relay service.** A normal payment is sent from the payer's own wallet; a gasless one is a free off-chain EIP-3009 signature that the payee — or any account — submits, paying the gas.
+- **No relay service.** A normal payment is sent from the payer's own wallet; a gasless one is a free off-chain EIP-3009 signature that the payee — or any account — submits, paying the gas. **The gasless leg does not settle on the current mainnet contract** (selector bug, fixed and fork-proven, not yet redeployed), so on mainnet today the working route is `approve` + `pay`.
 
 ---
 

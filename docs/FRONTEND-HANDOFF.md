@@ -17,10 +17,10 @@ this block. Testnet block stays as-is.
 | `chainId` | `196` | read back (deploy run) |
 | `rpc` | `https://rpc.xlayer.tech` (alt `https://xlayerrpc.okx.com`) | config |
 | `explorer` | `https://www.oklink.com/xlayer` | config |
-| `pago` | `0xd63Ae612Cf9Acb9Ac8F7801eF68E8e71068E492c` | read back: deployed, receipt `docs/tier2-mainnet-deployPago.json`, runtime codehash `0x175bafd0c7ac2d363bedbde2ac17ee8b12d4cd3e565028588f7aa95050f0305d` == pre-send prediction |
+| `pago` | `0xd63Ae612Cf9Acb9Ac8F7801eF68E8e71068E492c` — **superseded: carries the gasless selector bug (`uint64` window args → `0xd8fde8d5`), not yet redeployed. Ordinary `pay()` works; no link was ever created on it** | read back: deployed, receipt `docs/tier2-mainnet-deployPago.json`, runtime codehash `0x175bafd0c7ac2d363bedbde2ac17ee8b12d4cd3e565028588f7aa95050f0305d` == pre-send prediction |
 | `token` | **two** tokens (this deployment accepts both) | read back: `isTokenAllowed` true for each |
 | USD₮0 | `0x779Ded0c9e1022225f8E0630b35a9b54bE713736`, 6 decimals, EIP-3009 | read back: `isTokenAllowed` true, `expectedDecimals` 6; EIP-3009 proven Phase 0 (RESEARCH §8) |
-| USDG | `0x4ae46a509F6b1D9056937BA4500cb143933D2dc8`, 6 decimals, EIP-3009 | same |
+| USDG | `0x4ae46a509F6b1D9056937BA4500cb143933D2dc8`, 6 decimals, EIP-3009 (diamond) | same; both tokens implement the **fixed** selector `0xcf092995`, not Pago's old `0xd8fde8d5` |
 | `feeBps` | `50` (0.5%) | read back: `feeBps()` = 50 |
 | `feeAccount` | `0x7FCe520D881454EA234d371E1256B75843609b62` | read back: `feeAccount()` |
 | `unpinnedCap` | `10_000_000_000` per token (10,000 at 6 decimals) | read back: `MAX_LINK_AMOUNT_UNPINNED(token)` for both |
@@ -164,6 +164,13 @@ full rule card as it renders today.
 - The receipt sentence in `frontend/receipt.js` is NEAR-specific
   (`"Payment delivered and verified on NEAR"`) — the X Layer page needs its own
   honest sentence; don't reuse the NEAR one.
+- **Never claim gasless works on mainnet** until a corrected contract is
+  deployed there and a real payment has settled through it. The current
+  mainnet Pago carries a selector bug in its EIP-3009 interface (`uint64`
+  window args → `0xd8fde8d5`; the real tokens want `uint256` → `0xcf092995`),
+  so its gasless hop reverts against both USD₮0 and USDG. The ordinary
+  `approve` + `pay` path is unaffected and is what the page offers. Full
+  record: `README.md` "The gasless selector bug and its fix".
 
 ## 9. README verification marks
 

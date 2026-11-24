@@ -1887,6 +1887,10 @@ function paintStatic() {
   if (networkChip) networkChip.textContent = NETWORK_LABEL;
   const footer = $("#footerNetworkLabel");
   if (footer) footer.textContent = `${NETWORK_LABEL} (${CHAIN_ID}) · ${MOCK ? `${TOKEN_LABEL} test token only · do not send real funds` : `${TOKEN_LABEL} · allowlisted stablecoin`}`;
+  /* The site footer's safety line names the network this page is actually
+     on: a mainnet build must never read "Demo on X Layer testnet". */
+  const safety = $("#footerSafetyNote");
+  if (safety) safety.textContent = `${CHAIN_ID === 196 ? NETWORK_LABEL : `Demo on ${NETWORK_LABEL}`} — check the contract address on the explorer before you pay.`;
 }
 
 /* One boot read: fee, allowlist, clock. It also drives the connection dot,

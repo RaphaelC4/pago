@@ -57,11 +57,17 @@ test.describe("X Layer / Pago page", () => {
        than showing an address it does not have. */
     await expect(page.locator("#walletLabel")).toHaveText("No wallet");
 
-    /* The footer keeps the honest line — no audit claim, and the reader
-       is told to read the contract addresses back. MOCK labelling itself
-       is asserted on the create form below, where the token is named. */
-    await expect(page.locator(".lp-footer")).toContainText("not independently audited");
-    await expect(page.locator(".lp-footer")).toContainText("Read the contract addresses back");
+    /* The footer carries the safety line, and it names the network this
+       page is actually on: a testnet boot reads as a demo, and nothing
+       there claims an audit. */
+    await expect(page.locator(".lp-footer")).toContainText("Demo on X Layer testnet");
+    await expect(page.locator(".lp-footer")).toContainText(
+      "check the contract address on the explorer before you pay"
+    );
+    await expect(page.locator(".lp-footer")).not.toContainText("audited");
+
+    /* MOCK labelling itself is asserted on the create form below, where
+       the token is named. */
 
     expect(scenario.unexpected, "the page must not reach beyond the mocked allowlist").toEqual([]);
     expect(errors, "boot must produce no console errors").toEqual([]);

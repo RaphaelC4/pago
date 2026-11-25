@@ -181,10 +181,14 @@ account, processor + its codehash, transistors, factory (`cpuCount` 437,
 `evaluatorPinned`, netlist identity. Everything else stays unmarked until a
 call answers.
 
-**OKLink source verification** for Pago is free and worth doing: submit the
-verified source for `0xd63Ae612…492c` on `oklink.com/xlayer`, then mark it
-"source verified" in the README only after the explorer shows it. Nothing in
-the repo may claim explorer verification before that happens.
+**OKLink source verification:** the current Pago `0x2fC4…537D3e` was
+verified on 2026-11-25 — the explorer shows "Contract source code
+verified" (solc v0.8.28+commit.7893614a, optimizer 200, MIT), and the
+README claims it only after the explorer shows it, per the rule below.
+The superseded `0xd63Ae612…492c` is deliberately left unverified: it
+carries the selector bug and no payment link was ever created on it.
+Nothing in the repo may claim explorer verification before the explorer
+shows it.
 
 ## 10. Commands
 

@@ -70,7 +70,11 @@ chat, no seed-phrase hand-holding, nothing held in between.
   — the one Pago this project points at. Deployed 2026-11-25 (step 8; receipt
   and full verification in RESEARCH §21): runtime codehash
   `0x684a360f…d598ed`, `evaluatorPinned()` true from block one, corrected
-  selector `0xcf092995`. **A live 0.1 USD₮0 gasless payment settled through
+  selector `0xcf092995`. The source is **verified on OKLink** —
+  <https://www.oklink.com/x-layer/evm/address/0x2fC4180db7318F4364F6FC559A25359c9F537D3e>
+  shows "Contract source code verified" (solc v0.8.28+commit.7893614a,
+  optimizer 200 runs, MIT license), so the explorer's Read Contract decodes
+  every call. **A live 0.1 USD₮0 gasless payment settled through
   it on 2026-11-25** (step 9, RESEARCH §22): the payer `0x6256B90E…` spent
   zero OKB, and `LinkClaimed` paid 99,500 + 500 fee after the pinned Split3
   processor returned a passing verdict.
@@ -312,6 +316,9 @@ The steps are:
    payee relayed and claimed; txs `0x9e38d977…f755a` (create),
    `0x0cb7a79a…11f6` (gasless pay), `0x8eb3a165…0d45` (claim);
    `LinkClaimed(payout 99500, fee 500, usedRuleSplit=true)`, ≈ $0.002
+10. ✅ source verification — OKLink shows "Contract source code verified"
+    for the live contract (solc v0.8.28+commit.7893614a, optimizer 200,
+    MIT); the submission inputs are kept in `contracts-evm/verify-oklink/`
 
 **The superseded mainnet contract.** The Pago at
 `0xd63Ae612Cf9Acb9Ac8F7801eF68E8e71068E492c` is the build that carries the

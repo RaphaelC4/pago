@@ -131,6 +131,15 @@ contract Deploy is Script {
     }
 
     function run() external {
+        // X Layer mainnet (196) never deploys through this script. Its
+        // references would come from env knobs - PAGO_PROCESSOR_CODEHASH (the
+        // testnet stand-in override) or this script's older default shell
+        // reference - while mainnet's recorded values live as constants in
+        // Tier2Mainnet.s.sol, which verifies them against the chain. Either
+        // way a mainnet deployment made here would carry a reference that
+        // differs from the recorded TapeOut values and stay unpinned forever.
+        require(block.chainid != 196, "MAINNET: use script/Tier2Mainnet.s.sol - Deploy.s.sol carries no mainnet references");
+
         Cfg memory cfg = Cfg({
             tokenAddr: vm.envOr("PAGO_TOKEN", string("")),
             deployer: vm.envOr("PAGO_DEPLOYER", msg.sender),

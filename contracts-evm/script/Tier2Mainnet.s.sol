@@ -145,6 +145,16 @@ contract Tier2Mainnet is Script {
     function run() external {
         deployer = vm.envOr("PAGO_DEPLOYER", msg.sender);
 
+        // PAGO_PROCESSOR_CODEHASH exists for the testnet stand-in only; every
+        // reference this script hands to Pago is a recorded constant below,
+        // verified live in _preflight and again at deploy time. A stale
+        // override left in the environment must abort the run rather than sit
+        // unnoticed beside values it can never legitimately influence.
+        require(
+            vm.envOr("PAGO_PROCESSOR_CODEHASH", bytes32(0)) == bytes32(0),
+            "PAGO_PROCESSOR_CODEHASH is set - the testnet override must never reach a mainnet deploy"
+        );
+
         // Read-only phase: nothing here can create a transaction.
         maxIn = _quoteMaxIn();
         _preflight();

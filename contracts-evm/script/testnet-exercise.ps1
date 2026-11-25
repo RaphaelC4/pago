@@ -363,7 +363,7 @@ $nonceHex = (Call "nonce as bytes32" { cast to-hex $nonce }) -replace "^0x", ""
 $nonce = "0x" + $nonceHex.PadLeft(64, "0")
 $validBefore = "18446744073709551615"                     # type(uint64).max
 $digest = Call "EIP-3009 digest" {
-    cast call $Token "digestOf(address,address,uint256,uint64,uint64,bytes32)(bytes32)" `
+    cast call $Token "digestOf(address,address,uint256,uint256,uint256,bytes32)(bytes32)" `
         $Deployer $Pago $Amount 0 $validBefore $nonce
 }
 Write-Host ("  digest {0}" -f $digest) -ForegroundColor DarkGray

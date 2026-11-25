@@ -1962,3 +1962,103 @@ exact conservation is the whole demo claim.
 - **Does not prove:** the browser path (rule 4, unchanged); the USDG leg on
   mainnet (same fixed selector, not exercised); that the two USD₮0 holdings
   have been recovered — recovery stays gated on a fresh go-ahead.
+
+## §23 — Recovery: both USD₮0 holdings recovered as OKB, keep nothing (2026-11-25)
+
+Step 10. The user's **"go ahead"** (2026-11-25, given directly after the step-9
+stop notice that offered a fresh go-ahead for recovery) authorised recovering
+both USD₮0 holdings as OKB, **keeping nothing** — the payer keystore backup
+(`pago-payer-20261125-072506.bak`) is not part of this and stays untouched.
+Route is the one on record in `docs/demo-funding-20261124.log`: consolidate
+both holdings to the deployer, approve the router, **one** reverse swap
+USD₮0 → WOKB in the fee-500 pool, then `WOKB.withdraw()`; gas from the
+deployer's OKB reserve.
+
+### Dollar quote (given before anything was sent)
+
+| Item | Cost |
+|---|---|
+| Pool fee — 0.05% on 0.808397 USD₮0 | ≈ $0.000404 |
+| Gas — 5 txs (450k gas at 0.02 gwei) | ≈ $0.0006 |
+| **Total expected** | **≈ $0.001–0.002** |
+
+An earlier quote of "$0.40 / $0.41" was wrong by 1000× — it read the holdings
+as $808 instead of 0.808397 USD₮0 (808,397 base units, 6 decimals). Corrected
+before any send; the 11-24 funding log's "roughly a cent" was right.
+
+### Starting state (live, read-only)
+
+payer **708,397** · payee **100,000** · deployer **0** · Pago **0** — total
+808,397 units = **0.808397 USD₮0 ≈ $0.80**. Fee-500 pool `0xe3be6a01…5082`
+live at slot0 ≈ $79.31/WOKB, liquidity ≈ 4.88e16; a fee-100 pool also exists
+but the recorded route is the fee-500 pool (the deviation isn't worth a third
+of a cent). OKB = $79.12, gas 0.02 gwei, chain 196.
+
+### The five transactions (all status 0x1)
+
+| # | purpose | tx | block | gas |
+|---|---|---|---|---|
+| 1 | payee → deployer `transfer(100000)` | `0x00ea11b0e7294f6c105e0f087d62c7fb40fe12d886fa646b299e4bdbae7b3274` | 76,829,490 | 56,112 |
+| 2 | payer → deployer via **bare EIP-3009** `transferWithAuthorization`, relayed by the deployer (payer spends **0 OKB**) | `0x6f6df7f55023e736465d2800a26b1d54d8f7e57da9c82ce2c7fc8c434095079b` | — | 83,075 |
+| 3 | deployer `approve(router, 808397)` | `0xbef47ccad49ad1578eab9ee135570a26ca0b12acee6ddb603020d3edd5863cd7` | — | 53,365 |
+| 4 | **the one guarded swap** `exactInputSingle(USD₮0→WOKB, fee 500, amountIn 808397, min 10099251240327793)` | `0x7309eb49eaa269ff13af35c3fdce2b34a09b542ca4c4f3d6bae6873fc1eed5a0` | 76,830,557 | 131,834 |
+| 5 | `WOKB.withdraw(10217363043645618)` | `0x2a1a3bf200c7bf86f90f20c09c80120d4e3bc917bafff4f51b5f733c1a5022bd` | 76,830,625 | 34,465 |
+
+### Guarded swap: quote vs actual
+
+- **Quote** — a full read-only `eth_call` simulation of the exact
+  `exactInputSingle` call from the deployer (allowance and balance already in
+  place) returned **10,201,263,879,118,983 wei** WOKB for 808,397 USD₮0
+  (≈ $79.24/WOKB, matching the live slot0).
+- **Guard** — `amountOutMinimum` = quote × 99/100 = **10,099,251,240,327,793**
+  (1% slippage tolerance), `sqrtPriceLimitX96 = 0`, recipient = deployer.
+- **Actual** — **10,217,363,043,645,618 wei** WOKB, i.e. **0.16% better than
+  the quote**; the guard was never at risk. USD₮0 balance after: **0**.
+
+The router's live signature is the 7-field SwapRouter02 struct (no deadline);
+an 8-field probe reverted, confirming the ABI by test rather than assumption.
+
+### Final state — keep nothing
+
+| holder | USD₮0 | WOKB |
+|---|---|---|
+| payer `0x6256B90E…ec7b` | **0** | 0 |
+| payee `0x7FCe520D…9b62` | **0** | **0** |
+| deployer `0x3f1004AA…2FC4` | **0** | **0** |
+| Pago `0x2fC4180d…7D3e` | **0** | — |
+
+**ALL USD₮0 + WOKB ZERO: PASS.** Recovered **0.010217363043645618 WOKB**
+(≈ $0.8084 at $79.12) against 0.808397 USD₮0 in — the round trip lost
+essentially nothing beyond the pool fee.
+
+### Accounting closes to the wei
+
+deployer OKB **1,011,408,153,240,177** − gas **6,054,780,302,739**
+(302,739 gas × 20,000,001) + recovered **10,217,363,043,645,618**
+= **11,222,716,416,583,056** = the observed balance, exactly.
+The payee separately paid 1,122,240,056,112 wei for tx 1 (its balance moved
+974,723,658,736,183 → 973,601,418,680,071 = precisely 56,112 × 20,000,001).
+
+**Total recovery cost: 7,177,020,358,851 wei gas + 0.05% pool fee
+= $0.00097** — inside the $0.001–0.002 quote.
+
+### Incidents during recovery (recorded honestly)
+
+- **No transaction was ever retried.** Every send was preceded by a nonce
+  snapshot; on the one no-hash outcome the nonce was re-read and proved
+  unchanged before anything else happened. Once a hash was seen it was only
+  polled.
+- Two string-parsing bugs stopped the run harmlessly, both in the *script*,
+  not the chain: cast appends a `[1e5]`-style annotation to integers (the
+  first consolidation check failed on `"100000 [1e5]"` while the chain state
+  was already correct), and `Send-Once`'s `Write-Host` output initially leaked
+  into its return value. Fixed to strip annotations and parse the JSON `hash`
+  field only — the same discipline as step 9.
+- **tx 1's hash was lost at first sight** (the receipt index lagged) and the
+  first two `eth_getLogs` recovery attempts failed on my own query bugs, not
+  the chain: first the deployer was passed as topic1 (`from`) when it is
+  topic2 (`to`), then the amount word was padded with 56 leading zeros
+  instead of 59 (`0x186a0` is 5 hex chars, so a 32-byte word needs 59), so
+  the data comparison could never match. Corrected → hash recovered:
+  `0x00ea11b0…3274`, status 0x1, confirmed by receipt. State had proved it
+  landed all along; nothing was resent.

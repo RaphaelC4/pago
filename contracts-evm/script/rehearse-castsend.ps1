@@ -40,7 +40,16 @@ param(
     [string]$Mode = "fork",
     [string]$Rpc = "",
     [string]$Deployer = "0x3f1004AAeD662227d535D794dA679110111a2FC4",
-    [string]$Account = "pago-deployer"
+    [string]$Account = "pago-deployer",
+    # Funding inputs. The defaults are the proven fresh-wallet rehearsal
+    # values: buy 0.132 BEM (0.11 spent + 20% buffer), 15% swap cap over
+    # spot, 0.002 OKB gas headroom in the preflight fund check. A wallet
+    # that already holds BEM overrides BuyBemUnits to buy only the
+    # difference - total BEM spend is fixed at 0.11 (deployFee 0.1 +
+    # protocolFee 0.01 flat per mint call, mintPrice 0).
+    [bigint]$BuyBemUnits = 13200000,
+    [int]$BufferPct = 115,
+    [bigint]$GasHeadroom = 2000000000000000
 )
 $ErrorActionPreference = "Stop"
 if ($Rpc -eq "") { $Rpc = if ($Mode -eq "live") { "https://rpc.xlayer.tech" } else { "http://127.0.0.1:8545" } }
@@ -60,7 +69,7 @@ $BEACON    = "0xf70d1ed4f62CF3780157B0b421b7E2F45bD0991C"
 $IMPL      = "0x977f217887E085D298Cb3819cDAD5A0ee35F29B2"
 $IMPL_HASH = "0x7a15c353205e5245f40f5f5524542a982a4bb3b9a28476e4f10845163f941b30"
 
-$BUY_BEM_UNITS = [bigint]13200000          # 0.132 BEM at 8 decimals
+$BUY_BEM_UNITS = $BuyBemUnits               # BEM to buy this run (default 0.132 = fresh wallet)
 $UNPINNED_CAP  = [bigint]10000000000       # 10,000 tokens at 6 decimals
 $NAND_COUNT    = 104
 $GATE_COUNT    = 100000
@@ -243,16 +252,22 @@ Log "$Tag|FACT|okb_wei|$okb"
 # Quote the swap's input cap from spot BEFORE any mode branch: the fund check
 # below (live) and step 1 (both modes) both consume these numbers.
 # spot input = output x price, where price = (sqrtPriceX96/2^96)^2 in raw
-# token units (WOKB wei per BEM unit); +15% covers the 1% LP fee, price
-# impact and any adverse move between quoting and execution.
+# token units (WOKB wei per BEM unit); +BufferPct% covers the 1% LP fee,
+# price impact and any adverse move between quoting and execution. The
+# swap's sqrtPriceLimitX96 below (+4.04% price) always binds before this
+# cap, so the buffer sizes the preflight/wrap/approve guardrail, not the
+# swap's own tolerance.
 $sqrt = Slot0Sqrt $POOL
 $two192 = [System.Numerics.BigInteger]::Pow(2, 192)
 $price = [System.Numerics.BigInteger]::Divide($sqrt * $sqrt, $two192)
-$maxIn = [System.Numerics.BigInteger]::Divide($BUY_BEM_UNITS * $price * 115, 100)
+$maxIn = [System.Numerics.BigInteger]::Divide($BUY_BEM_UNITS * $price * [System.Numerics.BigInteger]$BufferPct, 100)
 # Uniswap V3 rejects type(uint160).max with revert string "SPL": the limit
 # must sit strictly between the current sqrt price and MAX_SQRT_RATIO.
 # ~4% of headroom never bites at this size.
 $limit = $sqrt + [System.Numerics.BigInteger]::Divide($sqrt, 50)
+Log "$Tag|FACT|buy_bem_units|$BUY_BEM_UNITS"
+Log "$Tag|FACT|buffer_pct|$BufferPct"
+Log "$Tag|FACT|gas_headroom_wei|$GasHeadroom"
 Log "$Tag|FACT|maxIn_wokb|$maxIn"
 Log "$Tag|FACT|sqrtPriceLimitX96|$limit"
 
@@ -290,7 +305,7 @@ if ($Mode -eq "fork") {
 
     # 3. Funds: the quoted need (swap cap + tape-out fee + gas headroom) must
     #    be covered, or step-by-step sending could die halfway with money spent.
-    $need = $maxIn + [System.Numerics.BigInteger]1300000000000000 + [System.Numerics.BigInteger]2000000000000000
+    $need = $maxIn + [System.Numerics.BigInteger]1300000000000000 + [System.Numerics.BigInteger]$GasHeadroom
     if ($okb -lt $need) { Die "preflight" "wallet holds $okb wei, need at least $need (swap cap + tapeout fee + gas)" }
     Log "$Tag|FACT|okb_required|$need"
 }

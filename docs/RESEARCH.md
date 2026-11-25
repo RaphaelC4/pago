@@ -86,10 +86,13 @@ on-chain value exactly, for domain version `"1"`.
 > `FacetNotFound`. `payWithAuthorization`'s own selector (`0x69c1372a`) and
 > `createLink`'s (`0x6c5b7a11`) were never affected; only the token hop was.
 > Fixed in `contracts-evm/src/Pago.sol` and proven against a mainnet fork by
-> `test/PagoGaslessFork.t.sol` (6/6), including USDG: `0xcf092995` reaches the
-> signature check (`InvalidSignature` on a garbage signature, and
-> `InsufficientFunds` — signature accepted — for a correctly signed
-> authorization from a payer holding no USDG). USDG `DOMAIN_SEPARATOR`
+> `test/PagoGaslessFork.t.sol` (**8/8**): a full end-to-end settle through Pago
+> for **each** token — USD₮0 and USDG — plus a direct call proving the genuine
+> USDG diamond does not carry the old selector. Signature-level evidence for
+> USDG first: `0xcf092995` reaches the signature check (`InvalidSignature` on a
+> garbage signature, and `InsufficientFunds` — signature accepted — for a
+> correctly signed authorization from a payer holding no USDG). USDG
+> `DOMAIN_SEPARATOR`
 > `0x415f0706e345fcaf25d5be24c4fd7830d0054fc5742c51a0db9319c759bd3743`.
 > The mainnet contract has **not** been redeployed with the fix yet.
 

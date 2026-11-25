@@ -236,18 +236,26 @@ reverted. USDG is a diamond, and the mismatched call came back as
 `contracts-evm/test/PagoGaslessFork.t.sol` deploys a fresh Pago from the fixed
 source onto a fork of chain 196, funds a payer with `deal()`, and signs a real
 EIP-3009 authorization with `vm.sign` — no keystore and no mainnet transaction
-involved. Six cases, **6/6 passing**: a full settle against live USD₮0 (payer
-debited exactly, Pago escrowed, `LinkClaimed(key, 995_000, 5_000, false)`, the
-payee paid 995,000, the fee 5,000, escrow back to 0), plus replay, expired,
-wrong-signer, wrong-nonce and underpayment rejections.
+involved. Eight cases, **8/8 passing**: a full settle against live USD₮0 and a
+second full settle against live USDG (each: payer debited exactly, Pago
+escrowed, `LinkClaimed(key, 995_000, 5_000, false)`, the payee paid 995,000,
+the fee 5,000, escrow back to 0), a direct call proving USDG does not carry
+the old selector, plus replay, expired, wrong-signer, wrong-nonce and
+underpayment rejections.
 
-**USDG too.** USDG lacks the old selector (`FacetNotFound` on `0xd8fde8d5`)
-but has the fixed one: `0xcf092995` reaches the signature check and returns
-`InvalidSignature` for a garbage signature, and a correctly signed
-authorization made with the payee's key reached `InsufficientFunds` — the
-signature was accepted and the call failed only for want of a balance. So
-USDG becomes gasless-settleable by the same fix. Its `DOMAIN_SEPARATOR` is
-`0x415f0706e345fcaf25d5be24c4fd7830d0054fc5742c51a0db9319c759bd3743`.
+**USDG too — and now proven the same way, not just probed.** USDG lacks the
+old selector (`FacetNotFound` on `0xd8fde8d5`) but has the fixed one:
+`0xcf092995` reaches the signature check and returns `InvalidSignature` for a
+garbage signature, and a correctly signed authorization made with the payee's
+key reached `InsufficientFunds` — the signature was accepted and the call
+failed only for want of a balance. The fork suite then settles USDG
+**end-to-end through Pago** against the genuine diamond
+(`test_gaslessPaySettlesAgainstRealUSDG`: payer debited exactly, escrowed,
+`LinkClaimed(key, 995_000, 5_000, false)`, payee 995,000, fee 5,000, escrow
+0), and `test_usdgRejectsTheOldSelector` calls the diamond directly with the
+uint64 form to prove that selector is really absent. USDG's `DOMAIN_SEPARATOR`
+is `0x415f0706e345fcaf25d5be24c4fd7830d0054fc5742c51a0db9319c759bd3743`.
+**Both allowlisted tokens are covered by the same eight cases.**
 
 **Status: fixed and proven, not yet deployed.** Until a corrected contract is
 live on X Layer mainnet and a real gasless payment has settled through it,

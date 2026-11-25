@@ -13,6 +13,24 @@ interface IERC20View {
     function balanceOf(address) external view returns (uint256);
 }
 
+/// The OLD uint64 form of EIP-3009 - the selector Pago used to emit
+/// (0xd8fde8d5). Declared here only so a test can prove the genuine USDG
+/// diamond does NOT implement it.
+interface IUSDG3009 {
+    /// Named exactly as the old interface named it, because the selector is
+    /// `keccak("transferWithAuthorization(address,address,uint256,uint64,uint64,bytes32,bytes)")`
+    /// = 0xd8fde8d5. Renaming it would test nothing.
+    function transferWithAuthorization(
+        address from,
+        address to,
+        uint256 value,
+        uint64 validAfter,
+        uint64 validBefore,
+        bytes32 nonce,
+        bytes calldata signature
+    ) external;
+}
+
 /// `payWithAuthorization` settled end-to-end against the REAL X Layer USD0
 /// on a mainnet fork - the test that would have caught the selector bug.
 ///
@@ -40,6 +58,13 @@ contract PagoGaslessForkTest is Test {
     // EIP-3009 implementation.
     address constant USDT0 = 0x779Ded0c9e1022225f8E0630b35a9b54bE713736;
 
+    // The genuine X Layer mainnet USDG: a DIAMOND (ERC-2535), also 6 decimals.
+    // Included so the fixed interface is proven against both allowlisted
+    // tokens, not just the one the demo uses: USDG answers the old uint64
+    // selector with FacetNotFound and the fixed one with a real signature
+    // check, so it must settle end to end here too.
+    address constant USDG = 0x4ae46a509F6b1D9056937BA4500cb143933D2dc8;
+
     // Recorded references, probed 2026-11-18 (docs/RESEARCH.md section 18).
     // Deliberately literals, exactly as ForkPin pins them: the point is that
     // they were recorded offchain, never read live from the fork.
@@ -56,6 +81,9 @@ contract PagoGaslessForkTest is Test {
     uint64 constant NO_DEADLINE = type(uint64).max;
 
     string constant LINK_ID = "gasless-fork-1";
+    /// A second link, denominated in USDG, so the same proof exists for the
+    /// other allowlisted token. Separate id: a link is bound to one token.
+    string constant USDG_LINK_ID = "gasless-fork-usdg";
 
     Pago internal pago;
     address internal payee;
@@ -69,15 +97,19 @@ contract PagoGaslessForkTest is Test {
         // A fresh Pago compiled from the FIXED source, deployed against the
         // genuine processor, beacon and implementation, so the two-leg pin -
         // and with it the rule path - is the real one.
-        Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](1);
+        Pago.TokenConfig[] memory configs = new Pago.TokenConfig[](2);
         configs[0] = Pago.TokenConfig({token: USDT0, decimals_: 6, unpinnedCap: 10_000_000_000});
+        configs[1] = Pago.TokenConfig({token: USDG, decimals_: 6, unpinnedCap: 10_000_000_000});
         feeAccount = makeAddr("fee account");
         pago = new Pago(configs, feeAccount, PROCESSOR, 1, RECORDED_SHELL, BEACON, IMPL, RECORDED_IMPL);
         assertTrue(pago.evaluatorPinned(), "genuine references must pin on the genuine chain");
+        assertTrue(pago.isTokenAllowed(USDT0), "USD0 must be allowlisted");
+        assertTrue(pago.isTokenAllowed(USDG), "USDG must be allowlisted");
 
         payee = makeAddr("payee");
         (payer, payerKey) = makeAddrAndKey("payer");
         deal(USDT0, payer, 100e6); // cheatcode money, never real
+        deal(USDG, payer, 100e6); // ditto - USDG is a diamond, deal writes its slot
 
         // The payee creates the invoice, exactly as in the demo. The default
         // table pays the payee 100%; the rule table sums to 23 so the
@@ -92,6 +124,18 @@ contract PagoGaslessForkTest is Test {
             _split(payee, address(0), address(0), 20, 0, 0),
             _split(payee, makeAddr("rule seat 1"), makeAddr("rule seat 2"), 10, 8, 5)
         );
+
+        // The same invoice shape in USDG, for the second token's proof.
+        vm.prank(payee);
+        pago.createLink(
+            USDG_LINK_ID,
+            AMOUNT,
+            USDG,
+            "mainnet fork: gasless payer path (USDG)",
+            0,
+            _split(payee, address(0), address(0), 20, 0, 0),
+            _split(payee, makeAddr("rule seat 1"), makeAddr("rule seat 2"), 10, 8, 5)
+        );
     }
 
     // ── the six cases ───────────────────────────────────────────────────────
@@ -101,9 +145,9 @@ contract PagoGaslessForkTest is Test {
     /// old uint64 interface this reverted at the token call; the fixed
     /// uint256 form must settle, escrow, and then pay out on claim.
     function test_gaslessPaySettlesAgainstRealUSD0() public {
-        bytes32 nonce = _boundNonce();
+        bytes32 nonce = _boundNonce(LINK_ID);
         bytes32 terms = pago.termsHash(LINK_ID); // read BEFORE vm.prank
-        bytes memory sig = _signAuth(address(pago), AMOUNT, 0, NO_DEADLINE, nonce);
+        bytes memory sig = _signAuth(USDT0, address(pago), AMOUNT, 0, NO_DEADLINE, nonce);
 
         uint256 payerBefore = IERC20View(USDT0).balanceOf(payer);
 
@@ -129,13 +173,62 @@ contract PagoGaslessForkTest is Test {
         console.log("gasless settle against genuine USD0: OK");
     }
 
+    /// The same proof for the OTHER allowlisted token. USDG is a diamond, not
+    /// a plain proxy: it answers the old uint64 selector with FacetNotFound,
+    /// so a test that only ever settled USD0 would stay green even if the
+    /// interface regressed for USDG specifically. This settles end to end
+    /// against the genuine diamond - escrow, then payout on claim.
+    function test_gaslessPaySettlesAgainstRealUSDG() public {
+        bytes32 nonce = _boundNonce(USDG_LINK_ID);
+        bytes32 terms = pago.termsHash(USDG_LINK_ID);
+        bytes memory sig = _signAuth(USDG, address(pago), AMOUNT, 0, NO_DEADLINE, nonce);
+
+        uint256 payerBefore = IERC20View(USDG).balanceOf(payer);
+
+        vm.prank(payee); // the payee submits; the payer sends nothing
+        pago.payWithAuthorization(USDG_LINK_ID, payer, AMOUNT, 0, NO_DEADLINE, nonce, sig, terms);
+
+        assertEq(
+            IERC20View(USDG).balanceOf(payer), payerBefore - AMOUNT, "payer must be debited exactly the amount"
+        );
+        assertEq(IERC20View(USDG).balanceOf(address(pago)), AMOUNT, "Pago must escrow the payment");
+        assertEq(payer.balance, 0, "the payer must never have needed gas");
+
+        // Claim: the rule table sums to 23, so the default table pays.
+        bytes32 key = pago.linkKeyOf(USDG_LINK_ID);
+        vm.expectEmit(true, true, true, true);
+        emit Pago.LinkClaimed(key, 995_000, 5_000, false);
+        vm.prank(payee);
+        pago.claim(USDG_LINK_ID);
+
+        assertEq(IERC20View(USDG).balanceOf(payee), 995_000, "payee receives the 99.5% payout");
+        assertEq(IERC20View(USDG).balanceOf(feeAccount), 5_000, "fee account receives the 0.5% fee");
+        assertEq(IERC20View(USDG).balanceOf(address(pago)), 0, "nothing may remain in escrow");
+        console.log("gasless settle against genuine USDG: OK");
+    }
+
+    /// USDG's own negative control: the OLD uint64 selector must not exist on
+    /// the diamond. This is the exact call the unfixed interface made, and the
+    /// reason USDG (not USD0) first exposed the bug.
+    function test_usdgRejectsTheOldSelector() public {
+        bytes32 nonce = _boundNonce(USDG_LINK_ID);
+        bytes32 terms = pago.termsHash(USDG_LINK_ID);
+        bytes memory sig = _signAuth(USDG, address(pago), AMOUNT, 0, NO_DEADLINE, nonce);
+
+        // Pago now sends 0xcf092995 (uint256) and USDG accepts it - so to
+        // prove the old selector is absent we call the diamond directly with
+        // the uint64 signature it used to expect.
+        vm.expectRevert();
+        IUSDG3009(USDG).transferWithAuthorization(payer, address(pago), AMOUNT, 0, NO_DEADLINE, nonce, sig);
+    }
+
     /// The same authorization must never settle twice. The link is Paid after
     /// the first submission, so the replay dies on Pago's own status check
     /// before the token ever sees the nonce again.
     function test_replayIsRejected() public {
-        bytes32 nonce = _boundNonce();
+        bytes32 nonce = _boundNonce(LINK_ID);
         bytes32 terms = pago.termsHash(LINK_ID);
-        bytes memory sig = _signAuth(address(pago), AMOUNT, 0, NO_DEADLINE, nonce);
+        bytes memory sig = _signAuth(USDT0, address(pago), AMOUNT, 0, NO_DEADLINE, nonce);
 
         vm.prank(payee);
         pago.payWithAuthorization(LINK_ID, payer, AMOUNT, 0, NO_DEADLINE, nonce, sig, terms);
@@ -148,10 +241,10 @@ contract PagoGaslessForkTest is Test {
     /// An authorization past its deadline is refused by the TOKEN itself,
     /// with the genuine Tether reason bubbling up through Pago.
     function test_expiredAuthorizationReverts() public {
-        bytes32 nonce = _boundNonce();
+        bytes32 nonce = _boundNonce(LINK_ID);
         bytes32 terms = pago.termsHash(LINK_ID);
         uint64 expired = 1; // validBefore already in the past
-        bytes memory sig = _signAuth(address(pago), AMOUNT, 0, expired, nonce);
+        bytes memory sig = _signAuth(USDT0, address(pago), AMOUNT, 0, expired, nonce);
 
         vm.prank(payee);
         vm.expectRevert("TetherToken: auth expired");
@@ -162,9 +255,9 @@ contract PagoGaslessForkTest is Test {
     /// Pago checks passes; only the token's ecrecover refuses it.
     function test_wrongSignerReverts() public {
         (, uint256 attackerKey) = makeAddrAndKey("attacker");
-        bytes32 nonce = _boundNonce();
+        bytes32 nonce = _boundNonce(LINK_ID);
         bytes32 terms = pago.termsHash(LINK_ID);
-        bytes32 digest = _digestOf(payer, address(pago), AMOUNT, 0, NO_DEADLINE, nonce);
+        bytes32 digest = _digestOf(USDT0, payer, address(pago), AMOUNT, 0, NO_DEADLINE, nonce);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(attackerKey, digest);
         bytes memory sig = abi.encodePacked(r, s, v);
 
@@ -176,9 +269,9 @@ contract PagoGaslessForkTest is Test {
     /// A nonce that is not bound to (this link, this payer) dies on Pago's
     /// binding check, before the token is called at all.
     function test_wrongNonceReverts() public {
-        bytes32 nonce = bytes32(uint256(_boundNonce()) + 1);
+        bytes32 nonce = bytes32(uint256(_boundNonce(LINK_ID)) + 1);
         bytes32 terms = pago.termsHash(LINK_ID);
-        bytes memory sig = _signAuth(address(pago), AMOUNT, 0, NO_DEADLINE, nonce);
+        bytes memory sig = _signAuth(USDT0, address(pago), AMOUNT, 0, NO_DEADLINE, nonce);
 
         vm.prank(payee);
         vm.expectRevert("authorization must be bound to this link");
@@ -188,9 +281,9 @@ contract PagoGaslessForkTest is Test {
     /// Paying less than the invoiced amount dies on Pago's amount check.
     function test_underpaymentReverts() public {
         uint256 short = AMOUNT - 1;
-        bytes32 nonce = _boundNonce();
+        bytes32 nonce = _boundNonce(LINK_ID);
         bytes32 terms = pago.termsHash(LINK_ID);
-        bytes memory sig = _signAuth(address(pago), short, 0, NO_DEADLINE, nonce);
+        bytes memory sig = _signAuth(USDT0, address(pago), short, 0, NO_DEADLINE, nonce);
 
         vm.prank(payee);
         vm.expectRevert("payment amount is too small");
@@ -199,10 +292,12 @@ contract PagoGaslessForkTest is Test {
 
     // ── helpers ─────────────────────────────────────────────────────────────
 
-    /// The EIP-712 digest the genuine USD0 verifies: the standard
+    /// The EIP-712 digest a genuine token verifies: the standard
     /// TransferWithAuthorization typehash with uint256 validAfter/validBefore,
-    /// structurally identical to Phase0Fork's proven construction.
-    function _digestOf(address from, address to, uint256 value, uint256 after_, uint256 before_, bytes32 nonce)
+    /// structurally identical to Phase0Fork's proven construction. The domain
+    /// separator is read from whichever token the link is denominated in -
+    /// USD0 and USDG are different contracts with different domains.
+    function _digestOf(address token, address from, address to, uint256 value, uint256 after_, uint256 before_, bytes32 nonce)
         internal
         view
         returns (bytes32)
@@ -220,24 +315,24 @@ contract PagoGaslessForkTest is Test {
                 nonce
             )
         );
-        return keccak256(abi.encodePacked("\x19\x01", IDomain(USDT0).DOMAIN_SEPARATOR(), structHash));
+        return keccak256(abi.encodePacked("\x19\x01", IDomain(token).DOMAIN_SEPARATOR(), structHash));
     }
 
     /// A 65-byte `r || s || v` authorization from the payer's key - the
     /// packed-bytes form Pago forwards to the token.
-    function _signAuth(address to, uint256 value, uint256 after_, uint256 before_, bytes32 nonce)
+    function _signAuth(address token, address to, uint256 value, uint256 after_, uint256 before_, bytes32 nonce)
         internal
         view
         returns (bytes memory)
     {
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(payerKey, _digestOf(payer, to, value, after_, before_, nonce));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(payerKey, _digestOf(token, payer, to, value, after_, before_, nonce));
         return abi.encodePacked(r, s, v);
     }
 
     /// The only nonce Pago will accept for this payer on this link - read
     /// from the contract, never invented.
-    function _boundNonce() internal view returns (bytes32) {
-        return bytes32(pago.authorizationNonce(pago.linkKeyOf(LINK_ID), payer));
+    function _boundNonce(string memory linkId) internal view returns (bytes32) {
+        return bytes32(pago.authorizationNonce(pago.linkKeyOf(linkId), payer));
     }
 
     /// Three seats in 5% steps: a zero share requires a zero recipient.

@@ -1,6 +1,6 @@
 # Pago
 
-**Status:** Live on X Layer mainnet. Reviewed and tested by the author: 150+ tests (unit, fuzz, invariant, mainnet-fork), addresses and hashes verified on-chain. Start with small amounts while you get comfortable.
+**Status:** Current Pago (with the gasless fix) is live and verified on X Layer mainnet — `0x2fC4180db7318F4364F6FC559A25359c9F537D3e`, source verified on OKLink. Reviewed and tested by the author: 150+ tests (unit, fuzz, invariant, mainnet-fork), addresses and hashes verified on-chain. Start with small amounts while you get comfortable.
 
 **Send someone a link. Get paid in stablecoins.**
 
@@ -196,9 +196,10 @@ pay, both transactions signed by the payer. The second path is gasless — the
 payer signs an EIP-3009 `transferWithAuthorization` off-chain and any account
 may submit it and pay the gas; its nonce is derived from `(linkKey, payer)`,
 so one authorization can never pay two links. Both USD₮0 and USDG were proven
-to support EIP-3009 on X Layer mainnet during Phase 0 — **but Pago's own
-interface asked for it with the wrong argument types**, so the gasless hop
-reverts against both tokens until the contract is redeployed; see
+to support EIP-3009 on X Layer mainnet during Phase 0 — **but the first
+build of Pago's own interface asked for it with the wrong argument types**,
+so its gasless hop reverted against both tokens; the fix is live on the
+current contract, where a real gasless payment settled on 2026-11-25; see
 [The gasless selector bug and its fix](#the-gasless-selector-bug-and-its-fix).
 Creation itself is an ordinary transaction the creator pays for — there is no
 meta-transaction wrapper around `createLink`.
@@ -481,7 +482,7 @@ The tests assert every property below:
   check passes, so links are uncapped. Adding an always-on cap would be a
   contract change, and the source is frozen at this build.
 
-**Status:** Live on X Layer mainnet. Reviewed and tested by the author: 150+ tests (unit, fuzz, invariant, mainnet-fork), addresses and hashes verified on-chain. Start with small amounts while you get comfortable.
+**Status:** Current Pago (with the gasless fix) is live and verified on X Layer mainnet — `0x2fC4180db7318F4364F6FC559A25359c9F537D3e`, source verified on OKLink. Reviewed and tested by the author: 150+ tests (unit, fuzz, invariant, mainnet-fork), addresses and hashes verified on-chain. Start with small amounts while you get comfortable.
 
 ---
 
@@ -545,11 +546,16 @@ paying one claim and the fallback paying the other —
 [`docs/RESEARCH.md` §17](docs/RESEARCH.md)). The gasless payment leg is
 proven by that script rather than by this page: the page has the payer sign
 and pay both transactions themselves, while any account can submit an
-EIP-3009 authorization off chain. Full record: [`docs/RESEARCH.md` §16](docs/RESEARCH.md)
+EIP-3009 authorization off chain. Gasless payments work at the contract
+level and are proven on mainnet; the web page doesn't yet include a
+one-click signing button — a feature chosen to leave for later, not a flaw.
+Full record: [`docs/RESEARCH.md` §16](docs/RESEARCH.md)
 (page) and [§17](docs/RESEARCH.md) (contract). **That run exercised the tokens'
 EIP-3009 directly; the selector bug below was found afterwards, in Pago's own
-interface, and the mainnet contract has not been redeployed with the fix** —
-see [The gasless selector bug and its fix](#the-gasless-selector-bug-and-its-fix).
+interface, and was fixed before the current contract was deployed** — the
+live contract carries the fix and settled a real gasless payment on
+2026-11-25; see
+[The gasless selector bug and its fix](#the-gasless-selector-bug-and-its-fix).
 
 ---
 
@@ -598,6 +604,16 @@ via `?chainId=196`. **Cost:** testnet free, mainnet gas in OKB.
 - **Pays in stablecoins.** USD₮0 and USDG on X Layer.
 - **No cash-out.** Pago moves stablecoins between wallets; there is no bank off-ramp.
 - **No relay service.** A normal payment is sent from the payer's own wallet; a gasless one is a free off-chain EIP-3009 signature that the payee — or any account — submits, paying the gas. **The gasless leg settles on mainnet** (proven live 2026-11-25, RESEARCH §22); there is no hosted relayer — whoever holds OKB submits it.
+
+---
+
+## Future work
+
+- **A one-click gasless signing button in the web page.** Gasless payments
+  work at the contract level and are proven on mainnet (pay
+  `0x0cb7a79a…11f6`, claim `0x8eb3a165…0d45`); the web page doesn't yet
+  include a one-click signing button. It is a feature deliberately left for
+  later, not a flaw in the contract.
 
 ---
 

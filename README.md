@@ -267,9 +267,10 @@ this README does **not** claim gasless works on mainnet. The steps are:
 2. ✅ mock token pinned to the real USD₮0 shape in all three places
 3. ✅ fork test passing against live USD₮0
 4. ✅ this record
-5. full suite, smoke and testnet green
-6. testnet redeploy and exercise of both payer paths
-7. read-only mainnet preparation
+5. ✅ full suite, smoke and testnet green
+6. ✅ testnet redeploy and exercise of both payer paths
+7. ✅ read-only mainnet preparation (fork rehearsal: deploy passed,
+   ~$0.01, predicted codehash `0x684a360f…d598ed` recorded)
 8. mainnet redeploy — **requires the phrase `deploy to mainnet tier 1`**
 9. a live 0.1 USD₮0 gasless demo payment — **requires the phrase
    `send mainnet demo payment`**

@@ -1699,3 +1699,81 @@ measured quote `docs/quote-dry-run-20261120-005520.log`, $1.74).
   factory would embed the same beacon (each Tier 2 run records its own
   shell hash and re-follows the beacon — that is the procedure, not an
   assumption); what a payer's screen showed (rule 4, unchanged).
+
+## 20. Step 7 — read-only mainnet preparation (2026-11-25)
+
+**Nothing was broadcast to X Layer mainnet.** Everything below is either a
+read (`cast call` / `cast code`) against the live chain or a deployment on a
+**local anvil fork** of chain 196 pinned at block 76,802,574. The mainnet
+deploy itself (step 8) stays gated on the exact phrase
+`deploy to mainnet tier 1`.
+
+### Constructor arguments re-probed live from the superseded Pago
+
+The eight constructor arguments for the tier-1 deploy were re-read from the
+superseded mainnet Pago `0xd63Ae612Cf9Acb9Ac8F7801eF68E8e71068E492c` —
+the same values `Tier2Mainnet.s.sol`'s preflight constants record, confirmed
+against live chain state rather than copied from a doc:
+
+| Argument | Value |
+|---|---|
+| `tokens` | USD₮0 `0x779Ded0c…3736` (6 dec, cap 1e10), USDG `0x4ae46a50…2dc8` (6 dec, cap 1e10) |
+| `feeAccount_` | `0x7FCe520D881454EA234d371E1256B75843609b62` |
+| `processor_` | `0xDd6BB6fbda8ee867EF838bbE56ebA7d1EcC2c2f4` |
+| `circuitId_` | `1` |
+| `expectedProcessorCodehash_` | `0x8c799a18cd8e0d5f5f3c0cec4fbc145e2daf79f70c2b131c09d0f380921db545` |
+| `circuitBeacon_` | `0xf70d1ed4f62CF3780157B0b421b7E2F45bD0991C` |
+| `circuitImplementation_` | `0x977f217887E085D298Cb3819cDAD5A0ee35F29B2` |
+| `expectedImplementationCodehash_` | `0x7a15c353205e5245f40f5f5524542a982a4bb3b9a28476e4f10845163f941b30` |
+
+Also confirmed live on that contract: `evaluatorPinned()` **true**,
+`feeBps` **50**, both decimals **6**, both caps **1e10**. Mainnet base fee
+at probe time: **0.02 gwei** (block 76,802,574); OKB **$80.79** (CoinGecko
+simple price). The creation bytecode compiled from the frozen source
+(`forge inspect Pago bytecode`, 34,610 hex chars) was checked
+byte-for-byte against the input of the successful 2026-11-25 testnet deploy
+of the same source — identical.
+
+### Fork deploy rehearsal — PASS
+
+A local anvil fork of mainnet (chain 196, pinned block 76,802,574) was
+deployed to with the exact constructor args above, sent as a raw
+`eth_sendTransaction` from anvil's unlocked dev account (no private key
+anywhere). Result:
+
+- deploy tx (local fork only) `0x77dda1e7144ef72f2c3405d47e916bc635d04a2c576e3c08772dc03b8d3ad022`, status **0x1**
+- contract `0xa82ff9afd8f496c3d6ac40e2a0f282e47488cfc9`, runtime **15,327 bytes**
+- **gasUsed 3,554,000** (same order as the recorded quote `deployPago
+  3,526,258 gas, $0.01`)
+- `evaluatorPinned()` **true** with the recorded references; feeAccount /
+  processor / circuitId correct; both caps 1e10, both decimals 6, `feeBps`
+  50, `changeDetector` true
+- runtime code contains `0xcf092995` (the fixed `uint256` selector) and
+  **not** `0xd8fde8d5` (the old `uint64` one)
+
+**Predicted mainnet runtime codehash:** all seven Pago immutables are
+constructor parameters — none embeds `address(this)` — so the runtime code,
+and hence its hash, is address-independent. The fork-deployed runtime hashes
+to **`0x684a360f7560dfc77c2782f0309580fde43354521d669e7f6c5f535065d598ed`**
+— this is what the real tier-1 deploy should produce, and it differs from
+the superseded Pago's `0x175bafd0c7ac2d363bedbde2ac17ee8b12d4cd3e565028588f7aa95050f0305d`
+because the selector fix changed the runtime code.
+
+### Dollar estimate for step 8 (deploy only)
+
+3,554,000 gas × 0.02 gwei base fee ≈ **0.000071 OKB ≈ $0.006**, i.e. **under
+one cent** at the prices above — consistent with the recorded quote's $0.01.
+No other spend is authorised: no BEM, no token purchase, and no mainnet
+broadcast until `deploy to mainnet tier 1` arrives in full.
+
+### Proves / does not prove
+
+- **Proves:** the exact tier-1 constructor argument set compiles, encodes
+  (15 words, offset `0x100`) and deploys cleanly against genuine X Layer
+  mainnet state; the resulting contract is the fixed build (correct
+  selectors, pinned evaluator, correct token config); the deploy costs about
+  a cent; the predicted post-deploy codehash is recorded in advance.
+- **Does not prove:** that mainnet was spent on (the rehearsal ran on a
+  local fork only); what the real deploy address will be (CREATE address
+  depends on the deployer nonce); that a gasless payment settles on mainnet
+  — that is step 9, gated separately.

@@ -17,7 +17,7 @@ this block. Testnet block stays as-is.
 | `chainId` | `196` | read back (deploy run) |
 | `rpc` | `https://rpc.xlayer.tech` (alt `https://xlayerrpc.okx.com`) | config |
 | `explorer` | `https://www.oklink.com/xlayer` | config |
-| `pago` | `0xd63Ae612Cf9Acb9Ac8F7801eF68E8e71068E492c` — **superseded: carries the gasless selector bug (`uint64` window args → `0xd8fde8d5`), not yet redeployed. Ordinary `pay()` works; no link was ever created on it** | read back: deployed, receipt `docs/tier2-mainnet-deployPago.json`, runtime codehash `0x175bafd0c7ac2d363bedbde2ac17ee8b12d4cd3e565028588f7aa95050f0305d` == pre-send prediction |
+| `pago` | `0x2fC4180db7318F4364F6FC559A25359c9F537D3e` — **fixed build live since 2026-11-25 (step 8); the old `0xd63Ae612…492c` is superseded (carries the selector bug, no link ever created on it)** | read back: receipt status `0x1`, block 76,820,955, tx `0x37683583826c0b16601ef067172287e767d7e788933da61a2f39296e51e98fe7`, runtime codehash `0x684a360f7560dfc77c2782f0309580fde43354521d669e7f6c5f535065d598ed` == pre-send prediction (RESEARCH §21) |
 | `token` | **two** tokens (this deployment accepts both) | read back: `isTokenAllowed` true for each |
 | USD₮0 | `0x779Ded0c9e1022225f8E0630b35a9b54bE713736`, 6 decimals, EIP-3009 | read back: `isTokenAllowed` true, `expectedDecimals` 6; EIP-3009 proven Phase 0 (RESEARCH §8) |
 | USDG | `0x4ae46a509F6b1D9056937BA4500cb143933D2dc8`, 6 decimals, EIP-3009 (diamond) | same; both tokens implement the **fixed** selector `0xcf092995`, not Pago's old `0xd8fde8d5` |

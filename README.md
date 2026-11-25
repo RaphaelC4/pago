@@ -62,11 +62,17 @@ chat, no seed-phrase hand-holding, nothing held in between.
 
 ### The networks and the contracts
 
-**Mainnet (X Layer, chain 196) — live, ordinary `pay()` only.**
+**Mainnet (X Layer, chain 196) — live.**
 
-- **Pago:** `0xd63Ae612Cf9Acb9Ac8F7801eF68E8e71068E492c` — **superseded by the
-  fixed source below; carries the gasless selector bug.** No link has ever
-  been created on it (see
+- **Pago (fixed build, live):** `0x2fC4180db7318F4364F6FC559A25359c9F537D3e`
+  — deployed 2026-11-25 (step 8; receipt and full verification in RESEARCH
+  §21): runtime codehash `0x684a360f…d598ed`, `evaluatorPinned()` true from
+  block one, corrected selector `0xcf092995`. **No gasless payment has
+  settled through it yet** (step 9), so this README does **not** claim
+  gasless works on mainnet.
+- **Pago (superseded):** `0xd63Ae612Cf9Acb9Ac8F7801eF68E8e71068E492c` —
+  **carries the gasless selector bug.** No link has ever been created on it
+  (see
   [The gasless selector bug and its fix](#the-gasless-selector-bug-and-its-fix)).
 - **Tokens:** USD₮0 `0x779Ded0c9e1022225f8E0630b35a9b54bE713736` · USDG
   `0x4ae46a509F6b1D9056937BA4500cb143933D2dc8` — 6 decimals, both EIP-3009
@@ -259,9 +265,10 @@ uint64 form to prove that selector is really absent. USDG's `DOMAIN_SEPARATOR`
 is `0x415f0706e345fcaf25d5be24c4fd7830d0054fc5742c51a0db9319c759bd3743`.
 **Both allowlisted tokens are covered by the same eight cases.**
 
-**Status: fixed and proven, not yet deployed.** Until a corrected contract is
-live on X Layer mainnet and a real gasless payment has settled through it,
-this README does **not** claim gasless works on mainnet. The steps are:
+**Status: fixed, deployed, not yet exercised.** The corrected contract is
+live on X Layer mainnet (`0x2fC4180d…7D3e`, step 8), but until a real gasless
+payment has settled through it this README does **not** claim gasless works
+on mainnet. The steps are:
 
 1. ✅ interface fixed in `contracts-evm/src/Pago.sol`
 2. ✅ mock token pinned to the real USD₮0 shape in all three places
@@ -271,13 +278,16 @@ this README does **not** claim gasless works on mainnet. The steps are:
 6. ✅ testnet redeploy and exercise of both payer paths
 7. ✅ read-only mainnet preparation (fork rehearsal: deploy passed,
    ~$0.01, predicted codehash `0x684a360f…d598ed` recorded)
-8. mainnet redeploy — **requires the phrase `deploy to mainnet tier 1`**
+8. ✅ mainnet redeploy — fixed build live at
+   `0x2fC4180db7318F4364F6FC559A25359c9F537D3e` (tx `0x37683583…98fe7`,
+   block 76,820,955, codehash `0x684a360f…d598ed`, ≈ $0.006)
 9. a live 0.1 USD₮0 gasless demo payment — **requires the phrase
    `send mainnet demo payment`**
 
 **The superseded mainnet contract.** The Pago at
 `0xd63Ae612Cf9Acb9Ac8F7801eF68E8e71068E492c` is the build that carries the
-bug, and it is superseded by the fixed source above. **No payment link has
+bug, and it is superseded by the fixed build now live at
+`0x2fC4180db7318F4364F6FC559A25359c9F537D3e`. **No payment link has
 ever been created on it:** `getLinksByCreator` returns an empty list for all
 three addresses that have ever held its keys — the payee
 `0x7FCe520D881454EA234d371E1256B75843609b62`, the payer

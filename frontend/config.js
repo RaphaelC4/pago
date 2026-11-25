@@ -305,15 +305,14 @@ export const XLAYER = {
       payee: "0x7FCe520D881454EA234d371E1256B75843609b62",
     },
 
-    /* Mainnet values are copied from docs/FRONTEND-HANDOFF.md. README.md
-       still describes chain 196 as read-only, so values not independently
-       documented there remain explicitly unverified here and must be checked
-       against the README/deployment record before a mainnet transaction. */
+    /* Mainnet values come from the README deployment record and
+       docs/FRONTEND-HANDOFF.md; verify them against RESEARCH.md section 21
+       before any mainnet transaction. */
     mainnet: {
       chainId: 196,
       rpc: "https://rpc.xlayer.tech",
       explorer: "https://www.oklink.com/xlayer",
-      pago: "0xd63Ae612Cf9Acb9Ac8F7801eF68E8e71068E492c", // verify against README deployment evidence
+      pago: "0x2fC4180db7318F4364F6FC559A25359c9F537D3e", // fixed build, step 8: RESEARCH.md §21
       tokens: [
         {
           address: "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",

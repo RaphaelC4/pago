@@ -1777,3 +1777,92 @@ broadcast until `deploy to mainnet tier 1` arrives in full.
   local fork only); what the real deploy address will be (CREATE address
   depends on the deployer nonce); that a gasless payment settles on mainnet
   — that is step 9, gated separately.
+
+## 21. Step 8 — mainnet tier-1 deploy of the fixed build (2026-11-25)
+
+Authorised by the exact phrase `deploy to mainnet tier 1` — the payment
+contract only: no BEM purchase, no `createCPU`, no tape-out (those are tier 2).
+Dollar estimate quoted before the send: 3,554,000 gas × 0.02 gwei ≈ 0.0000711
+OKB ≈ **$0.006** at OKB $80.28 (CoinGecko), worst case ≈ $0.012 at the 0.04
+gwei fee cap. The deployer held 0.001082488156794177 OKB (≈ $0.087).
+
+### Preflight (read-only, all green)
+
+- chainid **196**; gas price 20,000,001 wei; both tokens answer
+  `decimals()` = 6.
+- Every constructor argument was re-read **live from the superseded Pago**
+  `0xd63Ae612Cf9Acb9Ac8F7801eF68E8e71068E492c` and matched §20's table
+  exactly: feeAccount `0x7FCe520D…09b62`, processor `0xDd6BB6fb…2c2f4`,
+  circuitId `1`, expectedProcessorCodehash `0x8c799a18…db545`,
+  circuitBeacon `0xf70d1ed4…0991C`, circuitImplementation `0x977f2178…F29B2`,
+  expectedImplementationCodehash `0x7a15c353…41b30`; `evaluatorPinned()`
+  true, `feeBps` 50, both caps 1e10.
+- References verified live: the processor's runtime codehash
+  `0x8c799a18…db545` and the implementation's `0x7a15c353…41b30` (the public
+  RPC does not serve `extcodehash`, so both were computed as
+  keccak256(`cast code`)); the beacon's `implementation()` is the recorded
+  `0x977f2178…F29B2`.
+- The deployable bytes are the frozen build: `out/Pago.sol/Pago.json` (built
+  2026-11-25 02:55, after the selector-fix commit `d8fe725`) carries
+  `0xcf092995` and not `0xd8fde8d5`. `script/Pago.creation.hex` dates from
+  2026-11-20, predates the fix, and was **not** used — its byte-equality
+  check against the artifact correctly fails.
+- **Prediction before spend:** the creation payload (artifact + ABI-encoded
+  §20 args, posted as a JSON-RPC `eth_call`, never on an argv) returned
+  runtime of **15,327 bytes** hashing to
+  **`0x684a360f7560dfc77c2782f0309580fde43354521d669e7f6c5f535065d598ed`** —
+  exactly §20's recorded prediction; fixed selector present, old absent; the
+  constructor does not revert against live state.
+- `forge create` dry run: exit 0, deployer nonce **17**, gas limit 3,583,502,
+  predicted CREATE address **`0x2fC4180db7318F4364F6FC559A25359c9F537D3e`**.
+
+### Broadcast (one send, plus one justified pre-send retry)
+
+- Transport: `forge create src/Pago.sol:Pago --broadcast --account
+  pago-deployer` — Foundry keystore signing with `ETH_PASSWORD` (a password
+  file path); no private key on any command line or in any output.
+- **The first attempt never reached the network:** DNS resolution failed
+  connecting to `rpc.xlayer.tech` (the flaky upstream noted in
+  `script/rehearse-castsend.ps1`), and the output contained no tx hash. The
+  deployer nonce was re-read and still **17** before retrying — a send that
+  provably never happened cannot have succeeded, so retrying does not break
+  the never-resend rule.
+- **Succeeded on the retry:**
+
+  | Fact | Value |
+  |---|---|
+  | tx | `0x37683583826c0b16601ef067172287e767d7e788933da61a2f39296e51e98fe7` |
+  | status | `0x1` |
+  | block | 76,820,955 |
+  | gasUsed | 3,554,000 — the rehearsal figure exactly |
+  | effectiveGasPrice | 20,000,001 wei |
+  | actual cost | 71,080,003,554,000 wei = 0.000071080003554 OKB ≈ **$0.0057** (matches the deployer balance delta exactly) |
+  | contract | **`0x2fC4180db7318F4364F6FC559A25359c9F537D3e`** — equals the predicted CREATE address |
+
+### Post-deploy verification (live reads)
+
+| Check | Value |
+|---|---|
+| runtime code | 15,327 bytes |
+| runtime codehash | `0x684a360f…d598ed` — **equals §20's pre-recorded prediction** |
+| selectors | `0xcf092995` present, `0xd8fde8d5` absent |
+| `evaluatorPinned()` | **true** from the first block |
+| `changeDetector()` | true |
+| `feeAccount` / `feeBps` | `0x7FCe520D…09b62` / 50 |
+| `processor` / `circuitId` | `0xDd6BB6fb…2c2f4` / 1 |
+| `expectedProcessorCodehash` | `0x8c799a18…db545` |
+| `circuitBeacon` / `circuitImplementation` | `0xf70d1ed4…0991C` / `0x977f2178…F29B2` |
+| `expectedImplementationCodehash` | `0x7a15c353…41b30` |
+| `MAX_LINK_AMOUNT_UNPINNED` | 1e10 for USD₮0 and for USDG |
+| `expectedDecimals` | 6 for USD₮0 and for USDG |
+
+### Proves / does not prove
+
+- **Proves:** the frozen fixed build is now the live mainnet Pago, deployed
+  for ≈ $0.006, pinned (`evaluatorPinned()` true) against the recorded
+  mainnet processor references from block one, with the corrected selector
+  surface — and the real address equals the one predicted from
+  (deployer, nonce) before the send.
+- **Does not prove:** that a gasless payment settles on mainnet — that is
+  step 9, gated on the exact phrase `send mainnet demo payment`; what a
+  payer's screen showed (rule 4, unchanged).

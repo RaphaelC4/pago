@@ -2131,3 +2131,112 @@ pins the old value).
   *old* module from browser cache (the HTML itself was cached under the old
   `?v=`); a cache-busted navigation confirmed the new code. Deployment
   consumers get the fresh file through the bumped `?v=`.
+
+## §25 — Tier-2 re-run closed as "not needed"; the 2026-11-20 run discovered (2026-11-25)
+
+The gate phrase `deploy to mainnet tier 2` was received and the live runner
+was launched. It aborted in preflight **before transaction 1** — and the
+decision was taken not to re-run: **closed as "not needed."** This close-out
+broadcast nothing and spent nothing.
+
+### Why preflight refused — a stale guard, not a wrong source tree
+
+The runner's live preflight pins `contracts-evm/src/` to freeze commit
+`48b045f` and `Pago.sol` to blob `06737fe9…`. Both constants were recorded
+*before* the authorized selector fix; the only commit touching `src/` since
+that freeze is `d8fe725` itself, so `git diff 48b045f..HEAD --
+contracts-evm/src/` is non-empty by construction and HEAD's blob is the
+post-fix `375d6ee8…`. The guard was doing exactly its job — refusing to
+deploy sources that differ from what it recorded — but its constants had
+never been refreshed after the fix, because live mode had not been run since
+2026-11-20. Updated to the post-fix state: freeze **`d8fe725`**, blob
+**`375d6ee8dce5c5922d671984bb224883d61a440c`** (`git diff d8fe725..HEAD --
+contracts-evm/src/` verified empty at update time). The `Pago.creation.hex`
+note at step 12 was rewritten too — see below.
+
+### Discovery: tier 2 had already run live — 12/12 PASS — on 2026-11-20
+
+Commit `0e54ddb` ("Tier 2 mainnet deploy: 12/12 live on X Layer chain 196"),
+`docs/tier2-mainnet-run.log` (final line `LIVE|RESULT|PASS|12/12 steps +
+verification`) and all twelve receipts `docs/tier2-mainnet-*.json` record a
+complete live run on 2026-11-20:
+
+| Nov 20 step | Result |
+|---|---|
+| processor created | circuits `0xDd6BB6fbda8ee867EF838bbE56ebA7d1EcC2c2f4` + transistors `0x96bCbd899f9D422b7051C492213DBEC68699B798`, shell codehash `0x8c799a18…db545` |
+| Split3 tape-out | circuitId **1**, `netlist_served_back true`, fee 1.3e15 |
+| Pago deployed | `0xd63Ae612Cf9Acb9Ac8F7801eF68E8e71068E492c`, predicted == actual codehash, `evaluatorPinned` true, caps/feeAccount verified |
+| result | **12/12 PASS** |
+
+That Pago was the **pre-fix** build (blob `06737fe9…`): it predates
+`d8fe725`, carries the selector bug, and no link was ever created on it
+(verified below). The 0.022 BEM the deployer holds today is this run's
+leftover (`bem_after_mint 2200000`).
+
+### The timeline of record
+
+2026-11-20: tier-2 runs 12/12 and deploys the pre-fix Pago pinned to
+processor/circuit 1 → the gasless selector bug is caught by the mainnet-fork
+rehearsal once it routes Pago through the real tokens (the pUSD mock shared
+the wrong `uint64` shape and hid it) → `d8fe725` (2026-11-24) fixes the
+interface → 2026-11-25: the fixed build is deployed as
+`0x2fC4180db7318F4364F6FC559A25359c9F537D3e` **pinned to the same processor
+and circuit** (tx `0x37683583826c0b16601ef067172287e767d7e788933da61a2f39296e51e98fe7`)
+→ step 9's live gasless demo settles through it.
+
+### The end state a re-run would have produced already exists — verified live
+
+Read-only sweep against chain 196 on 2026-11-25, every item green:
+
+| Check | Result |
+|---|---|
+| `0x2fC4180d…7D3e.processor()` | `0xDd6BB6fb…2c2f4` — the Nov-20 processor ✓ |
+| circuits codehash (keccak of `cast code`; RPC blocks `extcodehash`) | `0x8c799a18cd8e0d5f5f3c0cec4fbc145e2daf79f70c2b131c09d0f380921db545` == `NEW_SHELL` ✓ |
+| `netlist(1)` vs `script/split3-netlist.hex` | byte-identical ✓ |
+| `evaluatorPinned()` | true ✓ |
+| caps, USD₮0 / USDG | 10,000,000,000 / 10,000,000,000 ✓ |
+| `feeAccount()` | `0x7FCe520D881454EA234d371E1256B75843609b62` ✓ |
+| predicted vs actual Pago codehash | `0x684a360f7560dfc77c2782f0309580fde43354521d669e7f6c5f535065d598ed` (§21 prediction = step-9 actual) ✓ |
+| `TAPEOUT_FEE` / factory `cpuCount` | 1.3e15 / 450 ✓ |
+| both Pagos, codesize | 15,327 bytes each ✓ |
+
+**Superseded Pago carries no links — full-range proof:** `LinkCreated` logs
+scanned from its deploy block 76,435,642 through 76,842,620 (every block,
+50k-wide ranges) — **zero events ever**; `getLinksByCreator` returns `[]`
+for all three addresses that ever held its keys (payee `0x7FCe520D…`,
+payer `0x6256B90E…`, deployer `0x3f1004AA…`).
+
+### Why no re-run (user decision, 2026-11-25)
+
+A re-run would have produced a *third* Pago and a *second* processor for
+~$0.83 — duplicating an end state that already exists and is verified — and
+could not have started anyway: past preflight, step 12 would have refused at
+`forge artifact bytecode != script/Pago.creation.hex`, because the hex dates
+from 2026-11-20 (pre-fix; §21 recorded the same fact). It would also have
+orphaned the step-9 demo evidence (whose gate is already spent) and forced a
+frontend/README repoint. The submission story stands as it actually happened:
+**tape-out → bug found by rehearsal → fixed build redeployed onto the same
+processor → live gasless demo.**
+
+### The only mainnet tx of this session
+
+The payee → deployer funding move **`0x730b17a7dc5424850ffb8114acce92cad8cdfa4e1a65aa25c273c1c64adba444`**
+(status 0x1, 21,000 gas, 963,601,418,680,071 wei) so the runner's wallet
+could cover its preflight `need`. It stays where it landed: deployer holds
+**12,186,317,835,263,127 wei**, payee **9,579,999,979,000**, payer 0 — all
+re-read after the aborted run. No other transaction was sent.
+
+### Also updated in this close-out (no broadcast)
+
+- `script/rehearse-castsend.ps1` preflight constants → post-fix state (above),
+  with a comment recording why the old freeze is obsolete.
+- The step-12 note on `script/Pago.creation.hex`: it is the 2026-11-20
+  pre-fix build (the bytes deployed as `0xd63Ae612…`); its byte-equality
+  check against the current artifact **correctly fails** — regenerate the hex
+  only together with a fresh fork rehearsal, never just to silence the
+  guard. The `Die` message now says so.
+- README address table: exactly one current Pago (`0x2fC4180d…`), the
+  superseded one marked pre-fix/no-links, processor + Split3 circuit id 1
+  listed as **shared by both Pagos**, one honest timeline paragraph, and the
+  codehash row corrected (the old row cited the *superseded* build's
+  `0x175bafd0…` next to the current Pago's name).

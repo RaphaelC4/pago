@@ -66,33 +66,56 @@ chat, no seed-phrase hand-holding, nothing held in between.
 
 **Mainnet (X Layer, chain 196) — live.**
 
-- **Pago (fixed build, live):** `0x2fC4180db7318F4364F6FC559A25359c9F537D3e`
-  — deployed 2026-11-25 (step 8; receipt and full verification in RESEARCH
-  §21): runtime codehash `0x684a360f…d598ed`, `evaluatorPinned()` true from
-  block one, corrected selector `0xcf092995`. **A live 0.1 USD₮0 gasless
-  payment settled through it on 2026-11-25** (step 9, RESEARCH §22): the
-  payer `0x6256B90E…` spent zero OKB, and `LinkClaimed` paid 99,500 + 500
-  fee after the pinned Split3 processor returned a passing verdict.
-- **Pago (superseded):** `0xd63Ae612Cf9Acb9Ac8F7801eF68E8e71068E492c` —
-  **carries the gasless selector bug.** No link has ever been created on it
-  (see
+- **Pago (the current contract):** `0x2fC4180db7318F4364F6FC559A25359c9F537D3e`
+  — the one Pago this project points at. Deployed 2026-11-25 (step 8; receipt
+  and full verification in RESEARCH §21): runtime codehash
+  `0x684a360f…d598ed`, `evaluatorPinned()` true from block one, corrected
+  selector `0xcf092995`. **A live 0.1 USD₮0 gasless payment settled through
+  it on 2026-11-25** (step 9, RESEARCH §22): the payer `0x6256B90E…` spent
+  zero OKB, and `LinkClaimed` paid 99,500 + 500 fee after the pinned Split3
+  processor returned a passing verdict.
+- **Pago (superseded — pre-fix build, do not use):** `0xd63Ae612Cf9Acb9Ac8F7801eF68E8e71068E492c`
+  — deployed 2026-11-20, **carries the gasless selector bug**, superseded by
+  the fixed build above. No link has ever been created on it (see
   [The gasless selector bug and its fix](#the-gasless-selector-bug-and-its-fix)).
 - **Tokens:** USD₮0 `0x779Ded0c9e1022225f8E0630b35a9b54bE713736` · USDG
   `0x4ae46a509F6b1D9056937BA4500cb143933D2dc8` — 6 decimals, both EIP-3009
 - **Fee:** 50 bps → `0x7FCe520D881454EA234d371E1256B75843609b62`, immutable
-- **Processor:** `0xDd6BB6fbda8ee867EF838bbE56ebA7d1EcC2c2f4`
+- **Processor + circuit (shared by both Pagos):** `0xDd6BB6fbda8ee867EF838bbE56ebA7d1EcC2c2f4`
+  hosting **Split3 as circuit id 1** — its served netlist is byte-identical
+  to `contracts-evm/script/split3-netlist.hex`, shell codehash
+  `0x8c799a18…db545`. Created 2026-11-20: the superseded Pago was pinned to
+  it, and the current Pago was deployed pinned to the **same** processor and
+  circuit — not a second one.
 - **Beacon → implementation:** `0xf70d1ed4f62CF3780157B0b421b7E2F45bD0991C`
   → `0x977f217887E085D298Cb3819cDAD5A0ee35F29B2`
 - **`evaluatorPinned()`:** `true` — both legs of the live code check pass
-- **Codehash:** the deployed Pago code matches the prediction made before the
-  send: `0x175bafd0c7ac2d363bedbde2ac17ee8b12d4cd3e565028588f7aa95050f0305d`
+- **Codehash:** the current Pago's deployed code matches the prediction made
+  before the send:
+  `0x684a360f7560dfc77c2782f0309580fde43354521d669e7f6c5f535065d598ed`
+  (the superseded build's own codehash was
+  `0x175bafd0c7ac2d363bedbde2ac17ee8b12d4cd3e565028588f7aa95050f0305d`).
+
+**How the two Pagos got here, in one paragraph.** On 2026-11-20 the full
+Tier-2 chain ran live on X Layer mainnet — processor created, Split3 taped
+out as circuit 1, and the first Pago (`0xd63Ae612…`) deployed against it —
+but that build still carried the gasless selector bug, which the mainnet-fork
+rehearsal caught days later once it routed Pago's own gasless path through
+the real USD₮0/USDG instead of the pUSD mock that had hidden it (the mock
+was deployed with the same wrong `uint64` shape). The fix (`d8fe725`, two
+type keywords in `IEIP3009`) landed on 2026-11-24, and on 2026-11-25 the
+fixed build was deployed as `0x2fC4180d…` **pinned to the very same processor
+and circuit** (same recorded references, tx `0x37683583…98fe7`); a live
+0.1 USD₮0 gasless payment settled through it later that day, and the old
+contract was left link-less and superseded.
 
 Every address and hash above was read back from the chain, not typed from
 memory: the read-back list is
-[`docs/FRONTEND-HANDOFF.md` §9](docs/FRONTEND-HANDOFF.md), the deploy
-receipts are `docs/tier2-mainnet-*.json` with the full run in
-`docs/tier2-mainnet-run.log`, and the build record is
-[`docs/RESEARCH.md`](docs/RESEARCH.md) §17 and §19.
+[`docs/FRONTEND-HANDOFF.md` §9](docs/FRONTEND-HANDOFF.md), the 2026-11-20
+Tier-2 receipts are `docs/tier2-mainnet-*.json` with the full run in
+`docs/tier2-mainnet-run.log`, the current Pago's deploy receipt and
+prediction are in [`docs/RESEARCH.md`](docs/RESEARCH.md) §21, and the build
+record is [`docs/RESEARCH.md`](docs/RESEARCH.md) §17 and §19.
 
 **Testnet (chain 1952) — the frozen build, redeployed 2026-11-25 from the
 selector-fixed source.** Pago
@@ -299,7 +322,8 @@ three addresses that have ever held its keys — the payee
 `0x7FCe520D881454EA234d371E1256B75843609b62`, the payer
 `0x6256B90E4f36ee9e7A16cd29E7705dbdc539ec7b` and the deployer
 `0x3f1004AAeD662227d535D794dA679110111a2FC4` — and no `LinkCreated` event
-appears in the 100 blocks following its deployment at block 76,435,642. Its
+has ever appeared in **any** block from its deployment at block 76,435,642
+through block 76,842,620 (a full-range event scan, not a sample). Its
 ordinary `pay()` path works; only the gasless hop is affected.
 
 ### Why a circuit

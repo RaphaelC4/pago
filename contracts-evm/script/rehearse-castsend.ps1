@@ -286,14 +286,18 @@ if ($Mode -eq "fork") {
 
     # 1. Contract sources are the frozen ones: no change since the freeze
     #    commit, and Pago.sol is byte-identical to the recorded blob.
+    #    The freeze point is d8fe725 - the IEIP3009 selector fix itself. The
+    #    original pre-fix freeze (48b045f, blob 06737fe9...) was superseded
+    #    when that authorized fix landed; live mode had not been run since,
+    #    so these constants went stale and refused a correct source tree.
     $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
     $head = (& git -C $repoRoot rev-parse HEAD 2>&1 | Out-String).Trim()
     Log "$Tag|FACT|git_head|$head"
-    $srcDiff = (& git -C $repoRoot diff 48b045f..HEAD -- contracts-evm/src/ 2>&1 | Out-String).Trim()
-    if ($srcDiff -ne "") { Die "preflight" "contracts-evm/src/ differs from freeze 48b045f - refusing to deploy" }
+    $srcDiff = (& git -C $repoRoot diff d8fe725..HEAD -- contracts-evm/src/ 2>&1 | Out-String).Trim()
+    if ($srcDiff -ne "") { Die "preflight" "contracts-evm/src/ differs from freeze d8fe725 - refusing to deploy" }
     $blob = (& git -C $repoRoot rev-parse "HEAD:contracts-evm/src/Pago.sol" 2>&1 | Out-String).Trim()
     Log "$Tag|FACT|pago_blob|$blob"
-    if ($blob -ne "06737fe94e779d22ae552275d3a9003e79a535c6") { Die "preflight" "Pago.sol blob $blob != recorded 06737fe9..." }
+    if ($blob -ne "375d6ee8dce5c5922d671984bb224883d61a440c") { Die "preflight" "Pago.sol blob $blob != recorded 375d6ee8..." }
 
     # 2. The keystore exists and its password is available to cast via
     #    ETH_PASSWORD (the value is never read into a variable, logged, or
@@ -538,12 +542,18 @@ try {
 #     byte-identical to script/Pago.creation.hex first, so the rehearsed bytes
 #     are the deployed bytes. Same transport split as Send: fork sends through
 #     the impersonated account, live signs with the pago-deployer keystore.
+#     NOTE on script/Pago.creation.hex: it is the 2026-11-20 pre-fix build -
+#     the bytes deployed as the superseded Pago 0xd63Ae612... - recorded
+#     before the selector fix (d8fe725). Against the current artifact this
+#     check CORRECTLY FAILS (RESEARCH 21): it is the guard working, not a bug.
+#     Before any future live run, regenerate the hex from the fixed build
+#     together with a fresh fork rehearsal - never just to silence the check.
 $pago = ""
 try {
     $artPath = Join-Path $PSScriptRoot "..\out\Pago.sol\Pago.json"
     $artHex = ((Get-Content $artPath -Raw | ConvertFrom-Json).bytecode.object)
     if ($artHex.ToLower() -ne $PagoCode.ToLower()) {
-        Die "deployPago" "forge artifact bytecode != script/Pago.creation.hex - do not deploy bytes we did not rehearse"
+        Die "deployPago" "forge artifact bytecode != script/Pago.creation.hex (hex is the pre-fix 2026-11-20 build) - regenerate the hex from the fixed build and re-rehearse on a fork first; do not deploy bytes we did not rehearse"
     }
     Log "$Tag|FACT|pago_artifact_matches_rehearsed_hex|true"
 

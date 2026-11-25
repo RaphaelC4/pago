@@ -22,8 +22,10 @@ Run it from `frontend/` — static files, no build step, see
   fixed at creation; a share card with a QR code follows.
 - **Two payer paths.** An ordinary ERC-20 `approve` + `pay`, or a gasless
   EIP-3009 authorization the payer signs off-chain and a third party submits.
-  **The gasless path is not usable on the mainnet contract yet** — it ships
-  with a selector bug, fixed and fork-proven but not yet redeployed; see
+  **Both settle on the mainnet contract** — a live 0.1 USD₮0 gasless payment
+  settled there on 2026-11-25 with the payer spending zero OKB (step 9,
+  RESEARCH §22). It briefly shipped with a selector bug, fixed before the
+  redeploy; see
   [The gasless selector bug and its fix](#the-gasless-selector-bug-and-its-fix).
 - **The payout is computed, not argued.** At claim, the contract asks a
   published 104-gate circuit (Split3) whether the rule table holds; anything
@@ -67,9 +69,10 @@ chat, no seed-phrase hand-holding, nothing held in between.
 - **Pago (fixed build, live):** `0x2fC4180db7318F4364F6FC559A25359c9F537D3e`
   — deployed 2026-11-25 (step 8; receipt and full verification in RESEARCH
   §21): runtime codehash `0x684a360f…d598ed`, `evaluatorPinned()` true from
-  block one, corrected selector `0xcf092995`. **No gasless payment has
-  settled through it yet** (step 9), so this README does **not** claim
-  gasless works on mainnet.
+  block one, corrected selector `0xcf092995`. **A live 0.1 USD₮0 gasless
+  payment settled through it on 2026-11-25** (step 9, RESEARCH §22): the
+  payer `0x6256B90E…` spent zero OKB, and `LinkClaimed` paid 99,500 + 500
+  fee after the pinned Split3 processor returned a passing verdict.
 - **Pago (superseded):** `0xd63Ae612Cf9Acb9Ac8F7801eF68E8e71068E492c` —
   **carries the gasless selector bug.** No link has ever been created on it
   (see
@@ -265,10 +268,11 @@ uint64 form to prove that selector is really absent. USDG's `DOMAIN_SEPARATOR`
 is `0x415f0706e345fcaf25d5be24c4fd7830d0054fc5742c51a0db9319c759bd3743`.
 **Both allowlisted tokens are covered by the same eight cases.**
 
-**Status: fixed, deployed, not yet exercised.** The corrected contract is
-live on X Layer mainnet (`0x2fC4180d…7D3e`, step 8), but until a real gasless
-payment has settled through it this README does **not** claim gasless works
-on mainnet. The steps are:
+**Status: fixed, deployed and exercised on mainnet.** The corrected contract
+is live on X Layer mainnet (`0x2fC4180d…7D3e`, step 8) and a real gasless
+payment settled through it (step 9, RESEARCH §22) — so this README now
+claims gasless works on mainnet, evidenced by the transaction hashes below.
+The steps are:
 
 1. ✅ interface fixed in `contracts-evm/src/Pago.sol`
 2. ✅ mock token pinned to the real USD₮0 shape in all three places
@@ -281,8 +285,10 @@ on mainnet. The steps are:
 8. ✅ mainnet redeploy — fixed build live at
    `0x2fC4180db7318F4364F6FC559A25359c9F537D3e` (tx `0x37683583…98fe7`,
    block 76,820,955, codehash `0x684a360f…d598ed`, ≈ $0.006)
-9. a live 0.1 USD₮0 gasless demo payment — **requires the phrase
-   `send mainnet demo payment`**
+9. ✅ live 0.1 USD₮0 gasless demo — payer signed off-chain (zero OKB),
+   payee relayed and claimed; txs `0x9e38d977…f755a` (create),
+   `0x0cb7a79a…11f6` (gasless pay), `0x8eb3a165…0d45` (claim);
+   `LinkClaimed(payout 99500, fee 500, usedRuleSplit=true)`, ≈ $0.002
 
 **The superseded mainnet contract.** The Pago at
 `0xd63Ae612Cf9Acb9Ac8F7801eF68E8e71068E492c` is the build that carries the
@@ -560,7 +566,7 @@ via `?chainId=196`. **Cost:** testnet free, mainnet gas in OKB.
 - **No refunds.** Payment links are final once claimed.
 - **Pays in stablecoins.** USD₮0 and USDG on X Layer.
 - **No cash-out.** Pago moves stablecoins between wallets; there is no bank off-ramp.
-- **No relay service.** A normal payment is sent from the payer's own wallet; a gasless one is a free off-chain EIP-3009 signature that the payee — or any account — submits, paying the gas. **The gasless leg does not settle on the current mainnet contract** (selector bug, fixed and fork-proven, not yet redeployed), so on mainnet today the working route is `approve` + `pay`.
+- **No relay service.** A normal payment is sent from the payer's own wallet; a gasless one is a free off-chain EIP-3009 signature that the payee — or any account — submits, paying the gas. **The gasless leg settles on mainnet** (proven live 2026-11-25, RESEARCH §22); there is no hosted relayer — whoever holds OKB submits it.
 
 ---
 

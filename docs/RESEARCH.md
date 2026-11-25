@@ -1866,3 +1866,99 @@ gwei fee cap. The deployer held 0.001082488156794177 OKB (≈ $0.087).
 - **Does not prove:** that a gasless payment settles on mainnet — that is
   step 9, gated on the exact phrase `send mainnet demo payment`; what a
   payer's screen showed (rule 4, unchanged).
+
+## 22. Step 9 — the live mainnet gasless demo (2026-11-25)
+
+Authorised by the exact phrase `send mainnet demo payment`. Dollar quote
+before anything was sent: three transactions ≈ 1.5M gas worst case at 0.02
+gwei ≈ **$0.003, ceiling $0.01**; the payer was stated to spend **$0** (no
+OKB at all). Actual cost: **0.000025276341263817 OKB ≈ $0.002** at OKB
+$78.98 — the payee's balance delta (0.001 → 0.000974723658736183) equals the
+three receipts' gas (1,263,817 × 20,000,001 wei) to the wei.
+
+### The setup
+
+| What | Value |
+|---|---|
+| link id | `pago-261125-demo01` (verified unused before creation) |
+| amount | 100,000 base units = **0.1 USD₮0** |
+| creator / relayer / claimer | payee `0x7FCe520D881454EA234d371E1256B75843609b62` (the fee account; its 0.001 OKB runway was reserved in the 11-24 funding batch for exactly create + relay + claim) |
+| payer | `0x6256B90E4f36ee9e7A16cd29E7705dbdc539ec7b` — **0 OKB by construction**; signs off-chain only |
+| default split | (payee, 0, 0) shares 20/0/0 — payee takes 100% |
+| rule split | (payee, payee, payee) shares 10/6/4 (= 20 steps) — an honest-hardware-valid table whose every seat lands on the payee, so the recorded two-holding recovery plan holds whatever the verdict |
+| pre-state | payer 808,397 · payee 0 · escrow 0 · zero links · `evaluatorPinned()` true |
+
+### Signature chain (built exactly as `PagoGaslessFork.t.sol`)
+
+The real USD₮0 has no `digestOf` (the call reverts), so the digest was
+constructed by hand against the domain separator read live from the token
+(`0xd591d9baf744328d9400b923cb02c9474d367d591ca1ab24d8c4068be527599d`):
+
+- typehash `keccak256("TransferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)")`
+  = `0x7c7c6cdb67a18743f49ec6fa9b35f50d52ed05cbed4cc592e13b44501c1a2267`
+- struct hash = `0xbf12a440c63e501fffb4ad2b526ced556f176117c8aa76e0076dbf5cdc6ba4e8`
+- EIP-712 digest = `0x39d0172394290b2df0d24ea89217ccca2f9b3a5fb89c6cbed8b0192a2cd46df4`
+- the nonce is the contract's own `authorizationNonce(linkKey, payer)` =
+  `81066252375772976227962771400468648005809971542222306455176336883918651333312`
+  → bytes32 `0xb339df73410376abda69ff998949e91c821cf71c9c5a49760124782282e11ac0`
+  (link-specific, so this signature can only settle this one link);
+  `validAfter` 0, `validBefore` type(uint64).max
+- signed by the payer keystore with `cast wallet sign --no-hash` — the raw
+  digest, no EIP-191 prefix — 65 bytes, **zero gas**
+- **before any broadcast**, `cast estimate` of the full
+  `payWithAuthorization` passed at 232,586 gas: an `eth_call` that exercises
+  the token's own `ecrecover`, proving the whole signature chain against
+  live USD₮0 state first
+
+### The three transactions (all status 0x1)
+
+| # | tx | block | gas | evidence |
+|---|---|---|---|---|
+| createLink (payee) | `0x9e38d97766dd161d14ad355c994c52836eb695ae562b65dd95579611dd4f755a` | 76,823,643 | 652,922 | `LinkCreated(a2ebb4fb…3357bf, creator payee, USD₮0, 100000, expiresAt 0)` |
+| payWithAuthorization (payee relays the payer's signature) | `0x0cb7a79a19db81507b0e2bac73c9bcb5506f02eb9ca53de30a04490c44f811f6` | 76,826,104 | 226,011 | `LinkPaid(payer 0x6256B90E…, 100000)`; payer 808,397 → **708,397**, escrow 0 → **100,000**; the payer spent **0 OKB** |
+| claim (payee) | `0x8eb3a165309817a93d371e78b4df2b34915eb1b313f6212025c5942ca1280d45` | 76,826,211 | 384,884 | `LinkClaimed(payout 99500, fee 500, usedRuleSplit=true)` + 4×`LegPaid` + 4×`Transfer`: fee 500, then seats 49,750 + 29,850 + 19,900 = 99,500 |
+
+### What the claim proved
+
+**`usedRuleSplit = true`** — inside the mainnet claim transaction the pinned
+deployment re-ran `evaluatorPinned()` (true), `staticcall`ed the **real
+taped-out Split3 processor** `0xDd6BB6fbda8ee867EF838bbE56ebA7d1EcC2c2f4`
+under the 500k gas cap with the rule shares 10/6/4 packed LSB-first, got a
+strict-decoded **passing verdict**, and the solvency check (sum == 20)
+confirmed it — so the rule table paid, seat by seat: 49,750 / 29,850 /
+19,900, the cumulative 10/20, 16/20, 20/20 of 99,500.
+
+Final balances: payer **708,397** · payee **100,000** (99,500 payout + 500
+fee — the payee is also the fee account) · escrow **0** — the three deltas
+sum to exactly zero: nothing created, nothing lost. Zero payer gas plus
+exact conservation is the whole demo claim.
+
+### RPC incidents during the run (recorded honestly)
+
+- `rpc.xlayer.tech` DNS failed once before the relay send; the guard stopped
+  on an unreadable nonce — nothing was broadcast — and the identical command
+  succeeded on retry.
+- The endpoint's transaction-hash index lagged: `eth_getTransactionByHash`
+  and `eth_getTransactionReceipt` returned null for a transaction that the
+  payee nonce and the contract state already proved mined. Worse, the first
+  64-hex string in the raw `cast send --json` output — initially recorded as
+  the "tx hash" — was the `LinkCreated` **event topic0** (`0x6ea8146c…` =
+  `keccak256("LinkCreated(bytes32,address,address,uint256,uint64)")`), not a
+  transaction hash; every receipt poll against it predictably found nothing.
+  The real hash was recovered by chunked `eth_getLogs` (this gateway
+  requires a topic filter and caps ranges at 100 blocks) scanning from the
+  deploy block forward, and later reads confirmed all three receipts.
+  **Nothing was ever resent**: every retry decision was preceded by a nonce
+  or state check proving the prior attempt never reached the chain, and once
+  a hash was seen the transaction was only ever polled.
+
+### Proves / does not prove
+
+- **Proves:** a real 0.1 USD₮0 gasless payment settles on X Layer mainnet
+  through the fixed build with the payer holding and spending **zero OKB**;
+  the link-bound nonce made the signature settle only its own link; the
+  pinned mainnet Split3 processor is consulted live at claim, its verdict
+  honoured, and the payout conserved to the unit.
+- **Does not prove:** the browser path (rule 4, unchanged); the USDG leg on
+  mainnet (same fixed selector, not exercised); that the two USD₮0 holdings
+  have been recovered — recovery stays gated on a fresh go-ahead.

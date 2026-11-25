@@ -1358,7 +1358,7 @@ real Split3 netlist bytes — not hardware. On mainnet the same path runs the
 taped-out processor, which the fork suite proves with the recorded
 references.
 
-### Frozen build — comment-only fix, final testnet redeploy (2026-11-19) — **the frozen source**
+### Frozen build — comment-only fix (2026-11-19), then the EIP-3009 selector fix and final testnet redeploy (2026-11-25) — **the frozen source**
 
 **What changed, and why now.** One sentence in `Pago`'s constructor comment
 overstated leg 2 ("a wrong configured beacon can only make the flag false");
@@ -1368,6 +1368,16 @@ changes even though behaviour does not — and this is the cheapest moment to
 absorb that: before the frontend exists and before any mainnet deploy.
 Same script, same six environment overrides, **no logic change**.
 
+**What changed next — 2026-11-25.** Fork tests run against the real USD₮0
+and USDG ABIs caught an interface bug: `IEIP3009.transferWithAuthorization`
+declared its window as `uint64,uint64`, giving selector `0xd8fde8d5`, where
+the real tokens implement `uint256,uint256` (`0xcf092995`) — so the gasless
+leg could never have settled against a real token. The fix is two type
+keywords in the interface (and the matching mock); `payWithAuthorization`
+(`0x69c1372a`) and `createLink` (`0x6c5b7a11`) are unchanged. The source was
+re-frozen, the testnet redeployed pinned against the MOCK stand-in's own
+codehash, and both payer paths re-exercised live — figures below.
+
 > **The contract source is FROZEN at this build.** Mainnet tier 1 deploys
 > this same source. From here the only permitted changes are bug fixes, and
 > each one means a new build, a fresh testnet redeploy and a re-recorded
@@ -1375,20 +1385,46 @@ Same script, same six environment overrides, **no logic change**.
 
 | What | Value |
 |---|---|
-| **Pago (frozen build)** | `0x36d212b8814470d60aaddb6e204f09efb3a3dce9` |
-| deploy tx | `0x92068542233917e177be30a66ce53ec0c452b4a54bb3e4bc87ea1ae8956729af` |
+| **Pago (frozen build)** | `0xa65118a1434123648515929ce744D591ECC01a4B` |
+| deploy tx | `0x27fc78cbfdb388d9fb8aac8db914da5ebb96b552d71cff2315e3267506371c9a` |
 | code size | 15,327 bytes |
-| runtime codehash | `0x6cd1693ca93d5480394ce880e95e7c1c13063c06eaf4e9757a81e92fa680dc21` |
+| runtime codehash | `0xb10629a023d401d855b90a2de5b2375230d89f2bc8799e0da991de2bc9f419aa` |
 | `evaluatorPinned()` | `true` — **MOCK-pinned**: leg 1 = stand-in codehash `0x250c2eab…8108b` |
-| tests after the change | **148/148** (`forge test`, local + mainnet-fork suites) |
+| tests after the change | **159/159** (`forge test`, local + mainnet-fork suites) |
 
 Superseded testnet copies, all still on chain: `0xfa47d03b…bacce` (same
-MOCK-pinned configuration, pre-fix source) and `0xA4AA0B19…17bfF` (the
-failure-path proof).
+MOCK-pinned configuration, pre-fix source), `0xA4AA0B19…17bfF` (the
+failure-path proof), `0x36d212b8…dce9` (the pre-fix pair — Pago and mock both
+carried the old `uint64` window, so they agreed with each other and the
+gasless leg settled) and `0x0825e9b9…C3f4` (fixed source but unpinned: leg 1
+checked against the recorded shell, so every link was capped; abandoned after
+leg A paid).
 
-**Exercise — 2026-11-19, PASS (mode: pinned), identical figures to the copy
-it replaces:** links `pago-261119-124452-a` / `-b`, payee **+1,492,500**,
-deployer **−1,492,500**, contract held **0**, deltas sum **0**.
+**Exercise — 2026-11-25, PASS (mode: pinned), the post-fix proof:** links
+`pago-261125-020108-a` / `-b`, payee **+1,492,500**, deployer **−1,492,500**,
+contract held **0**, deltas sum **0**.
+
+| Step | Tx |
+|---|---|
+| mint 10 pUSD **(MOCK)** | `0x340b44e46f41ad12b080535bcd179afa7a8f3612270916ba78f266edb63f5ef6` |
+| leg A `createLink` | `0x44074868cdc14eac5fa23aa03ac709ef857064f3ac82cda11e1dfba7a501f40b` |
+| leg A `approve` | `0xa5786476462c6ce403e077197b97bd5533cd5cfbde5a62858a955dc6599b838b` |
+| leg A `pay` (terms `0xcdd4e206…952f8`) | `0x77343f115fafe073a3d7895263a49b3d174588ea2e9a6699455f3a77f48d5980` |
+| leg B `createLink` | `0x5c6d2fa83f3fc2ab1c881bfde9d4cb1de6b78c053c8aef5786027ba7058a616c` |
+| leg B `payWithAuthorization` (terms `0x4c3d5684…2640c`, digest `0xb6895353…4b3c3`) | `0x23464a87b749f515112ef0f58c31d124540aed719c289da53e0cdd24d7f787f2` |
+| `claim` leg A — **rule table** | `0x4b9c6386d65fdeb7cc658860ea954b72bd1cd37171ec2530538041f1d6d95959` |
+| `claim` leg B — default table | `0xa6e3439c1acb860b8bcc207cae9b48222842cc4250b1170b80acde5e87a7f589` |
+
+Claim events, decoded from the receipts: leg A `remainder 995,000 / fee
+5,000 / usedRuleSplit = true`; leg B `remainder 995,000 / fee 5,000 /
+usedRuleSplit = false`.
+
+**Exercise — 2026-11-19, PASS (mode: pinned) — the pre-fix copy run, kept as
+history:** links `pago-261119-124452-a` / `-b`, payee **+1,492,500**,
+deployer **−1,492,500**, contract held **0**, deltas sum **0**. Both sides
+carried the old `uint64` window then, so they agreed with each other — this
+run proves the script and the reconciliation, not compatibility with the real
+USD₮0/USDG.
 
 | Step | Tx |
 |---|---|

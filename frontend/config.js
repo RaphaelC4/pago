@@ -229,11 +229,11 @@ export const XLAYER = {
          contracts-evm/.testnet-deploy.json and read back from chain with
          `cast code` (oklink is unreachable from this machine, so the explorer
          check falls back to direct reads - disclosed in RESEARCH.md §17):
-         Pago has 15,327 bytes of code, the token 4,117, the stand-in 2,779,
+         Pago has 15,327 bytes of code, the token 4,031, the stand-in 2,779,
          the mock beacon 240.
-         THIS IS THE FROZEN BUILD (contract source frozen after a
-         comment-only fix; only bug fixes follow - mainnet tier 1 deploys
-         this same source). Rule 6 state, read live: evaluatorPinned TRUE -
+         THIS IS THE FROZEN BUILD (contract source frozen after the
+         EIP-3009 selector fix; only bug fixes follow - mainnet tier 1
+         deploys this same source). Rule 6 state, read live: evaluatorPinned TRUE -
          **MOCK-pinned**. The check itself is the real one and re-runs both
          legs on every call (a view, never a stored bool), but its leg-1
          reference is the MOCK stand-in's own codehash (0x250c2eab...8108b),
@@ -242,17 +242,21 @@ export const XLAYER = {
          recorded TapeOut references." NEVER render a bare "pinned".
          Both legs pass here, so the rule table can pay live on testnet
          (RESEARCH.md §17). Superseded copies kept on chain: 0xfa47d03b...
-         (same MOCK-pinned config, pre-freeze source) and 0xA4AA0B19...
+         (same MOCK-pinned config, pre-freeze source), 0xA4AA0B19...
          (the failure-path proof: leg 1 checked against the recorded shell,
-         fails, every link capped). */
-      pago: "0x36d212b8814470d60aaddb6e204f09efb3a3dce9",
-      token: "0x1Bf9Fd0C674BcE9cdc9EFc7C2A70e20E84E6953C",
+         fails, every link capped), 0x36d212b8... (the pre-fix pair - Pago
+         and mock both carried the old uint64 window, so they agreed with
+         each other and the gasless leg settled) and 0x0825e9b9... (fixed
+         source but unpinned: leg 1 checked against the recorded shell, so
+         every link was capped; abandoned after leg A paid). */
+      pago: "0xa65118a1434123648515929ce744D591ECC01a4B",
+      token: "0xa0b2C3Df01696C508859c4949D2f960f420E79b3",
 
       /* The testnet rule-6 supporting cast, all three MOCK / stand-in, never
          hardware: an EVM contract standing in for the TapeOut processor, and
          a mock beacon reporting it. Shown as such on every surface. */
-      processorStandIn: "0xe4b4ABb2c6A0B15603b1A308Eba0264f8f676E02",
-      circuitBeaconMock: "0x359749641523b7AcC791a856FC6afD35A756F723",
+      processorStandIn: "0xd71531A68a01d8f4E0ADB3aD76B68707F22F9655",
+      circuitBeaconMock: "0xA106F05F6319F0d354E8A05B9d48632d10fF673e",
 
       /* Per-link cap while evaluatorPinned() does not pass, in base units:
          10,000 pUSD at 6 decimals, read back live as
@@ -281,12 +285,11 @@ export const XLAYER = {
       /* Explorer permalinks. The oklink URL pattern was confirmed to open in
          a browser earlier; the addresses still need the explorer comparison
          (oklink is unreachable from the assistant's machine) - see
-         RESEARCH.md §17. Compare AFTER the final redeploy: Pago changes
-         whenever the contract source changes, so check this frozen build's
-         address, not an earlier copy's. The token, stand-in and beacon are
-         unchanged from the earlier run. */
-      pagoExplorerUrl: "https://www.oklink.com/xlayer-test/address/0x36d212b8814470d60aaddb6e204f09efb3a3dce9",
-      tokenExplorerUrl: "https://www.oklink.com/xlayer-test/address/0x1Bf9Fd0C674BcE9cdc9EFc7C2A70e20E84E6953C",
+         RESEARCH.md §17. All four addresses changed with the 2026-11-25
+         redeploy from the selector-fixed source, so these point at this
+         frozen build's Pago and token, not an earlier copy's. */
+      pagoExplorerUrl: "https://www.oklink.com/xlayer-test/address/0xa65118a1434123648515929ce744D591ECC01a4B",
+      tokenExplorerUrl: "https://www.oklink.com/xlayer-test/address/0xa0b2C3Df01696C508859c4949D2f960f420E79b3",
 
       /* Both read live after deploy: `feeBps()` answered 50 (0.5%) and the
          fee account is the deployer itself. */

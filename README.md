@@ -85,12 +85,13 @@ receipts are `docs/tier2-mainnet-*.json` with the full run in
 `docs/tier2-mainnet-run.log`, and the build record is
 [`docs/RESEARCH.md`](docs/RESEARCH.md) §17 and §19.
 
-**Testnet (chain 1952) — the frozen build.** Pago
-`0x36d212b8814470d60aaddb6e204f09efb3a3dce9` — the source is frozen at this
+**Testnet (chain 1952) — the frozen build, redeployed 2026-11-25 from the
+selector-fixed source.** Pago
+`0xa65118a1434123648515929ce744D591ECC01a4B` — the source is frozen at this
 build, only bug fixes may follow — with pUSD **(MOCK)**
-`0x1Bf9Fd0C674BcE9cdc9EFc7C2A70e20E84E6953C`, processor stand-in **(EVM, not
-hardware)** `0xe4b4ABb2c6A0B15603b1A308Eba0264f8f676E02` and mock circuit
-beacon **(MOCK)** `0x359749641523b7AcC791a856FC6afD35A756F723`. **The testnet
+`0xa0b2C3Df01696C508859c4949D2f960f420E79b3`, processor stand-in **(EVM, not
+hardware)** `0xd71531A68a01d8f4E0ADB3aD76B68707F22F9655` and mock circuit
+beacon **(MOCK)** `0xA106F05F6319F0d354E8A05B9d48632d10fF673e`. **The testnet
 pin reference is the MOCK stand-in; mainnet uses the recorded TapeOut
 references** — never a bare "pinned". Both legs of the live check pass here
 against those stand-ins, so `evaluatorPinned()` reads `true` and the
@@ -101,13 +102,14 @@ unit:** the live rule-6 check passed, so leg A's claim was paid from the
 **rule table** — payee 497,500 plus 497,500 back to the rule seat, with the
 claim event recording `usedRuleSplit=true` — and leg B fell to the default
 split (payee 995,000, `usedRuleSplit=false`); payee +1,492,500, payer
-−1,492,500, the contract kept 0. **That run is a record of the pre-fix build:**
-the deployed testnet Pago and the deployed testnet mock both carried the old
-`uint64` window arguments, so they agreed with each other and the gasless leg
-settled. The source has since been corrected on both sides (interface and
-mock), which no longer matches that deployment — the testnet is redeployed
-from the fixed source as step 6 below, and until then this paragraph describes
-the old pair only. An earlier copy (`0xA4AA0B19…17bfF`) stays on
+−1,492,500, the contract kept 0 (links `pago-261125-020108-a` / `-b`).
+**This run is the post-fix proof:** both the deployed Pago and the deployed
+mock carry the corrected `uint256` EIP-3009 window, so the gasless leg
+settles through the same selector shape real USD₮0 and USDG implement
+(`0xcf092995` / `0x91d26f16`). The earlier 2026-11-19 run against the
+pre-fix pair (`0x36d212b8…`) settled as well — but both sides shared the old
+`uint64` shape and only agreed with each other, so it is kept as history,
+not as evidence for real tokens. Another copy (`0xA4AA0B19…17bfF`) stays on
 chain as the **failure-path proof**, where leg 1 is checked against the
 recorded TapeOut shell the stand-in can never match, so both claims fell to
 the default split instead ([`docs/RESEARCH.md` §17](docs/RESEARCH.md)). The

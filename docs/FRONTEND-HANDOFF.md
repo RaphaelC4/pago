@@ -197,7 +197,7 @@ cd frontend && python -m http.server 8321     # → http://localhost:8321/xlayer
 
 # e2e Journey D (from e2e/, never in parallel with other e2e runs)
 npx playwright test --project=testnet
-# spec: e2e/specs/testnet/xlayer.testnet.spec.mjs, CLAIMED_LINK = "pago-261119-124452-b"
+# spec: e2e/specs/testnet/xlayer.testnet.spec.mjs, CLAIMED_LINK = "pago-261125-020108-b"
 ```
 
 Journey D must pass before the demo video. Testnet and mainnet caps are

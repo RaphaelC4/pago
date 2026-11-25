@@ -21,16 +21,16 @@
 
 import { test, expect } from "@playwright/test";
 
-/* The 2026-11-19 MOCK-pinned frozen build's leg B: created, paid through the
+/* The 2026-11-25 MOCK-pinned frozen build's leg B: created, paid through the
    gasless payer path by a third party and claimed, settling through the
    DEFAULT table (claim event usedRuleSplit=false; payee received the full
    995,000 post-fee, which is what the receipt below shows). Its sibling leg A
-   (pago-261119-124452-a) settled through the RULE table instead — payee
+   (pago-261125-020108-a) settled through the RULE table instead — payee
    497,500 plus the remaining seats to the rule table's other recipients —
    and is asserted in its own test further down, because the page's receipt
    now reads which table the circuit selected out of the claim event
    (docs/RESEARCH.md §17). */
-const CLAIMED_LINK = "pago-261119-124452-b";
+const CLAIMED_LINK = "pago-261125-020108-b";
 
 test.describe("X Layer testnet read-only", () => {
   test("the page's health check answers from the live X Layer RPC", async ({ page }) => {
@@ -74,12 +74,12 @@ test.describe("X Layer testnet read-only", () => {
     await expect(page.locator("#ledgerList .row-main").first()).toBeVisible({ timeout: 60_000 });
 
     const rows = await page.locator("#ledgerList .row-main").count();
-    expect(rows, "the payee created links in the 2026-11-19 run — an empty ledger means the read failed").toBeGreaterThan(0);
+    expect(rows, "the payee created links in the 2026-11-25 run — an empty ledger means the read failed").toBeGreaterThan(0);
 
     /* Stats must agree with the rows actually on screen. */
     await expect(page.locator("#statCount")).toHaveText(String(rows));
 
-    /* The 2026-11-19 run ended with both links claimed; if none of them show,
+    /* The 2026-11-25 run ended with both links claimed; if none of them show,
        the status mapping or the decoder has drifted from the contract. */
     const pills = await page.locator("#ledgerList .pill").allTextContents();
     expect(pills.some((p) => p === "Claimed"), `expected a Claimed link, saw: ${pills.join(", ")}`).toBe(true);
@@ -127,7 +127,7 @@ test.describe("X Layer testnet read-only", () => {
        the circuit accepted it and the claim paid the rule seats — 497,500
        to the payee, not the whole pool. The result must say "rule table"
        and print the seat the chain actually paid. */
-    await page.goto(`/xlayer.html#pay/pago-261119-124452-a`);
+    await page.goto(`/xlayer.html#pay/pago-261125-020108-a`);
 
     /* Same design as above: the card keeps its status pill and its rows —
        only the figures under them come from the claim's events, and they

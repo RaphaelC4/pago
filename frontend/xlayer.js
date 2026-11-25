@@ -819,6 +819,10 @@ let pendingTxHash = null; // the create transaction for that invoice
 const hasPanel = (name) => !!document.querySelector(`[data-panel="${name}"]`);
 const siteUrl = (hash = "") => {
   const u = new URL("pago-onboarding.html", location.href);
+  /* Carry the query: `new URL("path", base)` replaces the base's search, so
+     without this every in-site hop silently drops ?chainId (and ?token) and
+     the reader lands back on the default network. */
+  u.search = location.search;
   if (hash) u.hash = hash;
   return u.href;
 };
@@ -917,6 +921,11 @@ const statusName = (link) => STATUS[Number(link.status)] || "Open";
    they were created or copied from — the site links back here. */
 const payUrlFor = (id) => {
   const u = new URL("xlayer.html", location.href);
+  /* The shared link must name the network it was created on: copy, QR and
+     navigator.share all take this URL, and without the query a mainnet
+     payment link opens on the default testnet and reports "no link with that
+     id". */
+  u.search = location.search;
   u.hash = `pay/${encodeURIComponent(id)}`;
   return u.href;
 };

@@ -2062,3 +2062,72 @@ The payee separately paid 1,122,240,056,112 wei for tx 1 (its balance moved
   the data comparison could never match. Corrected → hash recovered:
   `0x00ea11b0…3274`, status 0x1, confirmed by receipt. State had proved it
   landed all along; nothing was resent.
+
+## §24 — Frontend mainnet smoke test, and the chainId-loss bug it found (2026-11-25)
+
+Step 11. Read-only browser pass over the shipped UI (`frontend/xlayer.html` /
+`pago-onboarding.html`, one module `xlayer.js`) against X Layer **mainnet**,
+served locally (`python -m http.server 8321`, the documented dev command).
+No mainnet write was attempted — the demo-payment gate was already spent in
+step 9, and nothing in this pass needs one.
+
+### What passed (every read live from chain 196, zero console errors)
+
+| Surface | Evidence |
+|---|---|
+| Network switch | combobox → "X Layer mainnet"; footer `X Layer mainnet (196) · USD₮0 · allowlisted stablecoin` |
+| Recent activity | `pago-261125-demo01 · 0x6256…ec7b · 0.1 · Claimed · Nov 25, 2026, 9:25 AM` — the real step-9 link |
+| Pay card (contract rule 4's terms) | amount 0.1 USD₮0, fee 0.0005, created 8:44 / paid 9:25 / claimed 9:27, payer `0x6256b90e…39ec7b`, payee `0x7fce520d…609b62` |
+| Payout events | pool **0.099500** + fee **0.000500**, `split applied · Rule table`, seats **0.049750 / 0.029850 / 0.019900**, claim tx `0x8eb3a165…280d45` — the step-9 record, event by event, "amounts read from payout events, not recomputed" |
+| **Rule 4 read path** | the page's `termsHash(string)` selector `0xe93341c4` (`frontend/abi.js`), called from the browser against mainnet, returned `0xb97c550b173a41ba313bc430802d8c726c5fdd3f0e53085a08278e78c1206073` — **byte-identical to `cast call` ground truth**: the consent hash is read from chain immediately before signing, never computed in the browser |
+| My links | `getLinksByCreator(0x7FCe520D…)` → 1 link, Claimed 1, total paid out 0.0995, CSV export offered |
+| CORS/RPC | every browser request to `rpc.xlayer.tech` answered 200 (POST) / 204 (OPTIONS preflight) |
+
+### The bug: every in-site navigation dropped the selected network
+
+**Symptom A (reproduced):** select "X Layer mainnet" in the header, click
+"Create a link" → the page silently fell back to testnet: the create form
+showed `pUSD (MOCK)` at `0xa0b2C3Df…` with the mock warning, footer
+"Demo on X Layer testnet".
+
+**Symptom B (reproduced, demo-breaking):** the URL a payee *shares* — copy
+button, QR code, `navigator.share` — carried no `chainId`, so a recipient
+opening the **mainnet** demo link got:
+> "No link with the id pago-261125-demo01 on X Layer testnet."
+
+**Root cause:** the selected network lives only in the `?chainId=` query
+parameter (nothing persists it — `localStorage` in this file is used only for
+seat avatars), and both URL builders used
+`new URL("…html", location.href)`, which — because the relative URL carries a
+*path* — **replaces the base's query string**:
+
+- `siteUrl()` — every header-nav hop (`go()`, the hash router);
+- `payUrlFor()` — the share URL, the QR payload and `navigator.share`.
+
+Pre-existing since the X Layer port; not introduced by any step of this run.
+
+### The fix (user-authorized; `xlayer.js` was outside the selector-fix grant)
+
+One line in each builder — `u.search = location.search;` — with a comment in
+each explaining the drop, plus the repo's cache-bust bump
+`xlayer.js?v=20261124g` → `?v=20261125a` in both HTML documents (no test
+pins the old value).
+
+### Verification
+
+- **Tests:** all 16 frontend suites green — 86 + 52 + 26 + 48 + 76 + 94 + 120
+  + 33 + 23 + 41 + 37 + 40 + 46 + 51 + 49 + 120 = **942 assertions, 0 failed**
+  (`node` over `frontend/test/*.test.mjs`).
+- **Browser, symptom A:** mainnet home → click "Create a link" →
+  `pago-onboarding.html?chainId=196#create`, panel `create`, form shows
+  **USD₮0 `0x779Ded0c…` "allowlisted"** and "Circuit pinned on mainnet."
+- **Browser, symptom B:** from the mainnet pay card the share button (with
+  `navigator.share` stubbed to observe the payload) emitted
+  `xlayer.html?chainId=196#pay/pago-261125-demo01` — the network rides the
+  shared link; the cross-document redirect
+  (`pago-onboarding.html?chainId=196#pay/…` → `xlayer.html`) also lands on
+  mainnet with the card fully rendered.
+- One stale-cache trap during re-testing: the first re-run still executed the
+  *old* module from browser cache (the HTML itself was cached under the old
+  `?v=`); a cache-busted navigation confirmed the new code. Deployment
+  consumers get the fresh file through the bumped `?v=`.

@@ -34,7 +34,10 @@ import { EVT } from "../../frontend/payout.js";
 export const XLAYER_RPC_HOST = "testrpc.xlayer.tech";
 export const XLAYER_CHAIN_ID = 1952;
 
-const PAYEE = "0x7fce520d881454ea234d371e1256b75843609b62";
+/* Exported so the smoke spec can type it into the ledger: the ledger has no
+   default address any more, and the mock only answers getLinksByCreator for
+   this one. */
+export const PAYEE = "0x7fce520d881454ea234d371e1256b75843609b62";
 const DEPLOYER = "0x3f1004aaed662227d535d794da679110111a2fc4";
 const TOKEN = "0x1bf9fd0c674bce9cdc9efc7c2a70e20e84e6953c";
 const ZERO = "0x0000000000000000000000000000000000000000";

@@ -1840,7 +1840,22 @@ function renderLedger() {
 async function loadLedger() {
   const input = $("#creatorInput");
   const list = $("#ledgerList");
-  const creator = (input.value || "").trim() || account || NET.payee;
+  /* No default address: the ledger starts empty until a wallet connects or
+     an address is typed. The configured payee's links are real, but showing
+     them unprompted reads as the visitor's own history. */
+  const creator = (input.value || "").trim() || account;
+
+  if (!creator) {
+    ledgerLinks = [];
+    ledgerLoaded = false;
+    list.innerHTML = `<div class="empty-line">Connect a wallet — or enter an address above to read the chain.</div>`;
+    $("#tableCreator").textContent = "–";
+    $("#tableCount").textContent = "–";
+    $("#ledgerStats").hidden = true;
+    $("#ledgerFilters").hidden = true;
+    $("#ledgerCsv").hidden = true;
+    return;
+  }
 
   if (!isAddress(creator)) {
     list.innerHTML = `<div class="empty-line">That is not an address. Pago ledgers are keyed by a 0x… address, not a NEAR account name.</div>`;
@@ -1899,10 +1914,13 @@ function renderActivity() {
   if (!list) return;
 
   if (!ledgerLinks.length) {
+    const typed = ($("#creatorInput")?.value || "").trim();
     list.innerHTML = `<div class="lp-act-empty">${
-      ledgerLoaded
-        ? "No links for this address yet — create one and it appears here."
-        : "Could not read the chain. Open My links to try again."
+      !typed && !account
+        ? "Connect a wallet to see recent activity."
+        : ledgerLoaded
+          ? "No links for this address yet — create one and it appears here."
+          : "Could not read the chain. Open My links to try again."
     }</div>`;
     if (note) note.textContent = "";
     return;
@@ -2062,9 +2080,6 @@ function paintStatic() {
       .catch(() => { /* no line rather than a guessed one */ });
   }
 
-  const input = $("#creatorInput");
-  if (input && !input.value) input.value = NET.payee;
-
   const hero = $("#heroChainNote");
   if (hero) {
     hero.innerHTML = `Chain ${CHAIN_ID} &middot; token <strong>${esc(TOKEN_LABEL)}</strong> &middot; fixed ${NET.feeBps / 100}% fee &middot; no sign-up, no admin keys, funds move only through the contract.`;
@@ -2127,11 +2142,12 @@ function boot() {
       toast("Wallet disconnected from this page.");
       return;
     }
-    await connect();
-    if (currentPanel === "ledger" && ledgerLoaded) loadLedger();
+    /* Reload whenever the ledger panel is open: it may have been showing
+       the empty state before this wallet connected. */
+    if ((await connect()) && currentPanel === "ledger") loadLedger();
   });
   $("#heroConnect")?.addEventListener("click", async () => {
-    if (await connect() && currentPanel === "ledger" && ledgerLoaded) loadLedger();
+    if ((await connect()) && currentPanel === "ledger") loadLedger();
   });
 
   $("#createForm")?.addEventListener("submit", onCreate);

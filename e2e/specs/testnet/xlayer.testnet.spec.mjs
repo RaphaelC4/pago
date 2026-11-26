@@ -20,6 +20,7 @@
  */
 
 import { test, expect } from "@playwright/test";
+import { XLAYER } from "../../../frontend/config.js";
 
 /* The 2026-11-25 MOCK-pinned frozen build's leg B: created, paid through the
    gasless payer path by a third party and claimed, settling through the
@@ -66,9 +67,11 @@ test.describe("X Layer testnet read-only", () => {
        #tab-* buttons. */
     await page.locator('[data-tab="ledger"]').first().click();
 
-    /* The form ships prefilled with the payee address from config.js, so the
-       read path needs no wallet — Load is the only click. */
-    await expect(page.locator("#creatorInput")).not.toHaveValue("");
+    /* Nothing is prefilled: the ledger starts empty until a wallet connects
+       or an address is typed. Type the configured payee (config.js
+       XLAYER.pago.testnet.payee) and press Load — the read path still needs
+       no wallet. */
+    await page.locator("#creatorInput").fill(XLAYER.pago.testnet.payee);
     await page.locator("#ledgerLoad").click();
 
     await expect(page.locator("#ledgerList .row-main").first()).toBeVisible({ timeout: 60_000 });

@@ -16,7 +16,7 @@
 
 import { test, expect } from "@playwright/test";
 import { makeScenario, installMocks } from "../fixtures/mocks.mjs";
-import { installXLayerMocks, xlPayUrl, makeXlNosplitLink } from "../fixtures/xlayer-mocks.mjs";
+import { installXLayerMocks, xlPayUrl, makeXlNosplitLink, PAYEE } from "../fixtures/xlayer-mocks.mjs";
 
 /* installMocks() first (it owns the catch-all), then the X Layer route —
  * Playwright matches the most recently registered route first, so the RPC
@@ -164,9 +164,13 @@ test.describe("X Layer / Pago page", () => {
     await expect(page).toHaveURL(/pago-onboarding\.html/);
     await page.locator('[data-tab="ledger"]').first().click();
 
-    /* Default creator is the configured payee, so the read-only path works
-       with nothing connected — that is what the live testnet project uses. */
-    await expect(page.locator("#creatorInput")).not.toHaveValue("");
+    /* No wallet and no default address: the ledger starts empty and says
+       so. The read-only path still works — type an address (the mock's
+       payee) and press Load; nothing here can sign. */
+    await expect(page.locator("#ledgerList .empty-line")).toContainText("Connect a wallet");
+    await page.locator("#creatorInput").fill(PAYEE);
+    await page.locator("#ledgerLoad").click();
+
     await expect(page.locator("#ledgerList .row-main")).toHaveCount(3, { timeout: 15_000 });
 
     await expect(page.locator("#statCount")).toHaveText("3");
@@ -186,6 +190,19 @@ test.describe("X Layer / Pago page", () => {
 
     expect(xl.log.every((m) => ["eth_call", "eth_chainId", "net_version"].includes(m) || m === "unknown"))
       .toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  test("the activity bell asks for a wallet instead of showing someone's history", async ({ page }) => {
+    const { errors } = await openPago(page);
+    await expect(page).toHaveURL(/pago-onboarding\.html/);
+
+    /* With no wallet and no address typed the popover must ask, not paint
+       the configured payee's links — that history read as the visitor's
+       own. This is the regression the 2026-11-26 change fixes. */
+    await page.locator("#bellBtn").click();
+    await expect(page.locator("#actList")).toContainText("Connect a wallet to see recent activity.");
+    await expect(page.locator("#actNote")).toHaveText("");
     expect(errors).toEqual([]);
   });
 

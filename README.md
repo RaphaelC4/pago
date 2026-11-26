@@ -581,7 +581,9 @@ live contract carries the fix and settled a real gasless payment on
 **Network:** X Layer — testnet (1952) with the MOCK faucet, or mainnet (196)
 via `?chainId=196`. **Cost:** testnet free, mainnet gas in OKB.
 
-1. **Serve the frontend.** `cd frontend && python -m http.server 8321` and
+1. **Serve the frontend** — or skip this: the hosted page is
+   <https://pago-nu.vercel.app/> (mainnet: append `?chainId=196`). To run
+   locally, `cd frontend && python -m http.server 8321` and
    open `http://localhost:8321/pago-onboarding.html` (ES modules need http,
    not `file://`).
 2. **Create a link.** Connect a wallet on the right chain, enter an amount and
@@ -708,14 +710,16 @@ Keys belong in `.env`. Never in the repository.
 ## Deploy
 
 The frontend is static: no build step, no server, no GitHub. Any host that
-serves a folder works. Two that need no install and no repository connection:
+serves a folder works.
 
-- **Vercel** — open <https://vercel.com/new/drop> and drag the `frontend/`
-  folder onto the page. It returns an HTTPS URL in a few seconds. (The CLI
-  works too: after `npx vercel login`, run `npx vercel deploy --prod` from
-  the repository root, not from inside `frontend/` — the linked project's
-  Root Directory is already `frontend`, so a deploy started there fails
-  with `Root Directory "frontend" does not exist`.)
+- **Vercel — what the live site uses.** <https://pago-nu.vercel.app/> is the
+  `pago` project. To update it: `npx vercel login`, then run
+  `npx vercel link --project pago` and `npx vercel deploy --prod` **from
+  inside `frontend/`** — the CLI uploads whatever directory it runs in, so a
+  deploy started at the repository root would ship the whole repo and serve
+  no index page. Drag-and-drop works too: open
+  <https://vercel.com/new/drop>, drop the `frontend/` folder, and it returns
+  an HTTPS URL in a few seconds.
 - **Cloudflare Pages** — Workers & Pages → Create → Pages → *Upload assets*,
   then upload `frontend/`.
 

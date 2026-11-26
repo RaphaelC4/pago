@@ -1,12 +1,13 @@
 <!doctype html>
 <html lang="en">
 <head>
-<!-- Pago is the homepage: the bare root opens Pago's landing. The Paylink
-     app below stays reachable at ?flat=1 (how the e2e suite loads it) —
-     it just isn't what a visitor lands on any more. -->
+<!-- Pago is the homepage: the bare root opens Pago's landing, and any
+     query rides along (?chainId=196 reaches Pago that way). The Paylink app
+     below stays reachable at ?flat=1 (how the e2e suite loads it) — it just
+     isn't what a visitor lands on any more. -->
 <script>
-if (!location.search && (location.pathname === "/" || /\/index\.html$/.test(location.pathname))) {
-  location.replace("pago-onboarding.html" + location.hash);
+if (!new URLSearchParams(location.search).has("flat") && (location.pathname === "/" || /\/index\.html$/.test(location.pathname))) {
+  location.replace("pago-onboarding.html" + location.search + location.hash);
 }
 </script>
 <meta charset="utf-8">

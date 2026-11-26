@@ -6,8 +6,9 @@
    that is what makes the read-only Playwright project possible. Writes go
    through an injected EIP-1193 wallet (MetaMask, OKX Wallet, …) over
    `window.ethereum`; nothing here ever sees a private key, and there is no
-   relayer, because no relayer runs on X Layer — the payer signs `approve`
-   then `pay` themselves (v1 scope, see docs/RESEARCH.md).
+   relayer, because no relayer runs on X Layer. The payer signs `approve`
+   then `pay` themselves, or signs an EIP-3009 authorization off-chain that
+   any wallet may submit (frontend/gasless.js; docs/RESEARCH.md §16/§22).
 
    Contract calls are encoded by frontend/abi.js, a hand-rolled codec: the app
    is buildless, so it cannot import ethers or web3, and what Pago needs is a
@@ -17,9 +18,10 @@
    Rules enforced here are the contract's, not this page's invention: the
    note must be 1–280 UTF-8 bytes, the amount must be above zero, expiry is
    written in *chain* time, only the creator can cancel, the payee can never
-   pay their own link, and a payer must hold the tokens plus enough OKB for
-   two transactions. A rejection the chain makes is surfaced, never papered
-   over. */
+   pay their own link, and a payer must hold the tokens — plus enough OKB
+   for two transactions on the approve+pay path; on the gasless path the
+   payer needs no OKB at all and whoever submits it pays. A rejection the
+   chain makes is surfaced, never papered over. */
 
 import { XLAYER } from "./config.js?v=20261121b";
 import {
@@ -42,6 +44,12 @@ import {
   ledgerCsv,
 } from "./payout.js?v=20261121a";
 import { buildReceiptPdf, receiptFilename } from "./receipt.js?v=20261121a";
+import {
+  VALID_AFTER,
+  VALID_BEFORE,
+  authorizationTypedData,
+  encodePayWithAuthorization,
+} from "./gasless.js?v=20261125a";
 
 /* ── configuration ──────────────────────────────────────────────────────── */
 
@@ -636,10 +644,33 @@ const readTermsHash = (id) =>
     (r) => decodeReturn(["bytes32"], r)[0]
   );
 
+/* The three chain reads the gasless path needs — all unsigned eth_calls,
+   like everything above: the token's own `name()` (it *is* the EIP-712
+   domain binding, so a wrong name makes every signature invalid), the link
+   key the nonce derives from, and the payer's current authorization nonce
+   for that pair. Nothing is computed in the browser. */
+const readTokenName = () =>
+  ethCall(TOKEN, callData(SEL.name, [], [])).then((r) => decodeReturn(["string"], r)[0]);
+const readLinkKeyOf = (id) =>
+  ethCall(PAGO, callData(SEL.linkKeyOf, ["string"], [id])).then(
+    (r) => decodeReturn(["bytes32"], r)[0]
+  );
+const readAuthorizationNonce = (key, from) =>
+  ethCall(PAGO, callData(SEL.authorizationNonce, ["bytes32", "address"], [key, from])).then(
+    (r) => decodeReturn(["bytes32"], r)[0]
+  );
+
 /* ── wallet (EIP-1193) ──────────────────────────────────────────────────── */
 
 let account = null; // connected address, checksum as the wallet reports it
 let walletChain = null; // chain id the wallet is on, as a number
+
+/* The payer's signed-but-unsubmitted authorization: { linkId, from, value,
+   nonce, termsHash, signature }. It lives only in this tab's memory and is
+   bound to the account that signed it — renderPay drops it for any other
+   link or account, accountsChanged drops it outright, and a successful
+   submit drops it. */
+let gaslessDraft = null;
 
 const hasWallet = () => typeof window !== "undefined" && !!window.ethereum;
 
@@ -761,6 +792,7 @@ function wireWalletEvents() {
   if (!hasWallet()) return;
   window.ethereum.on?.("accountsChanged", (accounts) => {
     account = accounts && accounts[0] ? accounts[0] : null;
+    gaslessDraft = null; // a signature belongs to the account that made it
     paintWallet();
     if (currentPanel === "ledger") loadLedger();
   });
@@ -1258,6 +1290,13 @@ async function renderPay(id) {
   const status = $("#payStatus");
   status.hidden = true;
 
+  /* A gasless draft belongs to exactly one invoice and one signing
+     account: rendering any other combination drops it rather than showing
+     a signature that no longer matches what is on screen. */
+  if (gaslessDraft && (gaslessDraft.linkId !== id || !sameAddr(gaslessDraft.from, account))) {
+    gaslessDraft = null;
+  }
+
   let res;
   try {
     res = await readLink(id);
@@ -1523,6 +1562,34 @@ async function renderPay(id) {
       html += `<p class="pay-fee">You send <strong>${fmt(need)} ${esc(TOKEN_LABEL)}</strong>;
         the payee gets <strong>${fmt(willReceive)}</strong> on claim,
         <strong>${fmt(willFee)}</strong> is the fee. Two signatures: this one, then the payment.</p>`;
+
+      /* Gasless alternative: sign the transfer itself off-chain instead of
+         approve + pay. Only offered while the wallet actually holds the
+         amount (a signature without balance would only revert) and only
+         ever bound to this link and this account. */
+      html += `<div class="pay-gasless" id="gaslessBlock">`;
+      if (gaslessDraft) {
+        html += `<p class="pay-fee">Signed off-chain by <strong>${truncate(gaslessDraft.from, 10, 6)}</strong> —
+          no transaction, no gas. Anyone can submit it now.</p>
+          <div class="pay-items">
+            <div class="pi-row"><span class="pi-l">signer</span><span class="pi-p mono" title="${esc(gaslessDraft.from)}">${truncate(gaslessDraft.from, 10, 6)}</span></div>
+            <div class="pi-row"><span class="pi-l">bound to</span><span class="pi-p mono">${esc(gaslessDraft.linkId)}</span></div>
+            <div class="pi-row"><span class="pi-l">nonce</span><span class="pi-p mono" title="${esc(gaslessDraft.nonce)}">${truncate(gaslessDraft.nonce, 10, 6)}</span></div>
+          </div>
+          <button class="btn btn-lg" type="button" id="gaslessSubmit"><span>Submit signed payment</span></button>
+          <div class="cancel-row">
+            <button class="btn ghost" type="button" id="gaslessCopy"><span>Copy authorization</span></button>
+            <button class="btn ghost" type="button" id="gaslessDiscard"><span>Discard signature</span></button>
+          </div>`;
+      } else {
+        html += `<p class="pay-fee">No OKB? Sign the payment off-chain instead — your wallet
+          signs one authorization for free, and <strong>anyone</strong> can then submit it and
+          pay the gas. Same amount, same rules, same contract.</p>
+          <div class="cancel-row">
+            <button class="btn ghost" type="button" id="gaslessSign"><span>Sign payment authorization</span></button>
+          </div>`;
+      }
+      html += `</div>`;
     }
 
     setActions(html);
@@ -1533,6 +1600,17 @@ async function renderPay(id) {
     $("#mintBtn")?.addEventListener("click", () => runMint(id, account));
     $("#approveBtn")?.addEventListener("click", () => runApproveThenPay(id, need));
     $("#payBtn")?.addEventListener("click", () => runPay(id, need));
+    $("#gaslessSign")?.addEventListener("click", () => runSignGasless(id, need));
+    $("#gaslessSubmit")?.addEventListener("click", () => runSubmitGasless(id));
+    $("#gaslessCopy")?.addEventListener("click", async () => {
+      if (!gaslessDraft) return;
+      const okCopy = await copyText(JSON.stringify(gaslessDraft, null, 2));
+      toast(okCopy ? "Authorization copied — anyone can submit it." : "Copy failed.");
+    });
+    $("#gaslessDiscard")?.addEventListener("click", () => {
+      gaslessDraft = null;
+      renderPay(id);
+    });
   } catch (err) {
     setActions(`<div class="empty-line">Could not read your token balance: ${esc(friendly(err))}
       <div class="cancel-row"><button class="btn ghost" type="button" id="payRetry2"><span>Try again</span></button></div></div>`);
@@ -1622,6 +1700,72 @@ async function runMint(id, to) {
   } catch (err) {
     runTxLine("err", esc(friendly(err)));
     if (btn) { btn.disabled = false; btn.querySelector("span").textContent = `Mint 10 ${TOKEN_LABEL} test tokens`; }
+  }
+}
+
+/* Sign the gasless authorization: three chain reads, then one
+   eth_signTypedData_v4 the wallet computes the digest for. Nothing is
+   broadcast — the signature lands in gaslessDraft for anyone to submit. */
+async function runSignGasless(id, amount) {
+  const btn = $("#gaslessSign");
+  if (btn) { btn.disabled = true; btn.querySelector("span").textContent = "Waiting for signature…"; }
+  try {
+    if (!(await ensureChain())) throw new Error(`Switch the wallet to ${NETWORK_LABEL} and try again.`);
+    runTxLine("pending", "Reading the token name, nonce and terms from the chain…");
+    const [name, key, termsHash] = await Promise.all([
+      readTokenName(),
+      readLinkKeyOf(id),
+      readTermsHash(id),
+    ]);
+    const nonce = await readAuthorizationNonce(key, account);
+    const typed = authorizationTypedData({
+      name,
+      chainId: CHAIN_ID,
+      verifyingContract: TOKEN,
+      from: account,
+      to: PAGO, // the contract is the transfer's recipient (Pago.sol: transferWithAuthorization(from, address(this), …))
+      value: amount,
+      nonce,
+    });
+    runTxLine("pending", "Confirm the signature in your wallet — it costs nothing.");
+    const signature = await window.ethereum.request({
+      method: "eth_signTypedData_v4",
+      params: [account, JSON.stringify(typed)],
+    });
+    gaslessDraft = { linkId: id, from: account, value: amount.toString(), nonce, termsHash, signature };
+    toast("Signed off-chain — no transaction was sent.");
+    renderPay(id);
+  } catch (err) {
+    runTxLine("err", esc(friendly(err)));
+    if (btn) { btn.disabled = false; btn.querySelector("span").textContent = "Sign payment authorization"; }
+  }
+}
+
+/* Submit a draft authorization: any connected wallet may press this — the
+   contract checks the signature against `from`, not against the caller. */
+async function runSubmitGasless(id) {
+  const draft = gaslessDraft;
+  if (!draft || draft.linkId !== id) return;
+  const btn = $("#gaslessSubmit");
+  if (btn) { btn.disabled = true; btn.querySelector("span").textContent = "Submitting…"; }
+  try {
+    runTxLine("pending", "Submitting the signed authorization — confirm in your wallet…");
+    const data = encodePayWithAuthorization({
+      linkId: draft.linkId,
+      from: draft.from,
+      value: draft.value,
+      nonce: draft.nonce,
+      signature: draft.signature,
+      expectedTermsHash: draft.termsHash,
+    });
+    const { hash } = await sendTx(PAGO, data);
+    gaslessDraft = null;
+    runTxLine("ok", `Paid. <a href="${txUrl(hash)}" target="_blank" rel="noopener">View transaction</a>`);
+    toast("Payment sent — the payee can claim now.");
+    renderPay(id);
+  } catch (err) {
+    runTxLine("err", esc(friendly(err)));
+    if (btn) { btn.disabled = false; btn.querySelector("span").textContent = "Submit signed payment"; }
   }
 }
 

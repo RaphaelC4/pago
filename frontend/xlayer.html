@@ -170,6 +170,17 @@
       .pay-rule-row{grid-template-columns:1fr;gap:.2rem}
       .pay-rule-row b{padding-top:0}
     }
+    /* Gasless: the off-chain alternative to approve + pay, separated by a
+       hairline because it is a different path, not another step of the same
+       one. The signed draft reuses the card's row language; copy/discard
+       stack in the existing .cancel-row grid. */
+    .pay-gasless{
+      display:grid;gap:.6rem;margin-top:.9rem;
+      border-top:1px solid var(--line);padding-top:.9rem;
+    }
+    .pay-gasless .pay-items{margin-top:0;padding-top:0;border-top:0}
+    .pay-gasless .pay-fee{margin:0}
+    .pay-gasless .cancel-row{margin-top:0}
   </style>
 <!-- Same three weights the first screen uses, preloaded for the same reason. -->
 <link rel="preload" href="fonts/satoshi-400.woff2" as="font" type="font/woff2" crossorigin>
@@ -270,6 +281,6 @@
 
 <!-- One module runs both documents; here it boots the payment card alone.
      The share card's QR helper lives with the site, which owns sharing now. -->
-<script type="module" src="xlayer.js?v=20261125a"></script>
+<script type="module" src="xlayer.js?v=20261125b"></script>
 </body>
 </html>

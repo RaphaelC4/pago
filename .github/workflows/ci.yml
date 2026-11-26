@@ -79,6 +79,8 @@ jobs:
             frontend/test/receipt.test.mjs \
             frontend/test/settlement.test.mjs \
             frontend/test/cancel.test.mjs \
+            frontend/gasless.js \
+            frontend/test/gasless.test.mjs \
             workers/tidepool/src/index.js \
             workers/tidepool/test/networks.test.mjs \
             workers/tidepool/test/quote.test.mjs \
@@ -250,6 +252,12 @@ jobs:
       # in-flight-attempt warn-but-allow rule.
       - name: node frontend/test/cancel.test.mjs
         run: node frontend/test/cancel.test.mjs
+
+      # Gasless payer path — EIP-712 typed-data shape (RESEARCH §16) plus a
+      # byte-exact replay of the settled mainnet payment 0x0cb7a79a…811f6
+      # (RESEARCH §22): the encoder must reproduce the bytes the chain took.
+      - name: node frontend/test/gasless.test.mjs
+        run: node frontend/test/gasless.test.mjs
 
   # ── item 9 (parse worker tests) ──────────────────────────────────────────
   parse:

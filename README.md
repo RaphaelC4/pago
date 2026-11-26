@@ -20,12 +20,13 @@ Run it from `frontend/` — static files, no build step, see
 - **Create a link in one transaction.** Amount, note, expiry and two split
   tables — a default that must pay exactly 100%, and a rule candidate — are
   fixed at creation; a share card with a QR code follows.
-- **Two payer paths.** An ordinary ERC-20 `approve` + `pay`, or a gasless
-  EIP-3009 authorization the payer signs off-chain and a third party submits.
-  **Both settle on the mainnet contract** — a live 0.1 USD₮0 gasless payment
-  settled there on 2026-11-25 with the payer spending zero OKB (step 9,
-  RESEARCH §22). It briefly shipped with a selector bug, fixed before the
-  redeploy; see
+- **Two payer paths, both offered by the pay card.** An ordinary ERC-20
+  `approve` + `pay`, or a gasless EIP-3009 authorization the payer signs
+  off-chain — the card's *Sign payment authorization* button — which any
+  other wallet then submits. **Both settle on the mainnet contract** — a live
+  0.1 USD₮0 gasless payment settled there on 2026-11-25 with the payer
+  spending zero OKB (step 9, RESEARCH §22). It briefly shipped with a
+  selector bug, fixed before the redeploy; see
   [The gasless selector bug and its fix](#the-gasless-selector-bug-and-its-fix).
 - **The payout is computed, not argued.** At claim, the contract asks a
   published 104-gate circuit (Split3) whether the rule table holds; anything
@@ -222,11 +223,18 @@ settle through ordinary transactions on X Layer:
   bug above — so on mainnet today the working route is the normal `approve` +
   `pay`.
 
-**The web page does not offer it yet.** The pay card has no gasless submit
-button — a payer's wallet only ever signs `approve` + `pay`. The gasless leg
-is demonstrated by script instead: the twelve-transaction run across deploy
-and both payer paths, recorded in [`docs/RESEARCH.md` §17](docs/RESEARCH.md),
-while the browser journey signs nothing off chain.
+**The web page offers it too.** The pay card carries a *Sign payment
+authorization* button beside the ordinary path: it reads the token's
+`name()`, the link key and the payer's current nonce from the chain, has the
+wallet sign the EIP-712 authorization — no transaction, no gas — and shows a
+draft that any connected wallet can press *Submit signed payment* on, or
+copy out as JSON. The encoder behind that button replays the settled
+mainnet payment byte for byte
+([`frontend/test/gasless.test.mjs`](frontend/test/gasless.test.mjs)), and
+the four chain values it reads were re-checked live against the contract;
+what has not happened yet is the button's own click-through in a browser,
+still listed as pending below. The original scripted run across deploy and
+both payer paths remains in [`docs/RESEARCH.md` §17](docs/RESEARCH.md).
 
 **Who runs it: whoever's transaction it is.** Every state change — create,
 pay, claim — is sent by the participant whose wallet it comes from.
@@ -242,10 +250,13 @@ for those two transactions.
 
 ### The gasless selector bug and its fix
 
-**The gasless path does not settle against the real tokens on the mainnet
-contract as it stands today.** The ordinary `pay()` path is unaffected and is
-what the page offers; this section exists so nobody has to discover the
-gasless failure the hard way.
+**The gasless path once failed against the real tokens — this section is
+that failure and its fix.** The bug lived in the build deployed 2026-11-20:
+`payWithAuthorization` called a function the real tokens do not have, so the
+token hop of every gasless payment reverted. The ordinary `pay()` path was
+never affected. The current contract carries the fix (status at the end of
+this section), and the record stays so nobody has to discover the failure
+the hard way.
 
 The `IEIP3009` interface inside `contracts-evm/src/Pago.sol` declared the two
 authorization window arguments as `uint64`:
@@ -533,6 +544,7 @@ Tier 2 and Phase 0 claims against real X Layer mainnet state. **150+ tests,
 
 ```powershell
 node frontend/test/abi.test.mjs       # ABI codec: selectors + encoding vs cast, decoding vs live-chain vectors
+node frontend/test/gasless.test.mjs   # gasless path: EIP-712 shape + byte-exact replay of settled mainnet tx
 cd e2e; npm install
 npx playwright test --project=smoke   # 32 tests: mocked chain, no egress
 npx playwright test --project=testnet # read-only live checks, dispatched manually only
@@ -543,12 +555,15 @@ human, in `e2e/TESTNET.md` Journey D — and the browser journey has not been
 run end to end yet (the *scripted* journey has: twelve transactions across
 deploy and both payer paths, deltas summing to zero, with the rule table
 paying one claim and the fallback paying the other —
-[`docs/RESEARCH.md` §17](docs/RESEARCH.md)). The gasless payment leg is
-proven by that script rather than by this page: the page has the payer sign
-and pay both transactions themselves, while any account can submit an
-EIP-3009 authorization off chain. Gasless payments work at the contract
-level and are proven on mainnet; the web page doesn't yet include a
-one-click signing button — a feature chosen to leave for later, not a flaw.
+[`docs/RESEARCH.md` §17](docs/RESEARCH.md)). The page's gasless button is
+wired and its payloads are proven — `gasless.test.mjs` replays the settled
+mainnet payment byte for byte, and its four chain reads were re-checked
+live — but it has not been clicked through with a real wallet in a browser
+yet; that click-through is part of the browser journey still pending.
+Gasless payments themselves work at the contract level and are proven on
+mainnet; on the ordinary path the payer still signs and pays both
+transactions themselves, while any account can submit an EIP-3009
+authorization off chain.
 Full record: [`docs/RESEARCH.md` §16](docs/RESEARCH.md)
 (page) and [§17](docs/RESEARCH.md) (contract). **That run exercised the tokens'
 EIP-3009 directly; the selector bug below was found afterwards, in Pago's own
@@ -609,11 +624,12 @@ via `?chainId=196`. **Cost:** testnet free, mainnet gas in OKB.
 
 ## Future work
 
-- **A one-click gasless signing button in the web page.** Gasless payments
-  work at the contract level and are proven on mainnet (pay
-  `0x0cb7a79a…11f6`, claim `0x8eb3a165…0d45`); the web page doesn't yet
-  include a one-click signing button. It is a feature deliberately left for
-  later, not a flaw in the contract.
+- **Run the browser journey end to end with a wallet.** The gasless button
+  is in the pay card and its payloads are proven — a byte-exact replay of
+  mainnet `0x0cb7a79a…11f6` in `frontend/test/gasless.test.mjs` — but no one
+  has clicked it through in a browser yet. That is the last unticked box in
+  Tests, and `e2e/TESTNET.md` Journey D already stages the same run for the
+  ordinary path.
 
 ---
 

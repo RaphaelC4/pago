@@ -43,6 +43,15 @@ html.splash-on .tabbar{opacity:0}
 /* Without a tablist in the header, the right group needs to self-align. */
 .header-inner .header-right{margin-left:auto;position:relative}
 
+/* .wrap resolves padding-inline's percentage against the VIEWPORT, not
+   against its own max-width: past 1240px the formula hands .wrap-ready
+   (900px cap) gutters meant for the 1200px grid — at 1920 the content box
+   computed to 180px, the share grid's 1fr track collapsed to 0 and the QR
+   landed on top of Copy. Above that width the gutter is pinned to the
+   formula's own 1.25rem floor; margin-inline:auto keeps the capped card
+   centered. (pago-home.css is not ours to edit — the fix lives here.) */
+@media (min-width:1240px){ .wrap-ready{padding-inline:1.25rem} }
+
 /* ── splash: the bull, an animated load bar, then the homepage opens ── */
 .splash{
   position:fixed;inset:0;z-index:200;background:#000;overflow:hidden;

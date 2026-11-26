@@ -16,6 +16,16 @@
        renders. The PDF button stays live — unlike the homepage's static
        copy, this page can actually read the claim events to build it. -->
   <style>
+    /* ── page frame: .wrap's viewport-derived gutters vs this page's caps ── */
+    /* .wrap resolves padding-inline's percentage against the VIEWPORT, not
+       against its own max-width: past 1240px .wrap-pay (540px cap) received
+       gutters meant for the 1200px grid — at 1920 the content box went to
+       zero and the pay card rendered as a 50px sliver dead-center. Above
+       that width the gutter is pinned to the formula's own 1.25rem floor;
+       margin-inline:auto keeps the capped wrap centered. (styles.css is
+       frozen — the fix lives here.) */
+    @media (min-width:1240px){ .wrap-pay{padding-inline:1.25rem} }
+
     /* ── payout result: the card's own rows, where the pay button was ── */
     .pay-result{display:grid;gap:1rem}
     .pay-result-ok{display:flex;align-items:center;gap:.6rem;margin:0;font-size:15px}

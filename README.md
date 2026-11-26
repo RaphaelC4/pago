@@ -546,7 +546,7 @@ Tier 2 and Phase 0 claims against real X Layer mainnet state. **150+ tests,
 node frontend/test/abi.test.mjs       # ABI codec: selectors + encoding vs cast, decoding vs live-chain vectors
 node frontend/test/gasless.test.mjs   # gasless path: EIP-712 shape + byte-exact replay of settled mainnet tx
 cd e2e; npm install
-npx playwright test --project=smoke   # 32 tests: mocked chain, no egress
+npx playwright test --project=smoke   # 34 tests: mocked chain, no egress
 npx playwright test --project=testnet # read-only live checks, dispatched manually only
 ```
 

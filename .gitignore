@@ -38,6 +38,9 @@ skills-lock.json
 # test output
 test-results/
 
+# demo-video working files — recorded clips, title cards, renders (regenerable)
+e2e/video/
+
 # local submission notes — operator only, never public
 SUBMISSION.local.md
 .vercel

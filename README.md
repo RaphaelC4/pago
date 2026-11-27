@@ -143,11 +143,13 @@ split (payee 995,000, `usedRuleSplit=false`); payee +1,492,500, payer
 −1,492,500, the contract kept 0 (links `pago-261125-020108-a` / `-b`).
 **This run is the post-fix proof:** both the deployed Pago and the deployed
 mock carry the corrected `uint256` EIP-3009 window, so the gasless leg
-settles through the same selector shape real USD₮0 and USDG implement
-(`0xcf092995` / `0x91d26f16`). The earlier 2026-11-19 run against the
-pre-fix pair (`0x36d212b8…`) settled as well — but both sides shared the old
-`uint64` shape and only agreed with each other, so it is kept as history,
-not as evidence for real tokens. Another copy (`0xA4AA0B19…17bfF`) stays on
+settles through the same selector real USD₮0 and USDG implement
+(`0xcf092995`); the mock's `digestOf` window helper hashes to `0x91d26f16`,
+also `uint256` — test-only, since the real tokens have no `digestOf`. The
+earlier 2026-11-19 run against the pre-fix pair (`0x36d212b8…`) settled as
+well — but both sides shared the old `uint64` shape and only agreed with
+each other, so it is kept as history, not as evidence for real tokens.
+Another copy (`0xA4AA0B19…17bfF`) stays on
 chain as the **failure-path proof**, where leg 1 is checked against the
 recorded TapeOut shell the stand-in can never match, so both claims fell to
 the default split instead ([`docs/RESEARCH.md` §17](docs/RESEARCH.md)). The
@@ -176,16 +178,18 @@ Anyone can check the binding themselves on X Layer mainnet (chain 196):
 
 1. `cast code 0x9de448A1CE9537d24199B3b5355239d73aA6F591 --rpc-url https://rpc.xlayer.tech`
    — processor #340: a 295-byte beacon-proxy shell.
-2. `cast keccak <that code>` → `0x57aa306f…17d5`, the recorded shell hash.
+2. `cast keccak $(cast code 0x9de448A1CE9537d24199B3b5355239d73aA6F591 --rpc-url https://rpc.xlayer.tech)`
+   → `0x57aa306f…17d5`, the recorded shell hash.
    Look inside those bytes: the `PUSH32` literal and the EIP-1967 beacon
    slot both read `0xf70d1ed4…bd0991c`.
-3. `cast call 0xf70d1ed4f62CF3780157B0b421b7E2F45bD0991C "implementation()(address)"`
+3. `cast call 0xf70d1ed4f62CF3780157B0b421b7E2F45bD0991C "implementation()(address)" --rpc-url https://rpc.xlayer.tech`
    → `0x977f217887E085D298Cb3819cDAD5A0ee35F29B2`.
-4. `cast keccak $(cast code 0x977f217887E085D298Cb3819cDAD5A0ee35F29B2 …)`
+4. `cast keccak $(cast code 0x977f217887E085D298Cb3819cDAD5A0ee35F29B2 --rpc-url https://rpc.xlayer.tech)`
    → `0x7a15c353…1b30`, the recorded implementation hash.
-5. `cast call <Pago> "circuitBeacon()(address)"` must return `0xf70d…` —
-   the argument the constructor was given, i.e. the same address steps 1–2
-   found inside the shell.
+5. `cast call 0x2fC4180db7318F4364F6FC559A25359c9F537D3e "circuitBeacon()(address)" --rpc-url https://rpc.xlayer.tech`
+   must return `0xf70d1ed4f62CF3780157B0b421b7E2F45bD0991C` — the argument
+   the constructor was given, i.e. the same address steps 1–2 found inside
+   the shell.
 
 The disassembly and every recorded value are in
 [`docs/RESEARCH.md` §18](docs/RESEARCH.md), and `ForkPin.t.sol` runs those
@@ -751,11 +755,12 @@ gasless payer, who needs none: whoever submits the signature pays.
 7. **See a payment rejected.** Send less than the invoice (or pay an expired
    one): the transfer is refused or fully returned, the link stays `OPEN`,
    and the payer loses only gas.
-8. **Check the pin yourself.**
-   `cast call <Pago> "evaluatorPinned()(bool)" --rpc-url https://rpc.xlayer.tech`
-   — reads `true` on mainnet against the recorded TapeOut references, and
-   `true` on the MOCK testnet build as well: there both legs pass against
-   the stand-ins, which is why the page labels it "testnet pin reference is
+8. **Check the pin yourself.** Copy-paste, mainnet:
+   `cast call 0x2fC4180db7318F4364F6FC559A25359c9F537D3e "evaluatorPinned()(bool)" --rpc-url https://rpc.xlayer.tech`
+   → `true`, against the recorded TapeOut references. Testnet:
+   `cast call 0xa65118a1434123648515929ce744D591ECC01a4B "evaluatorPinned()(bool)" --rpc-url https://testrpc.xlayer.tech`
+   → `true` as well — there both legs pass against the stand-ins, which is
+   why the page labels it "testnet pin reference is
    the MOCK stand-in; mainnet uses the recorded TapeOut references" instead
    of a bare "pinned".
 

@@ -198,6 +198,20 @@ carries the selector bug and no payment link was ever created on it.
 Nothing in the repo may claim explorer verification before the explorer
 shows it.
 
+**Re-confirmed 2026-11-27.** OKLink's own address-status API, fired by its
+page in a live browser session, returns `"verifyStatus":"verified"` for the
+current Pago together with `contractCreator 0x3f1004aa…a2fc4` and
+`contractCreateTxHash 0x37683583…98fe7` — both matching the README; the
+compiler details above are the 2026-11-25 read and were not re-fetched. The
+same session re-ran every `cast` command the README prints, verbatim as
+written (mainnet + testnet `evaluatorPinned()`, all five beacon-binding
+steps), and re-read every address, codehash, selector, `DOMAIN_SEPARATOR`
+and click-through tx hash against live state: all match, except one README
+sentence that attributed the mock's `digestOf` selector `0x91d26f16` to the
+real tokens — corrected (USDG answers `FacetNotFound`, USD₮0 reverts, the
+mock returns the digest). The superseded contract's status page timed out
+on this date and was not re-read; no repo claim depends on it.
+
 ## 10. Commands
 
 ```text

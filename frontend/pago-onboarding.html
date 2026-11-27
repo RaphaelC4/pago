@@ -776,7 +776,7 @@ html.splash-on .tabbar{opacity:0}
             <div class="field amount-field">
               <label class="label" for="amount">Amount</label>
               <div class="amount-input">
-                <input id="amount" name="amount" type="text" inputmode="decimal" placeholder="0" required autocomplete="off">
+                <input id="amount" name="amount" type="text" inputmode="decimal" value="10" placeholder="0" required autocomplete="off">
                 <span id="amountSymbol">pUSD</span>
               </div>
             </div>
@@ -825,10 +825,10 @@ html.splash-on .tabbar{opacity:0}
                   <div class="split-seat"><span class="seat-name"><button type="button" class="seat-avatar-btn" data-seat="3" aria-label="Change avatar for Seat 3"><img class="seat-avatar" data-seat-avatar="3" src="img/seat3-avatar.png" alt="" width="28" height="28" decoding="async"></button>Seat 3</span><input class="split-address" aria-label="Seat 3 recipient" placeholder="Recipient address (blank = you)" autocomplete="off" spellcheck="false"><label>Share <input class="split-share" aria-label="Seat 3 share in percent" type="number" min="0" max="100" step="5" placeholder="0" inputmode="numeric">%</label></div>
                 </div>
                 <p class="field-error" id="splitTotalErr" hidden>Shares must add up to 100% before you can create the link.</p>
-                <p class="split-help">A blank address means your connected wallet &mdash; that share goes to you.</p>
+                <p class="split-help">These shares are the <strong>rule table</strong> &mdash; they must add up to 100%. A blank address means your connected wallet, so that share goes to you.</p>
                 <details class="split-fallback">
-                  <summary>If the rule check fails, everything goes to you.</summary>
-                  <p>The check runs when the payment is made. If it does not pass, your wallet receives the full amount instead.</p>
+                  <summary>What if the circuit fails?</summary>
+                  <p>Every link also carries a <strong>default table</strong> that always pays 100% to your wallet. The Split3 circuit checks the rule table when the payment is made; if the check fails &mdash; or the circuit cannot be reached &mdash; the default table pays out instead, so the money is never stuck.</p>
                 </details>
               </div>
             </div>
@@ -871,6 +871,7 @@ html.splash-on .tabbar{opacity:0}
       <div class="toolbar">
         <input class="mono" id="creatorInput" spellcheck="false" autocomplete="off" placeholder="0x…" aria-label="Creator address">
         <button class="btn btn-sm" type="button" id="ledgerLoad"><span>Load</span></button>
+        <button class="btn btn-sm ghost" type="button" id="ledgerMine"><span>Use my wallet</span></button>
         <button class="btn btn-sm ghost export-btn" type="button" id="ledgerCsv" hidden>
           <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M8 2v8m0 0 3-3m-3 3L5 7M3 12.5h10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span>Export CSV</span>

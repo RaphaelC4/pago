@@ -257,7 +257,7 @@ test.describe("X Layer / Pago page", () => {
     await expect(line).toContainText("No split. The full amount, minus the 0.5% fee, goes to");
     await expect(line).toContainText("0x7fce520d881454ea234d371e1256b75843609b62");
     await expect(page.locator("#payCard .pay-nosplit-sub")).toHaveText(
-      "The rule check can't change where this money goes."
+      "The rule check can't change where this money goes. If the circuit fails at payout time, this same default table pays out — the money never gets stuck."
     );
     /* It leads the details: the invoice table, the collapsed section and
        the pay action all come after it. */
@@ -285,17 +285,17 @@ test.describe("X Layer / Pago page", () => {
     });
     expect(beforeActions).toBe(true);
 
-    /* Open it: rule, default split, cap and the fallback sentence are all
-       still on the page. */
+    /* Open it: rule table, default table, cap and the fallback sentence are
+       all still on the page. */
     await page.locator("#payCard .pay-details summary").click();
     await expect(page.locator("#payCard .pay-details .pay-rule-card")).toBeVisible();
     const rows = page.locator("#payCard .pay-details .pay-rule-row b");
     await expect(rows).toHaveCount(3);
-    await expect(rows.nth(0)).toHaveText("Rule");
-    await expect(rows.nth(1)).toHaveText("Default split");
+    await expect(rows.nth(0)).toHaveText("Rule table");
+    await expect(rows.nth(1)).toHaveText("Default table");
     await expect(rows.nth(2)).toHaveText("Cap");
     await expect(page.locator("#payCard .pay-details .rule-fallback")).toContainText(
-      "If the rule check fails at payout time, this default split applies instead"
+      "If the rule check fails at payout time — or the circuit cannot be reached — this default table applies instead"
     );
     /* Network and MOCK labelling travel with the detail, not instead of it. */
     await expect(page.locator("#payCard .pay-details")).toContainText("X Layer testnet");
@@ -324,7 +324,7 @@ test.describe("X Layer / Pago page", () => {
     await expect(page.locator("#claimSummary")).toContainText("amounts read from payout events", {
       timeout: 15_000,
     });
-    await expect(page.locator("#claimRows")).toContainText(/default split/i, { timeout: 15_000 });
+    await expect(page.locator("#claimRows")).toContainText(/default table/i, { timeout: 15_000 });
 
     /* The legs the claim actually paid sit one click away, collapsed. */
     const legs = page.locator("#claimRows details.pay-details");

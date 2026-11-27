@@ -117,7 +117,7 @@ test.describe("X Layer testnet read-only", () => {
     });
     /* Case-insensitive: the row's casing belongs to the UI design, the
        fact being pinned is which table paid. */
-    await expect(page.locator("#claimRows")).toContainText(/default split/i, { timeout: 60_000 });
+    await expect(page.locator("#claimRows")).toContainText(/default table/i, { timeout: 60_000 });
 
     /* Nothing payable on a settled invoice: no approve, no pay, no claim. */
     await expect(page.locator("#payBtn")).toHaveCount(0);

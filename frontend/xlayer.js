@@ -489,7 +489,7 @@ async function fillClaimReceipt(link) {
      collapsed, so the settled card still reads like the open one. */
   rows.innerHTML = `<div class="pay-items">
       <span class="pi-h">payout events</span>
-      <div class="pi-row"><span class="pi-l">split applied</span><span class="pi-p">${claim.usedRuleSplit ? "Rule table" : "Default split"}</span></div>
+      <div class="pi-row"><span class="pi-l">split applied</span><span class="pi-p">${claim.usedRuleSplit ? "Rule table" : "Default table"}</span></div>
       <div class="pi-row"><span class="pi-l">Pago fee</span><span class="pi-p">${formatUnits(claim.fee, DECIMALS)} ${esc(TOKEN_LABEL)}${feeLeg ? ` · ${truncate(feeLeg.recipient, 7, 5)}` : ""}</span></div>
     </div>
     <details class="pay-details">
@@ -589,10 +589,10 @@ function paymentRulesMarkup(link, policy) {
     : "";
   return `<section class="pay-rule-card" aria-label="Payment rule and fallback details">
     <div class="pay-rule-title"><span>Before you pay</span><span class="rule-tag">Split3 rule</span></div>
-    <div class="pay-rule-row"><b>Rule</b><div>Checks whether the three rule shares total 100% (${esc(NETWORK_LABEL)}${circuitId}).<div class="rule-share-list">${splitRowsMarkup(link.ruleSplit, link.creator)}</div><span class="rule-note">Netlist hash · <span class="mono">${esc(link.netlistHash)}</span></span><span class="rule-note">${processorLabel} · <span class="mono">${esc(processor || "Address unavailable")}</span></span>${testnetReferences}</div></div>
-    <div class="pay-rule-row"><b>Default split</b><div><div class="rule-share-list">${splitRowsMarkup(link.defaultSplit, link.creator)}</div></div></div>
+    <div class="pay-rule-row"><b>Rule table</b><div>Checks whether the three rule shares total 100% (${esc(NETWORK_LABEL)}${circuitId}).<div class="rule-share-list">${splitRowsMarkup(link.ruleSplit, link.creator)}</div><span class="rule-note">Checked by the Split3 circuit when the payment is made.</span><span class="rule-note">Netlist hash · <span class="mono">${esc(link.netlistHash)}</span></span><span class="rule-note">${processorLabel} · <span class="mono">${esc(processor || "Address unavailable")}</span></span>${testnetReferences}</div></div>
+    <div class="pay-rule-row"><b>Default table</b><div><div class="rule-share-list">${splitRowsMarkup(link.defaultSplit, link.creator)}</div><span class="rule-note">Applies whenever the check does not pass.</span></div></div>
     <div class="pay-rule-row"><b>Cap</b><div><strong>${fmt(cap)} ${esc(TOKEN_LABEL)}</strong><span class="rule-note">${esc(enforcement)}</span></div></div>
-    <p class="rule-fallback">If the rule check fails at payout time, this default split applies instead</p>
+    <p class="rule-fallback">If the rule check fails at payout time — or the circuit cannot be reached — this default table applies instead, so the link can never freeze.</p>
   </section>`;
 }
 
@@ -1344,7 +1344,7 @@ async function renderPay(id) {
   const prelude = payeeDestination
     ? `<div class="pay-nosplit">
          <p class="pay-nosplit-line">No split. The full amount, minus the ${NET.feeBps / 100}% fee, goes to <span class="mono pay-nosplit-addr" title="${esc(payeeDestination)}">${esc(payeeDestination)}</span>.</p>
-         <p class="pay-nosplit-sub">The rule check can't change where this money goes.</p>
+         <p class="pay-nosplit-sub">The rule check can't change where this money goes. If the circuit fails at payout time, this same default table pays out — the money never gets stuck.</p>
        </div>`
     : "";
   const details = payeeDestination
@@ -1525,7 +1525,7 @@ async function renderPay(id) {
   if (!paymentPolicy) {
     setActions(`<div class="empty-line">Live rule and cap details could not be read. Payment is paused until the network answers.
       <div class="cancel-row"><button class="btn ghost" type="button" id="policyRetry"><span>Try again</span></button></div></div>`);
-    setNote("Review the rule, default split and current cap above before paying.");
+    setNote("Review the rule table, default table and current cap above before paying.");
     $("#policyRetry")?.addEventListener("click", () => renderPay(id));
     return;
   }
@@ -1861,7 +1861,7 @@ async function loadLedger() {
   }
 
   if (!isAddress(creator)) {
-    list.innerHTML = `<div class="empty-line">That is not an address. Pago ledgers are keyed by a 0x… address, not a NEAR account name.</div>`;
+    list.innerHTML = `<div class="empty-line">That is not an address. Pago ledgers are keyed by a 0x… address — paste the creator's full wallet address.</div>`;
     $("#ledgerStats").hidden = true;
     $("#ledgerFilters").hidden = true;
     $("#ledgerCsv").hidden = true;
@@ -2156,6 +2156,17 @@ function boot() {
   $("#createForm")?.addEventListener("submit", onCreate);
 
   $("#ledgerLoad")?.addEventListener("click", loadLedger);
+
+  /* "Use my wallet": the one-click path from the empty ledger to the
+     visitor's own links — connects if nothing is connected yet, drops the
+     address into the field (so the box always shows which account is being
+     read) and loads in the same press. */
+  $("#ledgerMine")?.addEventListener("click", async () => {
+    const input = $("#creatorInput");
+    if (!account && !(await connect())) return;
+    if (input) input.value = account;
+    loadLedger();
+  });
 
   /* CSV export: one row per link, with the claim's event facts for claimed
      links (read live, sequentially — the RPC's log cap makes each one a

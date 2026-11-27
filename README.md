@@ -680,14 +680,16 @@ gasless payer, who needs none: whoever submits the signature pays.
    locally, `cd frontend && python -m http.server 8321` and
    open `http://localhost:8321/pago-onboarding.html` (ES modules need http,
    not `file://`).
-2. **Create a link.** Connect a wallet on the right chain, enter an amount and
-   an optional note, press *Create link*, approve the transaction. The share
-   card follows: copy field, QR code, WhatsApp / Telegram / email buttons.
+2. **Create a link.** Connect a wallet on the right chain, enter an amount
+   (prefilled at 10 — change it) and an optional note, press *Create link*,
+   approve the transaction. The share card follows: copy field, QR code,
+   WhatsApp / Telegram / email buttons.
 3. **Open the link** in a second browser profile. See the amount, the 0.5%
    fee, the expiry, and the destination in plain words — one recipient reads
    **"No split. The full amount, minus the 0.5% fee, goes to \<address\>."**,
    a split reads the full rule table with the sentence **"If the rule check
-   fails at payout time, this default split applies instead"**.
+   fails at payout time — or the circuit cannot be reached — this default
+   table applies instead, so the link can never freeze."**
 4. **Pay it.** Approve the token if the allowance is missing, press *Pay*,
    approve the transaction — or take the gasless path instead: *Sign
    payment authorization* (free, needs no OKB), then *Submit signed
@@ -697,8 +699,9 @@ gasless payer, who needs none: whoever submits the signature pays.
    recipients and the 0.5% fee, never the caller. The payout result renders
    from the claim events: seat legs, fee and claim transaction, with the rest
    behind *More details*.
-6. **Check My links.** Load a creator address: id, amount, status, filters,
-   CSV export — read straight from `getLinksByCreator`, unsigned.
+6. **Check My links.** Press *Use my wallet* — or load any creator address:
+   id, amount, status, filters, CSV export — read straight from
+   `getLinksByCreator`, unsigned.
 7. **See a payment rejected.** Send less than the invoice (or pay an expired
    one): the transfer is refused or fully returned, the link stays `OPEN`,
    and the payer loses only gas.

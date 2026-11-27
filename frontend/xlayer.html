@@ -167,9 +167,13 @@
       font-variant-numeric:tabular-nums;
     }
     .rule-note{display:block;margin:.3rem 0 0;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+    /* The circuit-failure answer, called out instead of buried: the accent
+       border and tint match the Split3 tag above, so the eye lands on the
+       one sentence that says the link can never freeze. */
     .rule-fallback{
-      margin:0;font-size:12px;color:var(--muted);
-      border-top:1px solid rgba(255,255,255,.07);padding-top:.65rem;
+      margin:0;font-size:12.5px;line-height:1.5;color:#e8eae6;
+      border:1px solid rgba(188,255,47,.35);background:rgba(188,255,47,.06);
+      border-radius:10px;padding:.6rem .7rem;
     }
     /* After the base rules on purpose: at equal specificity the later rule
        wins, so this query has to sit below them to actually stack. The label

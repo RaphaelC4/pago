@@ -436,6 +436,38 @@ piece of published hardware instead:
   count the gates themselves. There is no privileged reader, no oracle, and no
   admin who can relax the rule without deploying visibly different code.
 
+**Why this rule, and not a fancier one.** *The three shares must add up to
+100%* is deliberately the smallest rule that could be taped out — the
+design, not a shortcut. A rule earns input bits only if it passes all
+three tests:
+
+- **It decides money.** The verdict selects between two payout tables
+  fixed at creation, so the condition has to be a real payout condition,
+  not a demonstration.
+- **It stays fully enumerable.** Split3's input space is 15 bits — 32,768
+  vectors — which is what lets `test/Split3.t.sol` prove the netlist agrees
+  with plain arithmetic on *every* input instead of a sample. A time-based
+  rule needs a timestamp input (40+ bits): the exhaustive proof, the
+  strongest claim this project makes about its circuit, would decay into a
+  sample the moment the rule got "more interesting".
+- **It does not re-check what the contract already enforces, where it
+  already enforces it.** The master prompt's own rule 2 names the full
+  condition — "due date vs block.timestamp, credited amount, fields fixed
+  at creation" — and each part is enforced fail-closed in contract code:
+  the deadline reverts `pay` ("link has expired") against
+  `block.timestamp`, the credited amount derives the payout base, and even
+  a verdict of "yes" from the circuit is re-checked by the contract's own
+  100% sum before a unit moves. `createLink` deliberately does *not* check
+  the rule table's sum either — its sum is what Split3 judges. The circuit
+  is handed the one open condition, the shape of the split, and nothing it
+  would only have to agree with.
+
+A fancier rule is not a drop-in change either: `circuitId`, the beacon, the
+implementation and both codehash references are immutable constructor
+inputs, so a new netlist means a new deployment — which is why richer
+rules sit in [Future work](#future-work) rather than being squeezed in
+before the audit.
+
 **Pago now actually calls it.** Every link carries two split tables fixed at
 creation: a *default* (must pay out exactly 100%, no setter) and a *rule*
 candidate (shares 0–31, their sum is precisely what Split3 judges). At
@@ -475,6 +507,20 @@ read-only probes today; nobody can swap it now, but a pin only ever proves
 the code at the moment it was checked, hence the live re-run. Full
 rule-by-rule audit: [`docs/RESEARCH.md` §17](docs/RESEARCH.md); the pin
 investigation itself: [§18](docs/RESEARCH.md).
+
+**Every failure lands in the same place — that is the architecture.** A
+reverting processor, a call that exhausts the eval gas cap, a short or long
+return, dirty padding, a payload byte outside `{0,1}`, a verdict the
+contract's own sum disagrees with, a failing pin check, a recipient whose
+transfer fails — each is an independent failure mode with its own handling
+(strict decoding, the solvency re-check, the live two-leg check, `owed[]`),
+and all of them bottom out at the default table fixed at creation, or at
+the recipient's own withdrawable entry. The contract's header states the
+invariant directly: the only ways `claim` reverts are "link not found" and
+"link is not paid". Nothing about the circuit, the beacon, the pin or a
+recipient can stop a paid link from paying out — fail-closed is not a
+claim that Split3 is correct; it is the property that holds even when
+Split3, its processor, or the chain around them are not.
 
 **On testnet that processor is a labelled stand-in, not hardware.** TapeOut
 exists only on X Layer mainnet (the factory has no code on chain 1952 —

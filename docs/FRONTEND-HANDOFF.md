@@ -61,10 +61,10 @@ mainnet Pago and testnet Pago (they share one dispatcher):
 |---|---|---|
 | `createLink(string,uint256,address,string,uint64,(address[3],uint8[3]),(address[3],uint8[3]))` | `0x6c5b7a11` | **current `0x167f1e66` is WRONG** — absent from both chains (old 5-param form is gone) |
 | `pay(string,uint256,bytes32)` | `0x8032337c` | **current `0x901c5953` is WRONG** — absent from both chains (2-param form is gone) |
-| `payWithAuthorization(string,address,uint256,uint64,uint64,bytes32,bytes,bytes32)` | `0x69c1372a` | not in `abi.js` yet (gasless payer path) |
-| `termsHash(string)` | `0xe93341c4` | not in `abi.js` yet — required by both pay paths |
-| `evaluatorPinned()` | `0xca24c8f4` | not in `abi.js` yet |
-| `MAX_LINK_AMOUNT_UNPINNED(address)` | `0x7754d140` | not in `abi.js` yet |
+| `payWithAuthorization(string,address,uint256,uint64,uint64,bytes32,bytes,bytes32)` | `0x69c1372a` | correct — in `abi.js`, calldata built by `frontend/gasless.js` (the pay card's gasless path) |
+| `termsHash(string)` | `0xe93341c4` | correct — in `abi.js`, required by both pay paths |
+| `evaluatorPinned()` | `0xca24c8f4` | correct — in `abi.js` |
+| `MAX_LINK_AMOUNT_UNPINNED(address)` | `0x7754d140` | correct — in `abi.js` |
 | `claim(string)` | `0xf3fe12c9` | correct |
 | `cancelLink(string)` | `0xc49dc85c` | correct |
 | `getLink(string)` | `0x7476452a` | correct |
@@ -164,13 +164,21 @@ full rule card as it renders today.
 - The receipt sentence in `frontend/receipt.js` is NEAR-specific
   (`"Payment delivered and verified on NEAR"`) — the X Layer page needs its own
   honest sentence; don't reuse the NEAR one.
-- **Never claim gasless works on mainnet** until a corrected contract is
-  deployed there and a real payment has settled through it. The current
-  mainnet Pago carries a selector bug in its EIP-3009 interface (`uint64`
-  window args → `0xd8fde8d5`; the real tokens want `uint256` → `0xcf092995`),
-  so its gasless hop reverts against both USD₮0 and USDG. The ordinary
-  `approve` + `pay` path is unaffected and is what the page offers. Full
-  record: `README.md` "The gasless selector bug and its fix".
+- **Gasless on mainnet is proven — claim it exactly that far, no further.**
+  The current mainnet Pago `0x2fC4180db7318F4364F6FC559A25359c9F537D3e` is
+  the corrected build: its EIP-3009 hop asks for the `uint256` window the
+  real tokens have (`0xcf092995`). The selector bug (`uint64` window args →
+  `0xd8fde8d5`) belongs to the superseded `0xd63Ae612…492c`, which carries
+  it and never had a link created on it. A real 0.1 USD₮0 gasless payment
+  settled through the current contract on 2026-11-25 with the payer spending
+  zero OKB (`docs/RESEARCH.md` §22), and the pay card's *Sign payment
+  authorization* button has since been clicked through in a browser on
+  mainnet — relay tx `0xda916130…fd51d`, status 1. The page offers both
+  payer paths: gasless sign/submit beside the ordinary `approve` + `pay`
+  fallback. Do not claim more than that — no relay service exists, and the
+  UI keeps a signed draft with the account that signed it (the contract,
+  not the page, is what accepts a relay from anyone). Full record:
+  `README.md` "The gasless selector bug and its fix".
 
 ## 9. README verification marks
 

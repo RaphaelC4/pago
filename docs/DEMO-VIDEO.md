@@ -165,8 +165,10 @@ timeline; captions optional but recommended (judges watch muted).
 
 ## After the run
 
-1. README: the gasless browser click-through stops being *pending* —
-   the take in step 8 is that run; update the wording to what was seen.
+1. ✅ Done — README's gasless browser click-through is no longer *pending*:
+   it carries the three mainnet hashes (create `0xf13b6e11…7081d`, relay
+   submit `0xda916130…fd51d`, claim `0xa96fbfa3…313911`), matched to what was
+   seen.
 2. Google Form: access link, target users/GTM/revenue answers (drafted),
    processor `0xDd6BB6fbda8ee867EF838bbE56ebA7d1EcC2c2f4`, circuit ID `1`,
    video attached — before **Dec 7 2026 23:59 UTC**.

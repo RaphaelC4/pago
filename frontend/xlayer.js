@@ -7,8 +7,9 @@
    through an injected EIP-1193 wallet (MetaMask, OKX Wallet, …) over
    `window.ethereum`; nothing here ever sees a private key, and there is no
    relayer, because no relayer runs on X Layer. The payer signs `approve`
-   then `pay` themselves, or signs an EIP-3009 authorization off-chain that
-   any wallet may submit (frontend/gasless.js; docs/RESEARCH.md §16/§22).
+   then `pay` themselves, or signs an EIP-3009 authorization off-chain and
+   submits it — the contract would accept it from any wallet
+   (frontend/gasless.js; docs/RESEARCH.md §16/§22).
 
    Contract calls are encoded by frontend/abi.js, a hand-rolled codec: the app
    is buildless, so it cannot import ethers or web3, and what Pago needs is a
@@ -1705,7 +1706,8 @@ async function runMint(id, to) {
 
 /* Sign the gasless authorization: three chain reads, then one
    eth_signTypedData_v4 the wallet computes the digest for. Nothing is
-   broadcast — the signature lands in gaslessDraft for anyone to submit. */
+   broadcast — the signature lands in gaslessDraft; the wallet that signed
+   it submits it (the contract itself would accept a relay from anyone). */
 async function runSignGasless(id, amount) {
   const btn = $("#gaslessSign");
   if (btn) { btn.disabled = true; btn.querySelector("span").textContent = "Waiting for signature…"; }
@@ -1741,8 +1743,9 @@ async function runSignGasless(id, amount) {
   }
 }
 
-/* Submit a draft authorization: any connected wallet may press this — the
-   contract checks the signature against `from`, not against the caller. */
+/* Submit a draft authorization: the page only shows this button to the
+   signing account (renderPay drops a draft on any account mismatch), but
+   the contract checks the signature against `from`, not the caller. */
 async function runSubmitGasless(id) {
   const draft = gaslessDraft;
   if (!draft || draft.linkId !== id) return;

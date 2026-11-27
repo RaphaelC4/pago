@@ -228,9 +228,12 @@ settle through ordinary transactions on X Layer:
 **The web page offers it too.** The pay card carries a *Sign payment
 authorization* button beside the ordinary path: it reads the token's
 `name()`, the link key and the payer's current nonce from the chain, has the
-wallet sign the EIP-712 authorization — no transaction, no gas — and shows a
-draft that any connected wallet can press *Submit signed payment* on, or
-copy out as JSON. The encoder behind that button replays the settled
+wallet sign the EIP-712 authorization — no transaction, no gas — and shows
+the signed draft to the wallet that signed it: that wallet presses *Submit
+signed payment*, or copies the authorization out as JSON for any other
+account to relay. The page keeps the draft with the account that signed
+it; the contract is what accepts a relay from anyone. The encoder behind
+that button replays the settled
 mainnet payment byte for byte
 ([`frontend/test/gasless.test.mjs`](frontend/test/gasless.test.mjs)), and
 the four chain values it reads were re-checked live against the contract;

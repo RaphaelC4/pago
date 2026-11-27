@@ -1,6 +1,6 @@
 # Pago
 
-**Status:** Current Pago (with the gasless fix) is live and verified on X Layer mainnet — `0x2fC4180db7318F4364F6FC559A25359c9F537D3e`, source verified on OKLink. **Try it:** <https://pago-nu.vercel.app/> (mainnet: append `?chainId=196`). Reviewed and tested by the author: 150+ tests (unit, fuzz, invariant, mainnet-fork), addresses and hashes verified on-chain. Start with small amounts while you get comfortable.
+**Status:** Current Pago (with the gasless fix) is live and verified on X Layer mainnet — `0x2fC4180db7318F4364F6FC559A25359c9F537D3e`, source verified on OKLink. Gasless settles through it too — 0.1 USD₮0 on 2026-11-25, payer paid zero OKB, submission manual (no relay service). **Try it:** <https://pago-nu.vercel.app/> (mainnet: append `?chainId=196`). Reviewed and tested by the author: 150+ tests (unit, fuzz, invariant, mainnet-fork), addresses and hashes verified on-chain. Start with small amounts while you get comfortable.
 
 **Send someone a link. Get paid in stablecoins.**
 
@@ -220,27 +220,61 @@ settle through ordinary transactions on X Layer:
   `claim` only ever moves money to the link's payee and the fee account,
   never to the caller, so the submitter gains nothing by submitting: there
   is no funded hot wallet, no keeper and no service to trust or to run.
-  **This leg settles on mainnet**: the selector bug above was fixed before
-  the current contract was redeployed, a real 0.1 USD₮0 gasless payment
-  settled there on 2026-11-25 with the payer spending zero OKB, and the
-  button has since been clicked through in a browser on mainnet — the
-  relay transaction `0xda916130…fd51d`, status 1, indexed on OKLink.
 
-**The web page offers it too.** The pay card carries a *Sign payment
-authorization* button beside the ordinary path: it reads the token's
-`name()`, the link key and the payer's current nonce from the chain, has the
-wallet sign the EIP-712 authorization — no transaction, no gas — and shows
-the signed draft to the wallet that signed it: that wallet presses *Submit
-signed payment*, or copies the authorization out as JSON for any other
-account to relay. The page keeps the draft with the account that signed
-it; the contract is what accepts a relay from anyone. The encoder behind
-that button replays the settled
-mainnet payment byte for byte
-([`frontend/test/gasless.test.mjs`](frontend/test/gasless.test.mjs)), and
-the four chain values it reads were re-checked live against the contract;
-the button's own click-through has since been run with a real wallet in a
-browser on mainnet — sign, submit, settle. The original scripted run across
-deploy and both payer paths remains in [`docs/RESEARCH.md` §17](docs/RESEARCH.md).
+**Gasless status today — each claim with its receipt:**
+
+- **Contract:** the live mainnet Pago `0x2fC4180d…7D3e` carries the fixed
+  EIP-3009 selector; the `uint64` bug belongs only to the superseded
+  `0xd63Ae612…492c`, which never had a link created on it.
+- **Settled:** a real 0.1 USD₮0 gasless payment settled through the current
+  contract on 2026-11-25 with the payer spending zero OKB
+  ([`docs/RESEARCH.md` §22](docs/RESEARCH.md)).
+- **Clicked through:** the pay card's *Sign payment authorization* button ran
+  end to end in a browser on mainnet — create `0xf13b6e11…7081d`, relay
+  submit `0xda916130…fd51d`, claim `0xa96fbfa3…313911`, each status 1 and
+  each indexed on OKLink.
+- **Not provided:** no relay service, no keeper, no hosted wallet — every
+  submission is a manual transaction by an account that holds OKB.
+
+**Who pays gas, line by line:**
+
+| Step | Sent by | Gas paid by |
+| --- | --- | --- |
+| Create the link | the payee's wallet | the payee |
+| Sign the authorization | nobody — a signature, not a transaction | **nobody: no gas, no OKB** |
+| Submit the authorization | the payee, the payer, or any account at all | whoever sends that transaction |
+| `claim` / *Release* | anyone | the caller — who never keeps any of the money |
+| Fallback `approve` + `pay` | the payer | the payer, two transactions |
+
+In the 2026-11-25 proof the payee sent all three transactions —
+0.000025276341263817 OKB (≈ $0.002) between them — and the payer's cost was
+exactly 0. In the browser click-through the payer submitted it from their
+own wallet, which held OKB.
+
+**The web page offers it too — what the payer does, in order:**
+
+1. **Open the link** in a wallet on the right chain, holding at least the
+   invoice amount. The page offers the signature only while the balance
+   covers it — a signature without balance would revert at submission.
+2. **Press *Sign payment authorization*.** The wallet shows the EIP-712
+   details (token, amount, nonce, Pago as recipient) and signs — **no
+   transaction, no approval, no gas, no OKB needed**. The card then shows
+   the draft as rows: signer, bound link id, nonce.
+3. **Submit it.** The signing wallet presses *Submit signed payment* (that
+   account pays the gas), or *Copy authorization* hands the JSON to any
+   other account with OKB. The page keeps the draft with the account that
+   signed it; the contract is what accepts a relay from anyone — it checks
+   the signature against the signer, not the sender.
+4. **The status moves `Open → Paid`.** Anyone can then press *Release* (or
+   call `claim`): the split pays out plus the 0.5% fee, and the caller
+   keeps nothing.
+
+The encoder behind that button replays the settled mainnet payment byte for
+byte ([`frontend/test/gasless.test.mjs`](frontend/test/gasless.test.mjs)),
+and the four chain values it reads (token `name()`, link key, terms hash,
+current nonce) were re-checked live against the contract. The original
+scripted run across deploy and both payer paths remains in
+[`docs/RESEARCH.md` §17](docs/RESEARCH.md).
 
 **Who runs it: whoever's transaction it is.** Every state change — create,
 pay, claim — is sent by the participant whose wallet it comes from.
@@ -248,11 +282,36 @@ Settlement is manual too: on a paid link the pay card shows a *Release*
 button, and anyone may press it (or call `claim` themselves) — the caller
 is never paid by it.
 
-**If gasless is unavailable** — the wallet will not produce the
-authorization, the RPC is having a bad day, anything — **fall back to a
-normal pay**: connect the payer's wallet and send `approve` + `pay` from
-it. Same contract, same 0.5% fee, same result; the payer simply pays gas
-for those two transactions.
+**If signing fails** — the wallet will not produce the authorization, the
+RPC is having a bad day, anything — **fall back to a normal pay**: connect
+the payer's wallet and send `approve` + `pay` from it. Same contract, same
+0.5% fee, same result; the payer simply pays gas for those two transactions.
+
+**If submission fails, nothing is lost.** The signature is off-chain data:
+a refused or reverted submission moves no tokens, writes nothing, and
+leaves the link exactly as it was. Concretely:
+
+- **No transaction was sent** (wallet rejected it, the submitter has no
+  OKB for gas, the RPC did not answer): nothing is spent at all. Try again,
+  or *Copy authorization* and let an account with OKB submit it.
+- **The transaction was mined and reverted**: the submitter loses only that
+  transaction's gas — never the payment, because every rejection path rolls
+  the whole call back (the contract's own rule: *"a failed payment costs
+  only gas"*). The contract refuses a link that is already `Paid`,
+  cancelled or expired, an authorization bound to a different link, terms
+  that no longer match, or — if the payer's balance changed since signing —
+  a token balance that no longer covers the amount.
+- **The page keeps the draft.** It survives every failure: it is cleared
+  only by a successful payment, *Discard signature*, or switching account
+  or link — so the same card offers *Submit signed payment* again. Retry
+  while the link is still `Open`; once it is not, the signature simply
+  never fires, which costs nobody anything.
+
+Either way the ordinary path stays open for the payer: `approve` + `pay`
+from their own wallet while the link is `Open` — same contract, same fee,
+same result. A signature can never pay a different link (its nonce is
+derived from `(linkKey, payer)`) or the same link twice (the link leaves
+`Open` on the first success).
 
 ### The gasless selector bug and its fix
 
@@ -499,7 +558,7 @@ The tests assert every property below:
   check passes, so links are uncapped. Adding an always-on cap would be a
   contract change, and the source is frozen at this build.
 
-**Status:** Current Pago (with the gasless fix) is live and verified on X Layer mainnet — `0x2fC4180db7318F4364F6FC559A25359c9F537D3e`, source verified on OKLink. **Try it:** <https://pago-nu.vercel.app/> (mainnet: append `?chainId=196`). Reviewed and tested by the author: 150+ tests (unit, fuzz, invariant, mainnet-fork), addresses and hashes verified on-chain. Start with small amounts while you get comfortable.
+**Status:** Current Pago (with the gasless fix) is live and verified on X Layer mainnet — `0x2fC4180db7318F4364F6FC559A25359c9F537D3e`, source verified on OKLink. Gasless settles through it too — 0.1 USD₮0 on 2026-11-25, payer paid zero OKB, submission manual (no relay service). **Try it:** <https://pago-nu.vercel.app/> (mainnet: append `?chainId=196`). Reviewed and tested by the author: 150+ tests (unit, fuzz, invariant, mainnet-fork), addresses and hashes verified on-chain. Start with small amounts while you get comfortable.
 
 ---
 
@@ -613,7 +672,8 @@ live contract carries the fix and settled a real gasless payment on
 > Written as `do X, see Y` so a reviewer can follow along without asking anyone.
 
 **Network:** X Layer — testnet (1952) with the MOCK faucet, or mainnet (196)
-via `?chainId=196`. **Cost:** testnet free, mainnet gas in OKB.
+via `?chainId=196`. **Cost:** testnet free, mainnet gas in OKB — except a
+gasless payer, who needs none: whoever submits the signature pays.
 
 1. **Serve the frontend** — or skip this: the hosted page is
    <https://pago-nu.vercel.app/> (mainnet: append `?chainId=196`). To run
@@ -629,7 +689,10 @@ via `?chainId=196`. **Cost:** testnet free, mainnet gas in OKB.
    a split reads the full rule table with the sentence **"If the rule check
    fails at payout time, this default split applies instead"**.
 4. **Pay it.** Approve the token if the allowance is missing, press *Pay*,
-   approve the transaction. Watch the status move `Open → Paid`.
+   approve the transaction — or take the gasless path instead: *Sign
+   payment authorization* (free, needs no OKB), then *Submit signed
+   payment*, or *Copy authorization* to any account that holds OKB. Watch
+   the status move `Open → Paid`.
 5. **Watch it settle.** Anyone can call `claim`; it pays the selected table's
    recipients and the 0.5% fee, never the caller. The payout result renders
    from the claim events: seat legs, fee and claim transaction, with the rest

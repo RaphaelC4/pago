@@ -548,6 +548,33 @@ live at <https://pago-nu.vercel.app/>.
   while the balance is short** — only the MOCK faucet.
 - **MOCK tokens are labelled `MOCK` everywhere** they are named; the mainnet
   build shows USD₮0 and USDG only.
+- **The pay card reads like an invoice, in the same order, in every state.**
+  Payee and status pill, the amount, the note ("for …"), then the *invoice*
+  table — amount, fee (0.5%), link id, created and expires; *payee receives*
+  while the link is unpaid; the *paid*/*claimed* timestamps once they exist —
+  and only then the actions, named for the step (*Sign payment
+  authorization*, *Submit signed payment*, *Claim*). One-recipient links lead
+  with the plain destination sentence (quoted in the how-to below) and tuck
+  the rule card into a **Payment details** disclosure: collapsed by default,
+  one tap away, and never removed before the pay button — the rule in
+  [`docs/FRONTEND-HANDOFF.md` §7](docs/FRONTEND-HANDOFF.md); split links keep
+  the rule card open. A claimed link is the same invoice, only paid: the
+  payout result replaces the pay button, every figure in it printed from the
+  claim's own events — the pool is read back, never recomputed. The gasless
+  draft is rows too: signer, bound link id, nonce.
+- **The page is built for the phone it will be opened on.** `xlayer.html`
+  ships a `width=device-width` viewport; the card caps at 480px and centres
+  itself, its padding `clamp(1.05rem, 4.5vw, 1.5rem)` and the amount
+  `clamp(38px, 10.2vw, 48px)` scaling with the viewport. At ≤560px it
+  tightens — gutters to `.75rem`, card padding to `1rem .9rem`, radius to
+  23px, invoice rows to 41px, buttons to 52px (54px above), the amount to
+  `clamp(35px, 10.5vw, 45px)`. The **Payment details** summary keeps a 44px
+  tap target, addresses and ids wrap inside their row
+  (`overflow-wrap: anywhere`) instead of overflowing it, and the share button
+  uses the platform's native sheet (`navigator.share`) with
+  copy-to-clipboard fallback; motion honours `prefers-reduced-motion`, and
+  `styles.css` steps through 23 media queries, at 899, 760, 560, 390 and
+  359px among them.
 
 ```powershell
 node frontend/test/abi.test.mjs       # ABI codec: selectors + encoding vs cast, decoding vs live-chain vectors

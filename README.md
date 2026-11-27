@@ -219,9 +219,11 @@ settle through ordinary transactions on X Layer:
   `claim` only ever moves money to the link's payee and the fee account,
   never to the caller, so the submitter gains nothing by submitting: there
   is no funded hot wallet, no keeper and no service to trust or to run.
-  **This leg does not settle on the current mainnet contract** — the selector
-  bug above — so on mainnet today the working route is the normal `approve` +
-  `pay`.
+  **This leg settles on mainnet**: the selector bug above was fixed before
+  the current contract was redeployed, a real 0.1 USD₮0 gasless payment
+  settled there on 2026-11-25 with the payer spending zero OKB, and the
+  button has since been clicked through in a browser on mainnet — the
+  relay transaction `0xda916130…fd51d`, status 1, indexed on OKLink.
 
 **The web page offers it too.** The pay card carries a *Sign payment
 authorization* button beside the ordinary path: it reads the token's
@@ -232,9 +234,9 @@ copy out as JSON. The encoder behind that button replays the settled
 mainnet payment byte for byte
 ([`frontend/test/gasless.test.mjs`](frontend/test/gasless.test.mjs)), and
 the four chain values it reads were re-checked live against the contract;
-what has not happened yet is the button's own click-through in a browser,
-still listed as pending below. The original scripted run across deploy and
-both payer paths remains in [`docs/RESEARCH.md` §17](docs/RESEARCH.md).
+the button's own click-through has since been run with a real wallet in a
+browser on mainnet — sign, submit, settle. The original scripted run across
+deploy and both payer paths remains in [`docs/RESEARCH.md` §17](docs/RESEARCH.md).
 
 **Who runs it: whoever's transaction it is.** Every state change — create,
 pay, claim — is sent by the participant whose wallet it comes from.
@@ -551,19 +553,19 @@ npx playwright test --project=testnet # read-only live checks, dispatched manual
 ```
 
 **What it does not prove:** no signing is automated — wallet approvals stay
-human, in `e2e/TESTNET.md` Journey D — and the browser journey has not been
-run end to end yet (the *scripted* journey has: twelve transactions across
-deploy and both payer paths, deltas summing to zero, with the rule table
-paying one claim and the fallback paying the other —
-[`docs/RESEARCH.md` §17](docs/RESEARCH.md)). The page's gasless button is
-wired and its payloads are proven — `gasless.test.mjs` replays the settled
-mainnet payment byte for byte, and its four chain reads were re-checked
-live — but it has not been clicked through with a real wallet in a browser
-yet; that click-through is part of the browser journey still pending.
-Gasless payments themselves work at the contract level and are proven on
-mainnet; on the ordinary path the payer still signs and pays both
-transactions themselves, while any account can submit an EIP-3009
-authorization off chain.
+human, in `e2e/TESTNET.md` Journey D (the *scripted* journey has also run:
+twelve transactions across deploy and both payer paths, deltas summing to
+zero, with the rule table paying one claim and the fallback paying the
+other — [`docs/RESEARCH.md` §17](docs/RESEARCH.md)). The browser journey
+has been run end to end in a browser with real wallets, on mainnet: a
+wallet created the link, the pay card's *Sign payment authorization*
+signed off chain, *Submit signed payment* relayed it on chain, the payment
+settled, and *Release* paid the split — `0xf13b6e11…7081d` (create),
+`0xda916130…fd51d` (submit) and `0xa96fbfa3…313911` (claim), each status 1
+and each indexed on OKLink — with `gasless.test.mjs` replaying the settled
+mainnet payment byte for byte behind it. On the ordinary path the payer still
+signs and pays both transactions themselves, while any account can submit an
+EIP-3009 authorization off chain.
 Full record: [`docs/RESEARCH.md` §16](docs/RESEARCH.md)
 (page) and [§17](docs/RESEARCH.md) (contract). **That run exercised the tokens'
 EIP-3009 directly; the selector bug below was found afterwards, in Pago's own
@@ -626,12 +628,9 @@ via `?chainId=196`. **Cost:** testnet free, mainnet gas in OKB.
 
 ## Future work
 
-- **Run the browser journey end to end with a wallet.** The gasless button
-  is in the pay card and its payloads are proven — a byte-exact replay of
-  mainnet `0x0cb7a79a…11f6` in `frontend/test/gasless.test.mjs` — but no one
-  has clicked it through in a browser yet. That is the last unticked box in
-  Tests, and `e2e/TESTNET.md` Journey D already stages the same run for the
-  ordinary path.
+- **External audit** of the contract and the circuit interface.
+- **More verified circuits** — caps and multi-token splits.
+- **Merchant embeds** so a seller can drop a payment link anywhere.
 
 ---
 

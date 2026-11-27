@@ -1,6 +1,6 @@
 # Pago
 
-**Status:** Current Pago (with the gasless fix) is live and verified on X Layer mainnet — `0x2fC4180db7318F4364F6FC559A25359c9F537D3e`, source verified on OKLink. Reviewed and tested by the author: 150+ tests (unit, fuzz, invariant, mainnet-fork), addresses and hashes verified on-chain. Start with small amounts while you get comfortable.
+**Status:** Current Pago (with the gasless fix) is live and verified on X Layer mainnet — `0x2fC4180db7318F4364F6FC559A25359c9F537D3e`, source verified on OKLink. **Try it:** <https://pago-nu.vercel.app/> (mainnet: append `?chainId=196`). Reviewed and tested by the author: 150+ tests (unit, fuzz, invariant, mainnet-fork), addresses and hashes verified on-chain. Start with small amounts while you get comfortable.
 
 **Send someone a link. Get paid in stablecoins.**
 
@@ -22,8 +22,9 @@ Run it from `frontend/` — static files, no build step, see
   fixed at creation; a share card with a QR code follows.
 - **Two payer paths, both offered by the pay card.** An ordinary ERC-20
   `approve` + `pay`, or a gasless EIP-3009 authorization the payer signs
-  off-chain — the card's *Sign payment authorization* button — which any
-  other wallet then submits. **Both settle on the mainnet contract** — a live
+  off-chain — the card's *Sign payment authorization* button — which is then
+  submitted on chain by whoever holds the signature. **Both settle on the
+  mainnet contract** — a live
   0.1 USD₮0 gasless payment settled there on 2026-11-25 with the payer
   spending zero OKB (step 9, RESEARCH §22). It briefly shipped with a
   selector bug, fixed before the redeploy; see
@@ -498,7 +499,7 @@ The tests assert every property below:
   check passes, so links are uncapped. Adding an always-on cap would be a
   contract change, and the source is frozen at this build.
 
-**Status:** Current Pago (with the gasless fix) is live and verified on X Layer mainnet — `0x2fC4180db7318F4364F6FC559A25359c9F537D3e`, source verified on OKLink. Reviewed and tested by the author: 150+ tests (unit, fuzz, invariant, mainnet-fork), addresses and hashes verified on-chain. Start with small amounts while you get comfortable.
+**Status:** Current Pago (with the gasless fix) is live and verified on X Layer mainnet — `0x2fC4180db7318F4364F6FC559A25359c9F537D3e`, source verified on OKLink. **Try it:** <https://pago-nu.vercel.app/> (mainnet: append `?chainId=196`). Reviewed and tested by the author: 150+ tests (unit, fuzz, invariant, mainnet-fork), addresses and hashes verified on-chain. Start with small amounts while you get comfortable.
 
 ---
 
@@ -526,7 +527,8 @@ Tier 2 and Phase 0 claims against real X Layer mainnet state. **150+ tests,
 
 ## The X Layer page
 
-`frontend/xlayer.html` (+ `frontend/xlayer.js`) is Pago's own UI.
+`frontend/xlayer.html` (+ `frontend/xlayer.js`) is Pago's own UI — deployed
+live at <https://pago-nu.vercel.app/>.
 
 - **Buildless on purpose**: no bundler, no npm dependency, no vendored ethers.
   Calldata is encoded by `frontend/abi.js`, a hand-rolled ABI codec whose
